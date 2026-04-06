@@ -62,7 +62,7 @@ class Knowly_Admin_Tokens {
         $next_refresh = wp_next_scheduled( 'knowly_monthly_token_refresh' );
         ?>
         <div class="wrap noey-wrap">
-            <h1>NoeyAPI — Tokens</h1>
+            <h1>KnowlyAPI — Tokens</h1>
 
             <!-- Dev Bypass Banner -->
             <?php if ( $dev_bypass ) : ?>

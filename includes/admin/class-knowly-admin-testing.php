@@ -30,7 +30,7 @@ class Knowly_Admin_Testing {
         }
         ?>
         <div class="wrap noey-wrap">
-            <h1>NoeyAPI — Test Suite</h1>
+            <h1>KnowlyAPI — Test Suite</h1>
             <p class="noey-test-intro">
                 Tests call your actual REST API endpoints (with valid admin credentials) and report pass/fail with full request/response detail.
                 Run individual tests or click <strong>Run All</strong>.
@@ -145,7 +145,7 @@ class Knowly_Admin_Testing {
         }
 
         if ( empty( $missing ) ) {
-            return self::pass( 'All ' . count( $tables ) . ' NoeyAPI database tables exist.', [
+            return self::pass( 'All ' . count( $tables ) . ' KnowlyAPI database tables exist.', [
                 'tables' => $tables,
             ] );
         }

@@ -50,7 +50,7 @@ class Knowly_Admin_Leaderboard {
         $active_tab = sanitize_text_field( $_GET['tab'] ?? 'boards' );
         ?>
         <div class="wrap">
-            <h1>NoeyAI — Leaderboards</h1>
+            <h1>Knowly — Leaderboards</h1>
 
             <nav class="nav-tab-wrapper">
                 <?php foreach ( [

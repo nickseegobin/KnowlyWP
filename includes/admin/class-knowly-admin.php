@@ -2,7 +2,7 @@
 /**
  * Knowly_Admin — Admin panel bootstrap.
  *
- * Registers the top-level "NoeyAPI" admin menu with four sub-pages:
+ * Registers the top-level "KnowlyAPI" admin menu with four sub-pages:
  *   Dashboard  — quick status overview
  *   Settings   — all plugin configuration
  *   Debug Log  — searchable log viewer (visible when debug mode is on)
@@ -32,8 +32,8 @@ class Knowly_Admin {
 
     public static function register_menus(): void {
         add_menu_page(
-            'NoeyAPI',
-            'NoeyAPI',
+            'KnowlyAPI',
+            'KnowlyAPI',
             'manage_options',
             'noey-api',
             [ __CLASS__, 'render_dashboard' ],
@@ -99,7 +99,7 @@ class Knowly_Admin {
         $railway_ok = ! empty( get_option( 'knowly_railway_endpoint' ) );
         ?>
         <div class="wrap noey-wrap">
-            <h1>NoeyAPI <span class="noey-version">v<?= esc_html( KNOWLY_VERSION ) ?></span></h1>
+            <h1>KnowlyAPI <span class="noey-version">v<?= esc_html( KNOWLY_VERSION ) ?></span></h1>
 
             <div class="noey-status-bar <?= Knowly_Debug::is_enabled() ? 'debug-on' : 'debug-off' ?>">
                 <?php if ( Knowly_Debug::is_enabled() ) : ?>

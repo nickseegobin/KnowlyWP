@@ -58,7 +58,7 @@ class Knowly_Admin_Pool {
         $all_combinations = self::get_all_combinations();
         ?>
         <div class="wrap noey-wrap">
-            <h1>NoeyAPI — Pool Manager</h1>
+            <h1>KnowlyAPI — Pool Manager</h1>
 
             <?php self::render_notices(); ?>
 

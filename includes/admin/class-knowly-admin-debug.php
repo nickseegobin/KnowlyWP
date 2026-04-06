@@ -41,7 +41,7 @@ class Knowly_Admin_Debug {
         $pages = (int) ceil( $total / self::LOGS_PER_PAGE );
         ?>
         <div class="wrap noey-wrap">
-            <h1>NoeyAPI — Debug Log
+            <h1>KnowlyAPI — Debug Log
                 <span class="noey-log-count"><?= esc_html( $total ) ?> entries</span>
             </h1>
 

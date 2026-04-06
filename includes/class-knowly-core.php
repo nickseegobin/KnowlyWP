@@ -41,7 +41,7 @@ class Knowly_Core {
             Knowly_Admin::boot();
         }
 
-        Knowly_Debug::log( 'core.boot', 'NoeyAPI booted', [
+        Knowly_Debug::log( 'core.boot', 'KnowlyAPI booted', [
             'version'    => KNOWLY_VERSION,
             'debug_mode' => Knowly_Debug::is_enabled(),
         ], null, 'debug' );
@@ -143,7 +143,7 @@ class Knowly_Core {
                 'error_code' => $result->get_error_code(),
             ], null, 'debug' );
 
-            return null; // Let NoeyAPI's own permission_callback handle auth
+            return null; // Let KnowlyAPI's own permission_callback handle auth
         }
 
         return $result;
@@ -154,7 +154,7 @@ class Knowly_Core {
     /**
      * Check whether the given origin is in the allow-list.
      *
-     * Configured in Admin › NoeyAPI › Settings › Allowed Origins (comma-separated).
+     * Configured in Admin › KnowlyAPI › Settings › Allowed Origins (comma-separated).
      */
     public static function is_allowed_origin( string $origin ): bool {
         $raw      = get_option( 'knowly_allowed_origins', '' );

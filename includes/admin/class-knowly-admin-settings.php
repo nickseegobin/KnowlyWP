@@ -30,7 +30,7 @@ class Knowly_Admin_Settings {
         $pool_target        = get_option( 'knowly_pool_default_target', 10 );
         ?>
         <div class="wrap noey-wrap">
-            <h1>NoeyAPI — Settings</h1>
+            <h1>KnowlyAPI — Settings</h1>
 
             <form method="post" action="">
                 <?php wp_nonce_field( 'knowly_save_settings', 'knowly_settings_nonce' ); ?>

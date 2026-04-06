@@ -42,7 +42,7 @@ class Knowly_Admin_Members {
         $total_children = (int) ( new WP_User_Query( [ 'role' => 'knowly_child', 'count_total' => true, 'number' => 0 ] ) )->get_total();
         ?>
         <div class="wrap noey-wrap">
-            <h1>NoeyAPI — Members</h1>
+            <h1>KnowlyAPI — Members</h1>
 
             <!-- Stats -->
             <div class="noey-stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:24px;">

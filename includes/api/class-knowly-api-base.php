@@ -1,6 +1,6 @@
 <?php
 /**
- * Knowly_API_Base — Abstract base for all NoeyAPI REST controllers.
+ * Knowly_API_Base — Abstract base for all KnowlyAPI REST controllers.
  *
  * Provides:
  *  - JWT-based authentication helpers

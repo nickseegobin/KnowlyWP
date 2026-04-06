@@ -2,7 +2,7 @@
 /**
  * Knowly_Activator — Plugin activation, database setup, role registration.
  *
- * Creates all NoeyAPI database tables, registers WP roles, sets default options,
+ * Creates all KnowlyAPI database tables, registers WP roles, sets default options,
  * and schedules cron jobs.
  *
  * @package KnowlyAPI

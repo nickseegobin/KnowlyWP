@@ -2,8 +2,8 @@
 /**
  * Knowly_Debug — Global debug logging system.
  *
- * Toggle via Admin › NoeyAPI › Settings › Enable Debug Mode.
- * Logs are written to wp_knowly_debug_log and visible in Admin › NoeyAPI › Debug Log.
+ * Toggle via Admin › KnowlyAPI › Settings › Enable Debug Mode.
+ * Logs are written to wp_knowly_debug_log and visible in Admin › KnowlyAPI › Debug Log.
  *
  * Usage anywhere in the codebase:
  *   Knowly_Debug::log( 'auth.login', 'Login attempt', [ 'username' => $u ], null, 'info' );

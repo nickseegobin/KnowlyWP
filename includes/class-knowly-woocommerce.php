@@ -2,7 +2,7 @@
 /**
  * Knowly_WooCommerce — WooCommerce integration.
  *
- * Connects WooCommerce product purchases to the NoeyAPI token wallet.
+ * Connects WooCommerce product purchases to the KnowlyAPI token wallet.
  *
  * How it works:
  *  1. Each WooCommerce product can carry a `_knowly_token_amount` meta field.
