@@ -38,7 +38,7 @@ class Knowly_Children_API extends Knowly_API_Base {
                 'permission_callback' => '__return_true',
                 'args'                => [
                     'first_name'   => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
-                    'last_name'    => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                    'last_name'    => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
                     'nickname'     => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
                     'password'     => [ 'required' => true,  'type' => 'string' ],
                     'level'     => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],

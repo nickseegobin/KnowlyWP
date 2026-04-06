@@ -271,12 +271,12 @@ class Knowly_Admin_Testing {
         if ( empty( $data['token'] ) ) return self::warn( 'Provide parent token.' );
 
         $res = self::api_post( '/children', [
-            'display_name' => 'Test Student',
-            'username'     => 'test_child_' . time(),
-            'password'     => 'TestPass123!',
-            'level'     => 'std_4',
-            'period'   => 'term_1',
-            'age'          => 9,
+            'first_name' => 'TestKid',
+            'nickname'   => 'testkid_' . time(),
+            'password'   => 'TestPass123!',
+            'level'      => 'std_4',
+            'period'     => 'term_1',
+            'age'        => 9,
         ], $data['token'] );
 
         return $res['status'] === 201
@@ -363,9 +363,14 @@ class Knowly_Admin_Testing {
             'subject'    => $data['subject'] ?? 'Mathematics',
             'difficulty' => $data['difficulty'] ?? 'medium',
         ], $data['token'] );
-        return $res['status'] === 200
-            ? self::pass( 'Exam started.', [ 'session_id' => $res['body']['data']['session_id'] ?? null ] )
-            : self::fail( 'Exam start failed.', $res );
+        if ( $res['status'] === 200 ) {
+            return self::pass( 'Exam started.', [ 'session_id' => $res['body']['data']['session_id'] ?? null ] );
+        }
+        // 503 pool_empty is expected when Railway has no packages ready — not a plugin bug
+        if ( $res['status'] === 503 && ( $res['body']['code'] ?? '' ) === 'knowly_pool_empty' ) {
+            return self::warn( 'Pool empty — Railway has no packages ready for this filter. Trigger generation on Railway first.' );
+        }
+        return self::fail( 'Exam start failed.', $res );
     }
 
     // ── Results Tests ─────────────────────────────────────────────────────────
