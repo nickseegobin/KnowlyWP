@@ -36,6 +36,18 @@ class Knowly_Admin_Testing {
                 Run individual tests or click <strong>Run All</strong>.
             </p>
 
+                <details class="knowly-test-data-panel" style="margin-bottom:16px;background:#fff;border:1px solid #ddd;border-radius:4px;padding:12px 16px;">
+                <summary style="cursor:pointer;font-weight:600;font-size:13px;">🔑 Test Data (credentials for auth tests)</summary>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px;">
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Username<input type="text" id="td-username" class="regular-text" placeholder="parent username" autocomplete="off" /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Password<input type="password" id="td-password" class="regular-text" placeholder="parent password" autocomplete="off" /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">JWT Token (auto-filled after login)<input type="text" id="td-token" class="regular-text" placeholder="auto-filled after login" /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Child ID<input type="number" id="td-child-id" class="regular-text" placeholder="child WP user ID" /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">User ID (for admin token tests)<input type="number" id="td-user-id" class="regular-text" placeholder="WP user ID" /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">PIN (4 digits)<input type="text" id="td-pin" class="regular-text" placeholder="e.g. 1234" maxlength="4" /></label>
+                </div>
+            </details>
+
             <div class="knowly-test-toolbar">
                 <button id="knowly-run-all" class="button button-primary">▶ Run All Tests</button>
                 <button id="knowly-clear-results" class="button">Clear Results</button>
@@ -160,7 +172,7 @@ class Knowly_Admin_Testing {
         }
 
         // Railway health endpoint is GET /health (no auth required)
-        $response = wp_remote_get( "{$endpoint}/health", [ 'timeout' => 10 ] );
+        $response = wp_remote_get( "{$endpoint}/api/v1/health", [ 'timeout' => 10 ] );
 
         if ( is_wp_error( $response ) ) {
             return self::fail( 'Railway connection failed: ' . $response->get_error_message() );
@@ -198,6 +210,7 @@ class Knowly_Admin_Testing {
                 'user_id'  => $res['body']['data']['user_id'],
                 'role'     => $res['body']['data']['role'],
                 'token'    => substr( $res['body']['data']['token'], 0, 30 ) . '…',
+                '_token'   => $res['body']['data']['token'],   // full token for JS to carry forward
             ] );
         }
 

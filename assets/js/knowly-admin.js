@@ -48,9 +48,27 @@
 
     const testData = {};   // Shared data across tests (e.g. token from login)
 
+    // Read test data panel inputs into testData before each run
+    function syncTestDataFromInputs() {
+        const username  = $( '#td-username' ).val().trim();
+        const password  = $( '#td-password' ).val().trim();
+        const token     = $( '#td-token' ).val().trim();
+        const childId   = $( '#td-child-id' ).val().trim();
+        const userId    = $( '#td-user-id' ).val().trim();
+        const pin       = $( '#td-pin' ).val().trim();
+
+        if ( username )  testData.username  = username;
+        if ( password )  testData.password  = password;
+        if ( token )     testData.token     = token;
+        if ( childId )   testData.child_id  = childId;
+        if ( userId )    testData.user_id   = userId;
+        if ( pin )       testData.pin       = pin;
+    }
+
     // Run single test
     $( document ).on( 'click', '.knowly-run-test', function ( e ) {
         e.stopPropagation();
+        syncTestDataFromInputs();
         const testId = $( this ).data( 'test' );
         runTest( testId );
     } );
@@ -58,6 +76,7 @@
     // Run all tests in a group
     $( document ).on( 'click', '.knowly-run-group', function ( e ) {
         e.stopPropagation();
+        syncTestDataFromInputs();
         const groupId = $( this ).data( 'group' );
         const tests   = $( '#group-' + groupId + ' .knowly-run-test' );
         runSequential( tests.map( ( i, el ) => $( el ).data( 'test' ) ).get() );
@@ -65,6 +84,7 @@
 
     // Run all tests
     $( '#knowly-run-all' ).on( 'click', function () {
+        syncTestDataFromInputs();
         const tests = $( '.knowly-run-test' ).map( ( i, el ) => $( el ).data( 'test' ) ).get();
         runSequential( tests );
     } );
@@ -99,15 +119,27 @@
             }, function ( res ) {
                 if ( ! res ) { resolve(); return; }
 
-                // Carry forward token from login
-                if ( testId === 'auth_login' && res.pass && res.data && res.data.token ) {
-                    testData.token   = res.data.token;
-                    testData.user_id = res.data.user_id;
+                // Carry forward full token from login → auto-fill the input field too
+                if ( testId === 'auth_login' && res.pass && res.data ) {
+                    const fullToken = res.data._token || res.data.token;
+                    if ( fullToken && fullToken.indexOf( '…' ) === -1 ) {
+                        testData.token = fullToken;
+                        $( '#td-token' ).val( fullToken );
+                    }
+                    if ( res.data.user_id ) {
+                        testData.user_id = res.data.user_id;
+                        if ( ! $( '#td-user-id' ).val() ) {
+                            $( '#td-user-id' ).val( res.data.user_id );
+                        }
+                    }
                 }
-                // Carry forward child_id from create
+
+                // Carry forward child_id from create → auto-fill input
                 if ( testId === 'children_create' && res.pass && res.data && res.data.child_id ) {
                     testData.child_id = res.data.child_id;
+                    $( '#td-child-id' ).val( res.data.child_id );
                 }
+
                 // Carry forward session_id from exam start
                 if ( testId === 'exams_start' && res.pass && res.data && res.data.session_id ) {
                     testData.session_id = res.data.session_id;
@@ -131,9 +163,14 @@
 
         $status.text( icon ).css( 'color', color );
 
-        const cls      = res.pass === true ? 'pass' : ( res.pass === null ? 'warn' : 'fail' );
-        const dataHtml = res.data && Object.keys( res.data ).length
-            ? '<pre class="knowly-json knowly-result-data">' + escHtml( JSON.stringify( res.data, null, 2 ) ) + '</pre>'
+        const cls = res.pass === true ? 'pass' : ( res.pass === null ? 'warn' : 'fail' );
+
+        // Build display data — hide the internal _token field from the JSON viewer
+        let displayData = res.data ? Object.assign( {}, res.data ) : {};
+        delete displayData._token;
+
+        const dataHtml = Object.keys( displayData ).length
+            ? '<pre class="knowly-json knowly-result-data">' + escHtml( JSON.stringify( displayData, null, 2 ) ) + '</pre>'
             : '';
 
         $result
