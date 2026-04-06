@@ -57,6 +57,7 @@ class Knowly_Core {
         ( new Knowly_Insights_API() )->register_routes();
         ( new Knowly_Leaderboard_API() )->register_routes();
         ( new Knowly_Gems_API() )->register_routes();
+        ( new Knowly_Notifications_API() )->register_routes();
 
         Knowly_Debug::log( 'core.routes', 'All REST routes registered', [], null, 'debug' );
     }

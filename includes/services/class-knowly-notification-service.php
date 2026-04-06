@@ -71,24 +71,53 @@ class Knowly_Notification_Service {
      * @param  bool  $unread_only  Default true — only unread.
      * @return array
      */
-    public static function list_for_user( int $user_id, bool $unread_only = true ): array {
+    public static function list_for_user( int $user_id, bool $unread_only = true, int $limit = 50, int $offset = 0 ): array {
         global $wpdb;
 
         $table = $wpdb->prefix . 'knowly_notifications';
 
         if ( $unread_only ) {
             $rows = $wpdb->get_results( $wpdb->prepare(
-                "SELECT * FROM {$table} WHERE recipient_user_id = %d AND is_read = 0 ORDER BY created_at DESC",
-                $user_id
+                "SELECT * FROM {$table} WHERE recipient_user_id = %d AND is_read = 0 ORDER BY created_at DESC LIMIT %d OFFSET %d",
+                $user_id, $limit, $offset
             ), ARRAY_A );
         } else {
             $rows = $wpdb->get_results( $wpdb->prepare(
-                "SELECT * FROM {$table} WHERE recipient_user_id = %d ORDER BY created_at DESC LIMIT 50",
-                $user_id
+                "SELECT * FROM {$table} WHERE recipient_user_id = %d ORDER BY created_at DESC LIMIT %d OFFSET %d",
+                $user_id, $limit, $offset
             ), ARRAY_A );
         }
 
         return array_map( [ __CLASS__, 'format_row' ], $rows ?: [] );
+    }
+
+    // ── Count Unread ──────────────────────────────────────────────────────────
+
+    public static function count_unread( int $user_id ): int {
+        global $wpdb;
+        return (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_notifications WHERE recipient_user_id = %d AND is_read = 0",
+            $user_id
+        ) );
+    }
+
+    // ── Mark All Read ─────────────────────────────────────────────────────────
+
+    /**
+     * Mark all unread notifications as read for a user.
+     *
+     * @return int  Number of rows updated.
+     */
+    public static function mark_all_read( int $user_id ): int {
+        global $wpdb;
+        $updated = $wpdb->update(
+            $wpdb->prefix . 'knowly_notifications',
+            [ 'is_read' => 1 ],
+            [ 'recipient_user_id' => $user_id, 'is_read' => 0 ],
+            [ '%d' ],
+            [ '%d', '%d' ]
+        );
+        return (int) $updated;
     }
 
     // ── Respond ───────────────────────────────────────────────────────────────

@@ -102,7 +102,8 @@ class Knowly_Admin {
             get_users( [ 'role' => 'knowly_teacher', 'fields' => 'ID' ] ),
             fn( $id ) => get_user_meta( $id, 'knowly_approval_status', true ) === 'pending_approval'
         ) );
-        $pool_count   = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_pool" );
+        $pool_count          = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_pool" );
+        $unread_notif_count  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_notifications WHERE is_read = 0" );
         $session_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_sessions WHERE state = 'completed'" );
         $insight_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_insights" );
         $log_count    = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_debug_log" );
@@ -146,6 +147,10 @@ class Knowly_Admin {
                 <div class="knowly-stat-card">
                     <div class="knowly-stat-number"><?= esc_html( $insight_count ) ?></div>
                     <div class="knowly-stat-label">AI Insights Generated</div>
+                </div>
+                <div class="knowly-stat-card" style="<?= $unread_notif_count > 0 ? 'border-color:#d63638;' : '' ?>">
+                    <div class="knowly-stat-number" style="<?= $unread_notif_count > 0 ? 'color:#d63638;' : '' ?>"><?= esc_html( $unread_notif_count ) ?></div>
+                    <div class="knowly-stat-label">Unread Notifications</div>
                 </div>
             </div>
 
@@ -256,6 +261,13 @@ class Knowly_Admin {
             [ 'GET',    '/insights/exam/{id}',            'JWT',        'Retrieve per-exam insight' ],
             [ 'GET',    '/insights/weekly/{week}',        'JWT',        'Weekly digest insight' ],
             [ 'POST',   '/insights/weekly/{week}',        'JWT',        'Trigger weekly digest' ],
+            // Block 4 — Notifications
+            [ 'GET',    '/notifications',                 'JWT',        'List notifications (unread_only default)' ],
+            [ 'GET',    '/notifications/count',           'JWT',        'Unread notification count (badge)' ],
+            [ 'POST',   '/notifications',                 'Admin JWT',  'Create a notification' ],
+            [ 'POST',   '/notifications/{id}/read',       'JWT',        'Mark one notification as read' ],
+            [ 'POST',   '/notifications/read-all',        'JWT',        'Mark all notifications as read' ],
+            [ 'POST',   '/notifications/{id}/respond',    'JWT',        'Accept or decline a confirmation notification' ],
             // Block 3 — Gems
             [ 'GET',    '/gems/balance',                  'JWT',        'Blue gem wallet balance' ],
             [ 'GET',    '/gems/ledger',                   'JWT',        'Gem transaction history' ],

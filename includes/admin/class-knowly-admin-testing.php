@@ -7,12 +7,13 @@
  * giving real confidence that the full stack is working.
  *
  * Test groups:
- *   System     — JWT secret, DB tables, Railway connection
- *   Auth       — Login, /me, PIN set/verify
- *   Children   — Create, list, switch, remove
- *   Exams      — Catalogue, start, checkpoint, submit
- *   Results    — History, stats, session detail
- *   Insights   — Per-exam insight, weekly digest
+ *   System              — JWT secret, DB tables, Railway connection
+ *   Auth                — Login, /me, PIN set/verify
+ *   Children            — Create, list, switch, remove
+ *   Exams               — Catalogue, start, checkpoint, submit
+ *   Results             — History, stats, session detail
+ *   Insights            — Per-exam insight, weekly digest
+ *   Block 4 — Notifications — Create, list, count, respond, read-all
  *
  * @package KnowlyAPI
  */
@@ -117,6 +118,12 @@ class Knowly_Admin_Testing {
                 'results_stats'        => self::test_results_stats( $data ),
                 // Insights
                 'insights_weekly_build' => self::test_insights_weekly_build( $data ),
+                // Block 4 — Notifications
+                'notif_create'             => self::test_notif_create(),
+                'notif_list'               => self::test_notif_list( $data ),
+                'notif_count'              => self::test_notif_count( $data ),
+                'notif_respond'            => self::test_notif_respond( $data ),
+                'notif_read_all'           => self::test_notif_read_all( $data ),
                 // Block 2 — Teacher
                 'teacher_register'         => self::test_teacher_register(),
                 'teacher_login_pending'    => self::test_teacher_login_pending(),
@@ -366,6 +373,123 @@ class Knowly_Admin_Testing {
             'subjects'        => count( $payload['subjects'] ),
             'payload'         => $payload,
         ] );
+    }
+
+    // ── Block 4 Test Methods ──────────────────────────────────────────────────
+
+    private static function test_notif_create(): array {
+        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found. Run Block 2 account setup first.' );
+
+        $admin_token = self::get_admin_token();
+        if ( ! $admin_token ) return self::warn( 'Could not generate admin token.' );
+
+        $res = self::api_post( '/notifications', [
+            'recipient_user_id' => $parent_user->ID,
+            'type'              => 'confirmation',
+            'subject'           => 'block4_test',
+            'message'           => 'Block 4 test notification — please accept or decline.',
+            'payload'           => [ 'test' => true ],
+        ], $admin_token );
+
+        if ( $res['status'] === 201 && ! empty( $res['body']['data']['notification_id'] ) ) {
+            return self::pass( 'Notification created.', [
+                'notification_id'   => $res['body']['data']['notification_id'],
+                '_notification_id'  => $res['body']['data']['notification_id'], // carry forward
+                '_recipient_id'     => $parent_user->ID,
+            ] );
+        }
+
+        return self::fail( 'Notification create failed.', $res );
+    }
+
+    private static function test_notif_list( array $data ): array {
+        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found.' );
+
+        $token = Knowly_JWT::encode( $parent_user->ID );
+
+        $res = self::api_get( '/notifications?unread_only=false', $token );
+
+        if ( $res['status'] === 200 ) {
+            $notifications = $res['body']['data']['notifications'] ?? [];
+            return self::pass( 'Notifications listed.', [
+                'count'         => count( $notifications ),
+                'notifications' => array_map( fn( $n ) => [ 'id' => $n['id'], 'subject' => $n['subject'], 'is_read' => $n['is_read'] ], $notifications ),
+            ] );
+        }
+
+        return self::fail( 'Notification list failed.', $res );
+    }
+
+    private static function test_notif_count( array $data ): array {
+        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found.' );
+
+        $token = Knowly_JWT::encode( $parent_user->ID );
+        $res   = self::api_get( '/notifications/count', $token );
+
+        if ( $res['status'] === 200 && isset( $res['body']['data']['unread'] ) ) {
+            return self::pass( 'Unread count returned.', [
+                'unread' => $res['body']['data']['unread'],
+            ] );
+        }
+
+        return self::fail( 'Notification count failed.', $res );
+    }
+
+    private static function test_notif_respond( array $data ): array {
+        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found.' );
+
+        // Find the most recent unread confirmation from the test subject
+        global $wpdb;
+        $notif = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_notifications
+             WHERE recipient_user_id = %d AND type = 'confirmation' AND subject = 'block4_test' AND response IS NULL
+             ORDER BY id DESC LIMIT 1",
+            $parent_user->ID
+        ) );
+
+        if ( ! $notif ) return self::warn( 'No block4_test confirmation notification found. Run notif_create first.' );
+
+        $token = Knowly_JWT::encode( $parent_user->ID );
+        $res   = self::api_post( "/notifications/{$notif->id}/respond", [ 'response' => 'accepted' ], $token );
+
+        if ( $res['status'] === 200 && ( $res['body']['data']['response'] ?? '' ) === 'accepted' ) {
+            return self::pass( "Notification {$notif->id} accepted.", $res['body']['data'] );
+        }
+
+        return self::fail( 'Notification respond failed.', $res );
+    }
+
+    private static function test_notif_read_all( array $data ): array {
+        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found.' );
+
+        $token = Knowly_JWT::encode( $parent_user->ID );
+
+        // Create a fresh unread notification first so there's something to mark
+        Knowly_Notification_Service::create( [
+            'recipient_user_id' => $parent_user->ID,
+            'type'              => 'simple',
+            'subject'           => 'block4_read_all_test',
+            'message'           => 'Read-all test — safe to ignore.',
+        ] );
+
+        $res = self::api_post( '/notifications/read-all', [], $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'read-all failed.', $res );
+        }
+
+        // Verify count is now 0
+        $count_res = self::api_get( '/notifications/count', $token );
+        $unread    = $count_res['body']['data']['unread'] ?? -1;
+
+        return $unread === 0
+            ? self::pass( 'All notifications marked read. Unread count is 0.', [ 'marked_read' => $res['body']['data']['marked_read'] ?? null ] )
+            : self::fail( "read-all ran but unread count is still {$unread}.", $res );
     }
 
     // ── Block 2 Test Methods ──────────────────────────────────────────────────
@@ -658,6 +782,16 @@ class Knowly_Admin_Testing {
                 'label' => '💡 Insights',
                 'tests' => [
                     'insights_weekly_build' => [ 'label' => 'Build weekly payload', 'method' => 'CHECK', 'route' => '' ],
+                ],
+            ],
+            'block4_notifications' => [
+                'label' => '🔔 Block 4 — Notifications',
+                'tests' => [
+                    'notif_create'    => [ 'label' => 'Admin creates confirmation notification for test parent', 'method' => 'POST',  'route' => '/notifications' ],
+                    'notif_list'      => [ 'label' => 'List all notifications for test parent',                  'method' => 'GET',   'route' => '/notifications' ],
+                    'notif_count'     => [ 'label' => 'Unread count endpoint returns integer',                   'method' => 'GET',   'route' => '/notifications/count' ],
+                    'notif_respond'   => [ 'label' => 'Accept block4_test confirmation notification',            'method' => 'POST',  'route' => '/notifications/{id}/respond' ],
+                    'notif_read_all'  => [ 'label' => 'Mark all read → verify unread count is 0',               'method' => 'POST',  'route' => '/notifications/read-all' ],
                 ],
             ],
             'block2_setup' => [

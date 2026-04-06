@@ -1,5 +1,29 @@
 # KnowlyAPI Plugin — Changelog
 
+## [1.4.0] — 2026-04-06 — Block 4: Notifications API
+
+### New API Endpoints
+- `GET  /notifications` — JWT — list notifications for the authenticated user (`?unread_only=true` default, `?limit`, `?offset`)
+- `GET  /notifications/count` — JWT — unread count only, for badge rendering
+- `POST /notifications` — Admin JWT — create a notification (simple or confirmation type)
+- `POST /notifications/{id}/read` — JWT — mark one notification as read
+- `POST /notifications/read-all` — JWT — mark all notifications as read for the authenticated user
+- `POST /notifications/{id}/respond` — JWT — accept or decline a confirmation notification
+
+### Service Updates — `Knowly_Notification_Service`
+- `list_for_user()` now accepts `$limit` and `$offset` parameters (pagination)
+- `count_unread()` added — single integer query for badge use
+- `mark_all_read()` added — bulk mark read, returns row count
+
+### WP Admin — Dashboard
+- Unread notification count added to stat grid (highlighted red when > 0)
+- Endpoint reference table updated with all 6 Block 4 routes
+
+### Test Suite — New Group
+- **Block 4 — Notifications** (5 tests): admin create, list, count, respond to confirmation, read-all + verify count is 0
+
+---
+
 ## [1.3.0] — 2026-04-06 — Block 3: Gem Economy
 
 ### New Database Tables
