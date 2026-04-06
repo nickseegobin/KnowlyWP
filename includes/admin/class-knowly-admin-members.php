@@ -458,8 +458,8 @@ class Knowly_Admin_Members {
                     display_name: $('#ac-display-name').val(),
                     username:     $('#ac-username').val(),
                     password:     $('#ac-password').val(),
-                    standard:     std,
-                    term:         std === 'std_4' ? $('#ac-term').val() : '',
+                    level:        std,
+                    period:       std === 'std_4' ? $('#ac-term').val() : '',
                     age:          $('#ac-age').val()
                 }, function(res) {
                     $btn.prop('disabled', false).text('Add Child');
@@ -754,12 +754,20 @@ class Knowly_Admin_Members {
             wp_send_json_error( [ 'message' => 'Invalid parent account.' ] );
         }
 
+        // The admin form sends display_name (child's first name) and username (used as nickname/login).
+        // Map these into the fields create_child() expects.
+        $display_name = sanitize_text_field( $_POST['display_name'] ?? '' );
+        $parts        = explode( ' ', $display_name, 2 );
+        $first_name   = $parts[0];
+        $last_name    = $parts[1] ?? '';
+
         $data = [
-            'username'     => sanitize_user( $_POST['username']     ?? '' ),
-            'display_name' => sanitize_text_field( $_POST['display_name'] ?? '' ),
-            'password'     => $_POST['password'] ?? '',
-            'level'     => sanitize_text_field( $_POST['level']     ?? 'std_4' ),
-            'period'   => sanitize_text_field( $_POST['period']         ?? '' ),
+            'first_name' => $first_name,
+            'last_name'  => $last_name,
+            'nickname'   => sanitize_user( $_POST['username'] ?? '' ),   // username field = WP login / nickname
+            'password'   => $_POST['password'] ?? '',
+            'level'      => sanitize_text_field( $_POST['level']   ?? ( $_POST['standard'] ?? 'std_4' ) ),
+            'period'     => sanitize_text_field( $_POST['period']  ?? ( $_POST['term']     ?? '' ) ),
         ];
         if ( ! empty( $_POST['age'] ) ) {
             $data['age'] = (int) $_POST['age'];
