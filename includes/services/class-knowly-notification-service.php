@@ -62,6 +62,28 @@ class Knowly_Notification_Service {
         return (int) $wpdb->insert_id;
     }
 
+    // ── Get Single ───────────────────────────────────────────────────────────
+
+    /**
+     * Fetch a single notification by ID, scoped to the given recipient.
+     *
+     * @return array|WP_Error  Formatted notification row.
+     */
+    public static function get( int $notification_id, int $user_id ): array|WP_Error {
+        global $wpdb;
+
+        $row = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}knowly_notifications WHERE id = %d AND recipient_user_id = %d",
+            $notification_id, $user_id
+        ), ARRAY_A );
+
+        if ( ! $row ) {
+            return new WP_Error( 'knowly_not_found', 'Notification not found.', [ 'status' => 404 ] );
+        }
+
+        return self::format_row( $row );
+    }
+
     // ── List ──────────────────────────────────────────────────────────────────
 
     /**

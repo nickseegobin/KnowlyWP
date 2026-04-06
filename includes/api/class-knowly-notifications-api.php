@@ -149,17 +149,38 @@ class Knowly_Notifications_API extends Knowly_API_Base {
     }
 
     public function respond( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-        $user_id = $this->authenticate( $request );
+        $user_id  = $this->authenticate( $request );
         if ( is_wp_error( $user_id ) ) return $user_id;
 
-        $result = Knowly_Notification_Service::respond(
-            (int) $request['id'],
-            $user_id,
-            $request->get_param( 'response' )
-        );
+        $notification_id = (int) $request['id'];
+        $response        = $request->get_param( 'response' );
 
+        // Fetch notification before recording response so we can act on its payload
+        $notif = Knowly_Notification_Service::get( $notification_id, $user_id );
+        if ( is_wp_error( $notif ) ) return $notif;
+
+        $result = Knowly_Notification_Service::respond( $notification_id, $user_id, $response );
         if ( is_wp_error( $result ) ) return $result;
 
-        return $this->success( [ 'responded' => true, 'response' => $request->get_param( 'response' ) ] );
+        // Post-respond hook: class invitation accepted → add child to class
+        if ( $notif['subject'] === 'class_invitation' && $response === 'accepted' ) {
+            $payload  = $notif['payload'];
+            $class_id = (int) ( $payload['class_id'] ?? 0 );
+            $child_id = (int) ( $payload['child_id'] ?? 0 );
+
+            if ( $class_id && $child_id ) {
+                $add = Knowly_Class_Service::add_member( $class_id, $child_id, $user_id );
+                if ( is_wp_error( $add ) ) {
+                    Knowly_Debug::log( 'notification.respond', 'add_member failed after class_invitation accepted', [
+                        'notification_id' => $notification_id,
+                        'class_id'        => $class_id,
+                        'child_id'        => $child_id,
+                        'error'           => $add->get_error_message(),
+                    ], $user_id, 'error' );
+                }
+            }
+        }
+
+        return $this->success( [ 'responded' => true, 'response' => $response ] );
     }
 }

@@ -255,7 +255,50 @@ class Knowly_Activator {
             UNIQUE KEY     uq_transaction (transaction_id)
         ) {$charset};" );
 
-        // ── 14. Debug Log ─────────────────────────────────────────────────────
+        // ── 14. Classes ───────────────────────────────────────────────────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_classes (
+            id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            teacher_user_id BIGINT UNSIGNED NOT NULL,
+            name            VARCHAR(100)    NOT NULL DEFAULT '',
+            description     TEXT                     DEFAULT NULL,
+            level           VARCHAR(20)     NOT NULL DEFAULT '',
+            created_at      DATETIME        NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_teacher (teacher_user_id)
+        ) {$charset};" );
+
+        // ── 15. Class Members ─────────────────────────────────────────────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_class_members (
+            id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            class_id   BIGINT UNSIGNED NOT NULL,
+            child_id   BIGINT UNSIGNED NOT NULL,
+            parent_id  BIGINT UNSIGNED NOT NULL,
+            status     ENUM('active','removed') NOT NULL DEFAULT 'active',
+            joined_at  DATETIME        NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_class_child (class_id, child_id),
+            KEY idx_class (class_id),
+            KEY idx_child (child_id)
+        ) {$charset};" );
+
+        // ── 16. Tasks ─────────────────────────────────────────────────────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_tasks (
+            id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            class_id        BIGINT UNSIGNED NOT NULL,
+            teacher_user_id BIGINT UNSIGNED NOT NULL,
+            title           VARCHAR(200)    NOT NULL DEFAULT '',
+            description     TEXT                     DEFAULT NULL,
+            subject         VARCHAR(100)             DEFAULT NULL,
+            difficulty      ENUM('easy','medium','hard') DEFAULT NULL,
+            due_date        DATE                     DEFAULT NULL,
+            gem_cost        TINYINT UNSIGNED NOT NULL DEFAULT 1,
+            created_at      DATETIME        NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_class (class_id),
+            KEY idx_teacher (teacher_user_id)
+        ) {$charset};" );
+
+        // ── 17. Debug Log ─────────────────────────────────────────────────────────
         dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_debug_log (
             log_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             level      ENUM('debug','info','warning','error') NOT NULL DEFAULT 'info',
@@ -318,6 +361,8 @@ class Knowly_Activator {
             'knowly_fygaro_merchant_id'    => '',
             'knowly_fygaro_api_key'        => '',
             'knowly_fygaro_webhook_secret' => '',
+            // Block 5 — Classes
+            'knowly_task_gem_cost'         => 1,
         ];
 
         foreach ( $defaults as $key => $value ) {

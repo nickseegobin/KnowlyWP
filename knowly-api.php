@@ -3,7 +3,7 @@
  * Plugin Name:  KnowlyAPI
  * Plugin URI:   https://knowly.app
  * Description:  Unified REST API for the Knowly learning platform. React / Next.js interface only — no WP front-end output.
- * Version:      1.4.0
+ * Version:      1.5.0
  * Author:       Knowly
  * Requires PHP: 8.0
  * Requires at least: 6.3
@@ -14,8 +14,8 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ────────────────────────────────────────────────────────────────
-define( 'KNOWLY_VERSION',            '1.4.0' );
-define( 'KNOWLY_DB_VERSION',         '1.3' );
+define( 'KNOWLY_VERSION',            '1.5.0' );
+define( 'KNOWLY_DB_VERSION',         '1.4' );
 define( 'KNOWLY_PLUGIN_FILE',        __FILE__ );
 define( 'KNOWLY_PLUGIN_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'KNOWLY_PLUGIN_URL',         plugin_dir_url( __FILE__ ) );
@@ -84,6 +84,11 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Red_Gem_Service'        => 'includes/services/class-knowly-red-gem-service.php',
         'Knowly_Gems_API'               => 'includes/api/class-knowly-gems-api.php',
         'Knowly_Admin_Gems'             => 'includes/admin/class-knowly-admin-gems.php',
+        // Block 5 — Class Management
+        'Knowly_Class_Service'          => 'includes/services/class-knowly-class-service.php',
+        'Knowly_Task_Service'           => 'includes/services/class-knowly-task-service.php',
+        'Knowly_Classes_API'            => 'includes/api/class-knowly-classes-api.php',
+        'Knowly_Admin_Classes'          => 'includes/admin/class-knowly-admin-classes.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {

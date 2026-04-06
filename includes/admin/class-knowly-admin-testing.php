@@ -137,6 +137,15 @@ class Knowly_Admin_Testing {
                 'notifications_list'       => self::test_notification_list( $data ),
                 // Block 2 — Test Accounts
                 'provision_test_accounts'  => self::test_provision_accounts(),
+                // Block 5 — Classes
+                'class5_create'            => self::test_class5_create(),
+                'class5_child_lookup'      => self::test_class5_child_lookup(),
+                'class5_invite'            => self::test_class5_invite( $data ),
+                'class5_parent_accept'     => self::test_class5_parent_accept( $data ),
+                'class5_verify_member'     => self::test_class5_verify_member( $data ),
+                'class5_create_task'       => self::test_class5_create_task( $data ),
+                'class5_list_tasks'        => self::test_class5_list_tasks( $data ),
+                'class5_child_classes'     => self::test_class5_child_classes(),
                 default                    => [ 'pass' => false, 'message' => "Unknown test: {$test_id}" ],
             };
         } catch ( Throwable $e ) {
@@ -171,6 +180,7 @@ class Knowly_Admin_Testing {
             'knowly_exam_insights', 'knowly_weekly_insights',
             'knowly_notifications', 'knowly_migration_log', 'knowly_debug_log',
             'knowly_gem_transactions', 'knowly_red_gem_transactions', 'knowly_processed_webhooks',
+            'knowly_classes', 'knowly_class_members', 'knowly_tasks',
         ];
 
         $missing = [];
@@ -734,6 +744,212 @@ class Knowly_Admin_Testing {
             : self::fail( 'Some accounts failed to provision.', [ 'report' => implode( "\n", $report ) ] );
     }
 
+    // ── Block 5 Test Methods ──────────────────────────────────────────────────
+
+    private static function test_class5_create(): array {
+        $teacher_user = get_user_by( 'email', 'test.teacher@knowly.test' );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found. Run Block 2 account setup first.' );
+
+        $token = Knowly_JWT::encode( $teacher_user->ID );
+        $res   = self::api_post( '/classes', [
+            'name'        => 'Math 4A',
+            'description' => 'Block 5 test class',
+            'level'       => 'std_4',
+        ], $token );
+
+        if ( $res['status'] === 201 && ! empty( $res['body']['data']['class_id'] ) ) {
+            return self::pass( 'Class created.', [
+                'class_id'   => $res['body']['data']['class_id'],
+                '_class_id'  => $res['body']['data']['class_id'], // carry forward
+            ] );
+        }
+
+        return self::fail( 'Class creation failed.', $res );
+    }
+
+    private static function test_class5_child_lookup(): array {
+        $teacher_user = get_user_by( 'email', 'test.teacher@knowly.test' );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found.' );
+
+        $token = Knowly_JWT::encode( $teacher_user->ID );
+        $res   = self::api_get( '/classes/child-lookup?nickname=TestKid', $token );
+
+        if ( $res['status'] === 200 && ! empty( $res['body']['data']['child_id'] ) ) {
+            return self::pass( 'Child found by nickname.', [
+                'child_id'  => $res['body']['data']['child_id'],
+                'nickname'  => $res['body']['data']['nickname'],
+                'parent_id' => $res['body']['data']['parent_id'],
+            ] );
+        }
+
+        return self::fail( 'Child lookup failed.', $res );
+    }
+
+    private static function test_class5_invite( array $data ): array {
+        $teacher_user = get_user_by( 'email', 'test.teacher@knowly.test' );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found.' );
+
+        // Find the most recent test class
+        global $wpdb;
+        $class = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_classes WHERE teacher_user_id = %d AND name = 'Math 4A' ORDER BY id DESC LIMIT 1",
+            $teacher_user->ID
+        ) );
+        if ( ! $class ) return self::warn( 'Math 4A class not found. Run class5_create first.' );
+
+        $token = Knowly_JWT::encode( $teacher_user->ID );
+        $res   = self::api_post( "/classes/{$class->id}/invite", [ 'child_nickname' => 'TestKid' ], $token );
+
+        if ( $res['status'] === 200 && ! empty( $res['body']['data']['parent_notif_id'] ) ) {
+            return self::pass( 'Invite sent. Child and parent notifications created.', [
+                'class_id'        => $class->id,
+                'child_notif_id'  => $res['body']['data']['child_notif_id'],
+                'parent_notif_id' => $res['body']['data']['parent_notif_id'],
+                'child_id'        => $res['body']['data']['child_id'],
+                'parent_id'       => $res['body']['data']['parent_id'],
+                '_parent_notif_id' => $res['body']['data']['parent_notif_id'],
+            ] );
+        }
+
+        return self::fail( 'Invite failed.', $res );
+    }
+
+    private static function test_class5_parent_accept( array $data ): array {
+        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found.' );
+
+        // Find the most recent class_invitation confirmation for test parent
+        global $wpdb;
+        $notif = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_notifications
+             WHERE recipient_user_id = %d AND type = 'confirmation' AND subject = 'class_invitation' AND response IS NULL
+             ORDER BY id DESC LIMIT 1",
+            $parent_user->ID
+        ) );
+
+        if ( ! $notif ) return self::warn( 'No pending class_invitation notification for test parent. Run class5_invite first.' );
+
+        $token = Knowly_JWT::encode( $parent_user->ID );
+        $res   = self::api_post( "/notifications/{$notif->id}/respond", [ 'response' => 'accepted' ], $token );
+
+        if ( $res['status'] === 200 && ( $res['body']['data']['response'] ?? '' ) === 'accepted' ) {
+            return self::pass( "Parent accepted invite (notif #{$notif->id}). Child should now be a class member.", $res['body']['data'] );
+        }
+
+        return self::fail( 'Parent accept failed.', $res );
+    }
+
+    private static function test_class5_verify_member( array $data ): array {
+        $teacher_user = get_user_by( 'email', 'test.teacher@knowly.test' );
+        $child_user   = get_user_by( 'login', 'test.child' );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found.' );
+        if ( ! $child_user )   return self::warn( 'Test child not found.' );
+
+        global $wpdb;
+        $class = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_classes WHERE teacher_user_id = %d AND name = 'Math 4A' ORDER BY id DESC LIMIT 1",
+            $teacher_user->ID
+        ) );
+        if ( ! $class ) return self::warn( 'Math 4A class not found.' );
+
+        $member = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}knowly_class_members WHERE class_id = %d AND child_id = %d AND status = 'active'",
+            $class->id, $child_user->ID
+        ) );
+
+        if ( $member ) {
+            return self::pass( 'Child is confirmed as an active class member.', [
+                'class_id'  => $class->id,
+                'child_id'  => (int) $child_user->ID,
+                'joined_at' => $member->joined_at,
+            ] );
+        }
+
+        return self::fail( 'Child is NOT a member of the class. Check that class5_parent_accept ran successfully.', [
+            'class_id' => $class->id,
+            'child_id' => (int) $child_user->ID,
+        ] );
+    }
+
+    private static function test_class5_create_task( array $data ): array {
+        $teacher_user = get_user_by( 'email', 'test.teacher@knowly.test' );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found.' );
+
+        global $wpdb;
+        $class = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_classes WHERE teacher_user_id = %d AND name = 'Math 4A' ORDER BY id DESC LIMIT 1",
+            $teacher_user->ID
+        ) );
+        if ( ! $class ) return self::warn( 'Math 4A class not found. Run class5_create first.' );
+
+        $red_gems_before = (int) get_user_meta( $teacher_user->ID, 'knowly_red_gem_balance', true );
+
+        $token = Knowly_JWT::encode( $teacher_user->ID );
+        $res   = self::api_post( "/classes/{$class->id}/tasks", [
+            'title'       => 'Block 5 Test Task',
+            'description' => 'Practise fractions.',
+            'subject'     => 'Mathematics',
+            'difficulty'  => 'easy',
+            'due_date'    => date( 'Y-m-d', strtotime( '+7 days' ) ),
+        ], $token );
+
+        if ( $res['status'] === 201 && ! empty( $res['body']['data']['task_id'] ) ) {
+            $red_gems_after = (int) get_user_meta( $teacher_user->ID, 'knowly_red_gem_balance', true );
+            return self::pass( 'Task created. Red gem deducted.', [
+                'task_id'          => $res['body']['data']['task_id'],
+                'gem_cost'         => $res['body']['data']['gem_cost'],
+                'red_gems_before'  => $red_gems_before,
+                'red_gems_after'   => $red_gems_after,
+            ] );
+        }
+
+        return self::fail( 'Task creation failed.', $res );
+    }
+
+    private static function test_class5_list_tasks( array $data ): array {
+        $teacher_user = get_user_by( 'email', 'test.teacher@knowly.test' );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found.' );
+
+        global $wpdb;
+        $class = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_classes WHERE teacher_user_id = %d AND name = 'Math 4A' ORDER BY id DESC LIMIT 1",
+            $teacher_user->ID
+        ) );
+        if ( ! $class ) return self::warn( 'Math 4A class not found.' );
+
+        $token = Knowly_JWT::encode( $teacher_user->ID );
+        $res   = self::api_get( "/classes/{$class->id}/tasks", $token );
+
+        if ( $res['status'] === 200 && isset( $res['body']['data']['count'] ) ) {
+            return self::pass( 'Tasks listed.', [
+                'count' => $res['body']['data']['count'],
+                'tasks' => array_map( fn( $t ) => [ 'id' => $t['id'], 'title' => $t['title'] ], $res['body']['data']['tasks'] ?? [] ),
+            ] );
+        }
+
+        return self::fail( 'Task list failed.', $res );
+    }
+
+    private static function test_class5_child_classes(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found.' );
+
+        $token = Knowly_JWT::encode( $child_user->ID );
+        $res   = self::api_get( '/classes/my', $token );
+
+        if ( $res['status'] === 200 && isset( $res['body']['data']['count'] ) ) {
+            $count = $res['body']['data']['count'];
+            return $count > 0
+                ? self::pass( "Child is enrolled in {$count} class(es).", [
+                    'count'   => $count,
+                    'classes' => array_map( fn( $c ) => [ 'id' => $c['id'], 'name' => $c['name'] ], $res['body']['data']['classes'] ?? [] ),
+                ] )
+                : self::warn( 'Child has no enrolled classes. Verify class5_parent_accept succeeded.', $res['body']['data'] );
+        }
+
+        return self::fail( 'GET /classes/my failed.', $res );
+    }
+
     // ── Test Definition List ──────────────────────────────────────────────────
 
     private static function test_groups(): array {
@@ -814,6 +1030,19 @@ class Knowly_Admin_Testing {
                     'teacher_login_pending'  => [ 'label' => 'Pending teacher can log in (sees status)',     'method' => 'POST',  'route' => '/auth/login' ],
                     'teacher_approve'        => [ 'label' => 'Approve test teacher (admin action)',          'method' => 'CHECK', 'route' => '' ],
                     'teacher_login_approved' => [ 'label' => 'Approved teacher logs in (approval_status ok)','method' => 'POST',  'route' => '/auth/login' ],
+                ],
+            ],
+            'block5_classes' => [
+                'label' => '🏫 Block 5 — Classes',
+                'tests' => [
+                    'class5_create'        => [ 'label' => 'Teacher creates class "Math 4A"',                                'method' => 'POST',  'route' => '/classes' ],
+                    'class5_child_lookup'  => [ 'label' => 'Teacher looks up test child by nickname "TestKid"',             'method' => 'GET',   'route' => '/classes/child-lookup' ],
+                    'class5_invite'        => [ 'label' => 'Teacher invites TestKid → dual notifications sent',             'method' => 'POST',  'route' => '/classes/{id}/invite' ],
+                    'class5_parent_accept' => [ 'label' => 'Parent accepts invitation → child added to class',             'method' => 'POST',  'route' => '/notifications/{id}/respond' ],
+                    'class5_verify_member' => [ 'label' => 'Verify child is an active class member',                       'method' => 'GET',   'route' => '/classes/{id}/members' ],
+                    'class5_create_task'   => [ 'label' => 'Teacher creates task (red gem deducted)',                      'method' => 'POST',  'route' => '/classes/{id}/tasks' ],
+                    'class5_list_tasks'    => [ 'label' => 'List tasks for class → task appears',                          'method' => 'GET',   'route' => '/classes/{id}/tasks' ],
+                    'class5_child_classes' => [ 'label' => 'Child lists their enrolled classes',                           'method' => 'GET',   'route' => '/classes/my' ],
                 ],
             ],
             'block2_notifications' => [

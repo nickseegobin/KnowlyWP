@@ -1,5 +1,49 @@
 # KnowlyAPI Plugin — Changelog
 
+## [1.5.0] — 2026-04-06 — Block 5: Class Management
+
+### New Database Tables
+- `knowly_classes` — teacher classes (teacher_user_id, name, description, level)
+- `knowly_class_members` — child enrolment (class_id, child_id, parent_id, status active/removed)
+- `knowly_tasks` — class tasks (class_id, teacher_user_id, title, description, subject, difficulty, due_date, gem_cost)
+
+### New Services
+- `Knowly_Class_Service` — create, get, list (teacher/child), find child by nickname, invite (dual notification), add_member, remove_member, teacher_owns guard
+- `Knowly_Task_Service` — create (red gem deduction), list for class. Cost read from `knowly_task_gem_cost` option (default 1)
+
+### New API Endpoints — Teacher (JWT Teacher)
+- `POST /classes` — Create a class
+- `GET  /classes` — List teacher's classes (with member + task counts)
+- `GET  /classes/{id}` — Class detail (members + tasks inline)
+- `GET  /classes/child-lookup?nickname=X` — Find student by public nickname
+- `POST /classes/{id}/invite` — Invite child by nickname → creates simple notif for child + confirmation notif for parent
+- `GET  /classes/{id}/members` — List active members
+- `DELETE /classes/{id}/members/{child_id}` — Remove a member (soft delete)
+- `POST /classes/{id}/tasks` — Create task (deducts red gem)
+- `GET  /classes/{id}/tasks` — List tasks for class
+
+### New API Endpoint — Child (JWT Child)
+- `GET /classes/my` — List classes the student is enrolled in
+
+### Notification Respond — Class Invitation Flow
+- `POST /notifications/{id}/respond` now triggers `Knowly_Class_Service::add_member()` automatically when a parent accepts a `class_invitation` confirmation notification
+- `Knowly_Notification_Service::get()` added — single notification fetch scoped to recipient
+
+### WP Admin
+- **Classes** submenu added (between Gems and Settings)
+  - Summary stat grid: total classes, active memberships, tasks created
+  - Full class table: teacher, level, member count, task count, date
+  - Settings: `knowly_task_gem_cost` (red gems per task)
+- **Dashboard** — Classes count added to stat grid, Classes quick link added
+
+### Default Options Added
+- `knowly_task_gem_cost` — `1` (red gems deducted per task creation)
+
+### Test Suite — New Group
+- **Block 5 — Classes** (8 tests): create class, child lookup, invite, parent accept, verify member, create task, list tasks, child lists classes
+
+---
+
 ## [1.4.0] — 2026-04-06 — Block 4: Notifications API
 
 ### New API Endpoints
