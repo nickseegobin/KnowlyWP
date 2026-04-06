@@ -61,38 +61,38 @@ class Knowly_Admin_Tokens {
         $dev_bypass = (bool) get_option( 'knowly_dev_bypass_tokens', false );
         $next_refresh = wp_next_scheduled( 'knowly_monthly_token_refresh' );
         ?>
-        <div class="wrap noey-wrap">
+        <div class="wrap knowly-wrap">
             <h1>KnowlyAPI — Tokens</h1>
 
             <!-- Dev Bypass Banner -->
             <?php if ( $dev_bypass ) : ?>
             <div class="notice notice-warning" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;">
                 <p style="margin:0;font-weight:600;">⚠ Dev Bypass is ON — tokens are not being deducted for any exam.</p>
-                <button class="button noey-bypass-toggle" data-state="1">Turn Off Bypass</button>
+                <button class="button knowly-bypass-toggle" data-state="1">Turn Off Bypass</button>
             </div>
             <?php endif; ?>
 
             <!-- Stats -->
-            <div class="noey-stat-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:24px;">
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number" id="noey-stat-circulation"><?= esc_html( $total_in_circulation ) ?></div>
-                    <div class="noey-stat-label">Tokens in Circulation</div>
+            <div class="knowly-stat-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:24px;">
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number" id="knowly-stat-circulation"><?= esc_html( $total_in_circulation ) ?></div>
+                    <div class="knowly-stat-label">Tokens in Circulation</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $total_lifetime_spent ) ?></div>
-                    <div class="noey-stat-label">Total Ever Spent</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $total_lifetime_spent ) ?></div>
+                    <div class="knowly-stat-label">Total Ever Spent</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number" style="color:<?= $zero_balance_count > 0 ? '#dc2626' : '#16a34a' ?>;"><?= esc_html( $zero_balance_count ) ?></div>
-                    <div class="noey-stat-label">Zero Balance Accounts</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number" style="color:<?= $zero_balance_count > 0 ? '#dc2626' : '#16a34a' ?>;"><?= esc_html( $zero_balance_count ) ?></div>
+                    <div class="knowly-stat-label">Zero Balance Accounts</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $total_tx ) ?></div>
-                    <div class="noey-stat-label">Total Transactions</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $total_tx ) ?></div>
+                    <div class="knowly-stat-label">Total Transactions</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $premium_count ) ?></div>
-                    <div class="noey-stat-label">Premium Accounts</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $premium_count ) ?></div>
+                    <div class="knowly-stat-label">Premium Accounts</div>
                 </div>
             </div>
 
@@ -103,9 +103,9 @@ class Knowly_Admin_Tokens {
                     <!-- Toolbar -->
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap;">
                         <div style="display:flex;gap:8px;align-items:center;">
-                            <input type="text" id="noey-token-search" placeholder="Search by name or email…"
+                            <input type="text" id="knowly-token-search" placeholder="Search by name or email…"
                                 class="regular-text" style="height:32px;max-width:260px;" />
-                            <select id="noey-token-filter" style="height:32px;">
+                            <select id="knowly-token-filter" style="height:32px;">
                                 <option value="all">All accounts</option>
                                 <option value="zero">Zero balance</option>
                                 <option value="premium">Premium</option>
@@ -113,21 +113,21 @@ class Knowly_Admin_Tokens {
                             </select>
                         </div>
                         <div style="display:flex;gap:6px;">
-                            <button id="noey-bulk-credit-btn" class="button">Bulk Credit…</button>
-                            <button id="noey-monthly-refresh-btn" class="button">
+                            <button id="knowly-bulk-credit-btn" class="button">Bulk Credit…</button>
+                            <button id="knowly-monthly-refresh-btn" class="button">
                                 Run Monthly Refresh
                                 <?php if ( $next_refresh ) : ?>
                                     <span style="font-size:10px;color:#888;font-weight:400;">(next: <?= esc_html( date_i18n( 'M j', $next_refresh ) ) ?>)</span>
                                 <?php endif; ?>
                             </button>
                             <?php if ( ! $dev_bypass ) : ?>
-                            <button class="button noey-bypass-toggle" data-state="0">Enable Dev Bypass</button>
+                            <button class="button knowly-bypass-toggle" data-state="0">Enable Dev Bypass</button>
                             <?php endif; ?>
                         </div>
                     </div>
 
-                    <div class="noey-settings-section" style="padding:0;overflow:hidden;">
-                        <table class="noey-table noey-token-table" style="border:none;border-radius:0;">
+                    <div class="knowly-settings-section" style="padding:0;overflow:hidden;">
+                        <table class="knowly-table knowly-token-table" style="border:none;border-radius:0;">
                             <thead>
                                 <tr>
                                     <th>Account</th>
@@ -149,7 +149,7 @@ class Knowly_Admin_Tokens {
                                 ) );
                                 $bal_color  = $balance === 0 ? '#dc2626' : ( $balance <= 2 ? '#d97706' : '#16a34a' );
                             ?>
-                            <tr class="noey-token-row"
+                            <tr class="knowly-token-row"
                                 data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                 data-balance="<?= esc_attr( $balance ) ?>"
                                 data-name="<?= esc_attr( strtolower( $parent->display_name ) ) ?>"
@@ -161,7 +161,7 @@ class Knowly_Admin_Tokens {
                                     <div style="font-size:11px;color:#888;">@<?= esc_html( $parent->user_login ) ?> · <?= esc_html( $parent->user_email ) ?></div>
                                 </td>
                                 <td style="text-align:center;">
-                                    <span class="noey-balance-cell" style="font-size:20px;font-weight:700;color:<?= $bal_color ?>;"><?= esc_html( $balance ) ?></span>
+                                    <span class="knowly-balance-cell" style="font-size:20px;font-weight:700;color:<?= $bal_color ?>;"><?= esc_html( $balance ) ?></span>
                                 </td>
                                 <td style="text-align:center;color:#888;font-weight:600;"><?= esc_html( $lifetime ) ?></td>
                                 <td style="font-size:11px;">
@@ -177,7 +177,7 @@ class Knowly_Admin_Tokens {
                                     <?php endif; ?>
                                 </td>
                                 <td style="text-align:center;">
-                                    <button class="button button-small noey-premium-toggle"
+                                    <button class="button button-small knowly-premium-toggle"
                                         data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                         data-state="<?= esc_attr( $is_premium ? '1' : '0' ) ?>"
                                         style="<?= $is_premium ? 'color:#2563eb;border-color:#2563eb;font-weight:600;' : '' ?>">
@@ -186,7 +186,7 @@ class Knowly_Admin_Tokens {
                                 </td>
                                 <td>
                                     <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                                        <button class="button button-small noey-token-action"
+                                        <button class="button button-small knowly-token-action"
                                             data-action="credit"
                                             data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                             data-name="<?= esc_attr( $parent->display_name ) ?>"
@@ -194,7 +194,7 @@ class Knowly_Admin_Tokens {
                                             style="color:#16a34a;border-color:#16a34a;">
                                             + Credit
                                         </button>
-                                        <button class="button button-small noey-token-action"
+                                        <button class="button button-small knowly-token-action"
                                             data-action="deduct"
                                             data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                             data-name="<?= esc_attr( $parent->display_name ) ?>"
@@ -202,14 +202,14 @@ class Knowly_Admin_Tokens {
                                             style="color:#dc2626;border-color:#dc2626;">
                                             − Deduct
                                         </button>
-                                        <button class="button button-small noey-token-action"
+                                        <button class="button button-small knowly-token-action"
                                             data-action="set"
                                             data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                             data-name="<?= esc_attr( $parent->display_name ) ?>"
                                             data-balance="<?= esc_attr( $balance ) ?>">
                                             = Set
                                         </button>
-                                        <button class="button button-small noey-view-ledger"
+                                        <button class="button button-small knowly-view-ledger"
                                             data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                             data-name="<?= esc_attr( $parent->display_name ) ?>">
                                             Ledger
@@ -230,24 +230,24 @@ class Knowly_Admin_Tokens {
                 <div style="display:flex;flex-direction:column;gap:16px;">
 
                     <!-- Dev bypass -->
-                    <div class="noey-settings-section">
+                    <div class="knowly-settings-section">
                         <h2>Dev Token Bypass</h2>
                         <p style="font-size:12px;color:#666;margin-bottom:10px;">
                             When ON, <strong>no tokens are deducted</strong> for any exam — useful for testing.
                             Does not affect credits or ledger writes.
                         </p>
                         <div style="display:flex;align-items:center;gap:10px;">
-                            <span id="noey-bypass-status-label" style="font-size:13px;font-weight:600;color:<?= $dev_bypass ? '#dc2626' : '#16a34a' ?>;">
+                            <span id="knowly-bypass-status-label" style="font-size:13px;font-weight:600;color:<?= $dev_bypass ? '#dc2626' : '#16a34a' ?>;">
                                 <?= $dev_bypass ? 'ON' : 'OFF' ?>
                             </span>
-                            <button class="button noey-bypass-toggle" data-state="<?= $dev_bypass ? '1' : '0' ?>">
+                            <button class="button knowly-bypass-toggle" data-state="<?= $dev_bypass ? '1' : '0' ?>">
                                 <?= $dev_bypass ? 'Disable Bypass' : 'Enable Bypass' ?>
                             </button>
                         </div>
                     </div>
 
                     <!-- Monthly refresh info -->
-                    <div class="noey-settings-section">
+                    <div class="knowly-settings-section">
                         <h2>Monthly Refresh</h2>
                         <p style="font-size:12px;color:#666;margin-bottom:6px;">
                             Resets all <em>free-tier</em> accounts to <strong><?= esc_html( KNOWLY_FREE_TOKEN_MONTHLY ) ?> tokens</strong>.
@@ -258,15 +258,15 @@ class Knowly_Admin_Tokens {
                             Next scheduled: <strong><?= esc_html( date_i18n( 'M j, Y', $next_refresh ) ) ?></strong>
                         </p>
                         <?php endif; ?>
-                        <button id="noey-monthly-refresh-sidebar" class="button" style="width:100%;">Run Now</button>
-                        <div id="noey-refresh-result" style="font-size:12px;margin-top:8px;"></div>
+                        <button id="knowly-monthly-refresh-sidebar" class="button" style="width:100%;">Run Now</button>
+                        <div id="knowly-refresh-result" style="font-size:12px;margin-top:8px;"></div>
                     </div>
 
                     <!-- Recent transactions -->
-                    <div class="noey-settings-section">
+                    <div class="knowly-settings-section">
                         <h2>Recent Transactions</h2>
-                        <button id="noey-load-recent" class="button" style="width:100%;margin-bottom:10px;">Load Recent</button>
-                        <div id="noey-recent-feed" style="font-size:11px;"></div>
+                        <button id="knowly-load-recent" class="button" style="width:100%;margin-bottom:10px;">Load Recent</button>
+                        <div id="knowly-recent-feed" style="font-size:11px;"></div>
                     </div>
 
                 </div>
@@ -274,13 +274,13 @@ class Knowly_Admin_Tokens {
         </div>
 
         <!-- ── Adjust Tokens Modal ─────────────────────────────────────────── -->
-        <div id="noey-adjust-modal" class="noey-modal-overlay" style="display:none;">
-            <div class="noey-modal-box" style="max-width:400px;">
-                <div class="noey-modal-header">
+        <div id="knowly-adjust-modal" class="knowly-modal-overlay" style="display:none;">
+            <div class="knowly-modal-box" style="max-width:400px;">
+                <div class="knowly-modal-header">
                     <h2 id="adj-title">Adjust Tokens</h2>
-                    <button class="button noey-modal-close">✕</button>
+                    <button class="button knowly-modal-close">✕</button>
                 </div>
-                <div class="noey-modal-body">
+                <div class="knowly-modal-body">
                     <input type="hidden" id="adj-parent-id" />
                     <input type="hidden" id="adj-action-type" />
                     <p id="adj-current-balance" style="font-size:13px;margin:0 0 12px;"></p>
@@ -292,32 +292,32 @@ class Knowly_Admin_Tokens {
                     </div>
                     <div id="adj-error" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
                 </div>
-                <div class="noey-modal-footer">
+                <div class="knowly-modal-footer">
                     <button id="adj-submit" class="button button-primary">Apply</button>
-                    <button class="button noey-modal-close">Cancel</button>
+                    <button class="button knowly-modal-close">Cancel</button>
                 </div>
             </div>
         </div>
 
         <!-- ── Ledger Modal ────────────────────────────────────────────────── -->
-        <div id="noey-ledger-modal" class="noey-modal-overlay" style="display:none;">
-            <div class="noey-modal-box" style="max-width:760px;">
-                <div class="noey-modal-header">
+        <div id="knowly-ledger-modal" class="knowly-modal-overlay" style="display:none;">
+            <div class="knowly-modal-box" style="max-width:760px;">
+                <div class="knowly-modal-header">
                     <h2>Token Ledger — <span id="ledger-name"></span></h2>
-                    <button class="button noey-modal-close">✕</button>
+                    <button class="button knowly-modal-close">✕</button>
                 </div>
-                <div id="ledger-body" class="noey-modal-body" style="max-height:65vh;overflow:auto;padding:20px;"></div>
+                <div id="ledger-body" class="knowly-modal-body" style="max-height:65vh;overflow:auto;padding:20px;"></div>
             </div>
         </div>
 
         <!-- ── Bulk Credit Modal ───────────────────────────────────────────── -->
-        <div id="noey-bulk-modal" class="noey-modal-overlay" style="display:none;">
-            <div class="noey-modal-box" style="max-width:420px;">
-                <div class="noey-modal-header">
+        <div id="knowly-bulk-modal" class="knowly-modal-overlay" style="display:none;">
+            <div class="knowly-modal-box" style="max-width:420px;">
+                <div class="knowly-modal-header">
                     <h2>Bulk Credit Tokens</h2>
-                    <button class="button noey-modal-close">✕</button>
+                    <button class="button knowly-modal-close">✕</button>
                 </div>
-                <div class="noey-modal-body">
+                <div class="knowly-modal-body">
                     <p style="font-size:13px;margin:0 0 12px;color:#444;">
                         Credits tokens to <strong>all parent accounts</strong>, or just those with a zero balance.
                     </p>
@@ -342,15 +342,15 @@ class Knowly_Admin_Tokens {
                     </table>
                     <div id="bulk-error" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
                 </div>
-                <div class="noey-modal-footer">
+                <div class="knowly-modal-footer">
                     <button id="bulk-submit" class="button button-primary">Credit All</button>
-                    <button class="button noey-modal-close">Cancel</button>
+                    <button class="button knowly-modal-close">Cancel</button>
                 </div>
             </div>
         </div>
 
         <style>
-        .noey-modal-overlay {
+        .knowly-modal-overlay {
             position: fixed; inset: 0;
             background: rgba(0,0,0,.5);
             z-index: 99999;
@@ -360,14 +360,14 @@ class Knowly_Admin_Tokens {
             padding-top: 60px;
             overflow: auto;
         }
-        .noey-modal-box {
+        .knowly-modal-box {
             background: #fff;
             width: 100%;
             border-radius: 8px;
             overflow: hidden;
             box-shadow: 0 20px 60px rgba(0,0,0,.3);
         }
-        .noey-modal-header {
+        .knowly-modal-header {
             padding: 14px 20px;
             background: #f6f7f7;
             border-bottom: 1px solid #ddd;
@@ -375,16 +375,16 @@ class Knowly_Admin_Tokens {
             justify-content: space-between;
             align-items: center;
         }
-        .noey-modal-header h2 { margin: 0; font-size: 15px; }
-        .noey-modal-body { padding: 20px; }
-        .noey-modal-footer {
+        .knowly-modal-header h2 { margin: 0; font-size: 15px; }
+        .knowly-modal-body { padding: 20px; }
+        .knowly-modal-footer {
             padding: 12px 20px;
             background: #f6f7f7;
             border-top: 1px solid #ddd;
             display: flex;
             gap: 8px;
         }
-        .noey-token-row td { vertical-align: middle; }
+        .knowly-token-row td { vertical-align: middle; }
         </style>
 
         <script>
@@ -393,9 +393,9 @@ class Knowly_Admin_Tokens {
 
             // ── Search & Filter ───────────────────────────────────────────────
             function applyFilters() {
-                var q      = $('#noey-token-search').val().toLowerCase();
-                var filter = $('#noey-token-filter').val();
-                $('.noey-token-row').each(function() {
+                var q      = $('#knowly-token-search').val().toLowerCase();
+                var filter = $('#knowly-token-filter').val();
+                $('.knowly-token-row').each(function() {
                     var $r = $(this);
                     var matchSearch = !q || $r.data('name').indexOf(q) >= 0 || $r.data('email').indexOf(q) >= 0;
                     var matchFilter = filter === 'all'
@@ -405,31 +405,31 @@ class Knowly_Admin_Tokens {
                     $r.toggle(matchSearch && matchFilter);
                 });
             }
-            $('#noey-token-search').on('input', applyFilters);
-            $('#noey-token-filter').on('change', applyFilters);
+            $('#knowly-token-search').on('input', applyFilters);
+            $('#knowly-token-filter').on('change', applyFilters);
 
             // ── Modal helpers ─────────────────────────────────────────────────
             function openModal(id) { $('#' + id).fadeIn(150); }
-            function closeAllModals() { $('.noey-modal-overlay').fadeOut(150); }
-            $(document).on('click', '.noey-modal-close', closeAllModals);
-            $(document).on('click', '.noey-modal-overlay', function(e) {
-                if ($(e.target).hasClass('noey-modal-overlay')) closeAllModals();
+            function closeAllModals() { $('.knowly-modal-overlay').fadeOut(150); }
+            $(document).on('click', '.knowly-modal-close', closeAllModals);
+            $(document).on('click', '.knowly-modal-overlay', function(e) {
+                if ($(e.target).hasClass('knowly-modal-overlay')) closeAllModals();
             });
 
             // ── Helper: update a row's balance display ─────────────────────────
             function updateRowBalance(parentId, newBalance) {
-                var $row = $('.noey-token-row[data-parent-id="' + parentId + '"]');
+                var $row = $('.knowly-token-row[data-parent-id="' + parentId + '"]');
                 $row.data('balance', newBalance);
                 $row.data('low', newBalance <= 2 ? '1' : '0');
                 var color = newBalance === 0 ? '#dc2626' : (newBalance <= 2 ? '#d97706' : '#16a34a');
-                $row.find('.noey-balance-cell').css('color', color).text(newBalance);
+                $row.find('.knowly-balance-cell').css('color', color).text(newBalance);
                 // Keep action buttons in sync
-                $row.find('.noey-token-action').data('balance', newBalance);
-                $row.find('.noey-token-action[data-action="credit"]').data('balance', newBalance);
+                $row.find('.knowly-token-action').data('balance', newBalance);
+                $row.find('.knowly-token-action[data-action="credit"]').data('balance', newBalance);
             }
 
             // ── Adjust modal (credit / deduct / set) ──────────────────────────
-            $(document).on('click', '.noey-token-action', function() {
+            $(document).on('click', '.knowly-token-action', function() {
                 var action  = $(this).data('action');
                 var pid     = $(this).data('parent-id');
                 var name    = $(this).data('name');
@@ -451,7 +451,7 @@ class Knowly_Admin_Tokens {
                 var submitLabels = { credit: 'Credit', deduct: 'Deduct', set: 'Set Balance' };
                 $('#adj-submit').text(submitLabels[action]);
 
-                openModal('noey-adjust-modal');
+                openModal('knowly-adjust-modal');
             });
 
             $('#adj-submit').on('click', function() {
@@ -477,8 +477,8 @@ class Knowly_Admin_Tokens {
                         closeAllModals();
                         // Update circulation stat
                         var diff = res.data.balance_after - res.data.balance_before;
-                        var circ = parseInt($('#noey-stat-circulation').text()) + diff;
-                        $('#noey-stat-circulation').text(circ);
+                        var circ = parseInt($('#knowly-stat-circulation').text()) + diff;
+                        $('#knowly-stat-circulation').text(circ);
                     } else {
                         $('#adj-error').text(res.data.message).show();
                         $btn.prop('disabled', false);
@@ -487,12 +487,12 @@ class Knowly_Admin_Tokens {
             });
 
             // ── View Ledger ───────────────────────────────────────────────────
-            $(document).on('click', '.noey-view-ledger', function() {
+            $(document).on('click', '.knowly-view-ledger', function() {
                 var pid  = $(this).data('parent-id');
                 var name = $(this).data('name');
                 $('#ledger-name').text(name);
                 $('#ledger-body').html('<p style="color:#888;padding:10px 0;">Loading…</p>');
-                openModal('noey-ledger-modal');
+                openModal('knowly-ledger-modal');
 
                 $.post(ajaxurl, { action: 'knowly_tokens_ledger', nonce: nonce, parent_id: pid },
                     function(res) {
@@ -506,11 +506,11 @@ class Knowly_Admin_Tokens {
             });
 
             // ── Bulk Credit ───────────────────────────────────────────────────
-            $('#noey-bulk-credit-btn').on('click', function() {
+            $('#knowly-bulk-credit-btn').on('click', function() {
                 $('#bulk-amount').val(3);
                 $('#bulk-note').val('');
                 $('#bulk-error').hide();
-                openModal('noey-bulk-modal');
+                openModal('knowly-bulk-modal');
             });
 
             $('#bulk-submit').on('click', function() {
@@ -550,19 +550,19 @@ class Knowly_Admin_Tokens {
                 );
             }
 
-            $('#noey-monthly-refresh-btn').on('click', function() {
+            $('#knowly-monthly-refresh-btn').on('click', function() {
                 if (!confirm('Run the monthly token refresh now? This will reset all free-tier accounts to <?= KNOWLY_FREE_TOKEN_MONTHLY ?> tokens.')) return;
                 runMonthlyRefresh($(this), $('<span>'));
                 location.reload();
             });
 
-            $('#noey-monthly-refresh-sidebar').on('click', function() {
+            $('#knowly-monthly-refresh-sidebar').on('click', function() {
                 if (!confirm('Run the monthly token refresh now?')) return;
-                runMonthlyRefresh($(this), $('#noey-refresh-result'));
+                runMonthlyRefresh($(this), $('#knowly-refresh-result'));
             });
 
             // ── Premium Toggle ────────────────────────────────────────────────
-            $(document).on('click', '.noey-premium-toggle', function() {
+            $(document).on('click', '.knowly-premium-toggle', function() {
                 var $btn  = $(this);
                 var pid   = $btn.data('parent-id');
                 var state = parseInt($btn.data('state'));
@@ -587,7 +587,7 @@ class Knowly_Admin_Tokens {
             });
 
             // ── Dev Bypass Toggle ─────────────────────────────────────────────
-            $(document).on('click', '.noey-bypass-toggle', function() {
+            $(document).on('click', '.knowly-bypass-toggle', function() {
                 var currentState = parseInt($(this).data('state'));
                 var newState     = currentState ? 0 : 1;
                 var label        = newState ? 'enabled' : 'disabled';
@@ -606,13 +606,13 @@ class Knowly_Admin_Tokens {
             });
 
             // ── Recent Transactions ───────────────────────────────────────────
-            $('#noey-load-recent').on('click', function() {
+            $('#knowly-load-recent').on('click', function() {
                 var $btn = $(this).prop('disabled', true).text('Loading…');
                 $.post(ajaxurl, { action: 'knowly_tokens_recent', nonce: nonce },
                     function(res) {
                         $btn.prop('disabled', false).text('Refresh');
                         if (res.success) {
-                            $('#noey-recent-feed').html(res.data.html);
+                            $('#knowly-recent-feed').html(res.data.html);
                         }
                     }
                 );
@@ -738,7 +738,7 @@ class Knowly_Admin_Tokens {
             $balance = Knowly_Token_Service::get_balance( $parent_id );
             echo '<p style="font-size:13px;margin:0 0 12px;">Current balance: <strong>' . esc_html( $balance ) . ' tokens</strong></p>';
             ?>
-            <table class="noey-table" style="font-size:12px;">
+            <table class="knowly-table" style="font-size:12px;">
                 <thead>
                     <tr>
                         <th>Date</th>

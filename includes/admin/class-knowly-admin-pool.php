@@ -57,51 +57,51 @@ class Knowly_Admin_Pool {
         // Known combinations from Railway taxonomy
         $all_combinations = self::get_all_combinations();
         ?>
-        <div class="wrap noey-wrap">
+        <div class="wrap knowly-wrap">
             <h1>KnowlyAPI — Pool Manager</h1>
 
             <?php self::render_notices(); ?>
 
             <?php if ( ! $railway_ok ) : ?>
                 <div class="notice notice-warning">
-                    <p>Railway endpoint not configured. <a href="<?= esc_url( admin_url( 'admin.php?page=noey-settings' ) ) ?>">Configure in Settings →</a></p>
+                    <p>Railway endpoint not configured. <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>">Configure in Settings →</a></p>
                 </div>
             <?php endif; ?>
 
             <?php if ( $railway_ok && ! $server_key ) : ?>
                 <div class="notice notice-warning">
-                    <p>No <strong>Server Key</strong> configured. Packages will be imported <em>without</em> answer sheets. Set it in <a href="<?= esc_url( admin_url( 'admin.php?page=noey-settings' ) ) ?>">Settings</a> to receive answer sheets for server-side scoring.</p>
+                    <p>No <strong>Server Key</strong> configured. Packages will be imported <em>without</em> answer sheets. Set it in <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>">Settings</a> to receive answer sheets for server-side scoring.</p>
                 </div>
             <?php endif; ?>
 
             <!-- Stats Row -->
-            <div class="noey-stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px;">
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $total_packages ) ?></div>
-                    <div class="noey-stat-label">Packages in Pool</div>
+            <div class="knowly-stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px;">
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $total_packages ) ?></div>
+                    <div class="knowly-stat-label">Packages in Pool</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( count( $pool_summary ) ) ?> <small style="font-size:16px;color:#888;">/ <?= count( $all_combinations ) ?></small></div>
-                    <div class="noey-stat-label">Slots Filled / Total</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( count( $pool_summary ) ) ?> <small style="font-size:16px;color:#888;">/ <?= count( $all_combinations ) ?></small></div>
+                    <div class="knowly-stat-label">Slots Filled / Total</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $has_answers ) ?></div>
-                    <div class="noey-stat-label">With Answer Sheet</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $has_answers ) ?></div>
+                    <div class="knowly-stat-label">With Answer Sheet</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( number_format( $total_served ) ) ?></div>
-                    <div class="noey-stat-label">Total Serves</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( number_format( $total_served ) ) ?></div>
+                    <div class="knowly-stat-label">Total Serves</div>
                 </div>
             </div>
 
             <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start;">
 
                 <!-- ── POOL INSPECTOR ───────────────────────────────────────── -->
-                <div class="noey-settings-section" style="padding:0;overflow:hidden;">
+                <div class="knowly-settings-section" style="padding:0;overflow:hidden;">
                     <div style="padding:16px 20px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;">
                         <h2 style="margin:0;font-size:15px;">Pool Inspector</h2>
                         <div style="display:flex;gap:8px;align-items:center;">
-                            <input type="text" id="noey-pool-filter" placeholder="Filter by subject…" class="regular-text" style="height:30px;" />
+                            <input type="text" id="knowly-pool-filter" placeholder="Filter by subject…" class="regular-text" style="height:30px;" />
                             <?php if ( $railway_ok ) : ?>
                             <form method="post" action="<?= esc_url( admin_url( 'admin-post.php' ) ) ?>" style="margin:0;">
                                 <?php wp_nonce_field( 'knowly_pool_sync', 'knowly_sync_nonce' ); ?>
@@ -112,7 +112,7 @@ class Knowly_Admin_Pool {
                         </div>
                     </div>
 
-                    <table class="noey-table noey-pool-table" style="border:none;border-radius:0;">
+                    <table class="knowly-table knowly-pool-table" style="border:none;border-radius:0;">
                         <thead>
                             <tr>
                                 <th>Standard</th>
@@ -153,7 +153,7 @@ class Knowly_Admin_Pool {
                             $status = $count === 0 ? 'empty' : ( $count < 3 ? 'low' : 'ready' );
                             $row_class = $count === 0 ? 'pool-empty' : '';
                         ?>
-                        <tr class="noey-pool-row <?= esc_attr( $row_class ) ?>"
+                        <tr class="knowly-pool-row <?= esc_attr( $row_class ) ?>"
                             data-subject="<?= esc_attr( strtolower( $combo['subject'] ) ) ?>">
                             <td><?= esc_html( strtoupper( $combo['level'] ) ) ?></td>
                             <td><?= esc_html( $combo['period'] ? strtoupper( $combo['period'] ) : 'SEA' ) ?></td>
@@ -183,7 +183,7 @@ class Knowly_Admin_Pool {
                                     </form>
                                     <?php endif; ?>
                                     <?php if ( $count > 0 ) : ?>
-                                        <button class="button button-small noey-view-packages"
+                                        <button class="button button-small knowly-view-packages"
                                             data-key="<?= esc_attr( $key ) ?>">View</button>
                                     <?php endif; ?>
                                 </div>
@@ -195,8 +195,8 @@ class Knowly_Admin_Pool {
                     </table>
 
                     <!-- Package Detail Drawer (hidden, populated via JS) -->
-                    <div id="noey-package-drawer" style="display:none;padding:16px 20px;background:#f9fafb;border-top:1px solid #e5e7eb;">
-                        <div id="noey-package-drawer-content"></div>
+                    <div id="knowly-package-drawer" style="display:none;padding:16px 20px;background:#f9fafb;border-top:1px solid #e5e7eb;">
+                        <div id="knowly-package-drawer-content"></div>
                     </div>
                 </div>
 
@@ -204,7 +204,7 @@ class Knowly_Admin_Pool {
                 <div style="display:flex;flex-direction:column;gap:16px;">
 
                     <!-- Manual Upload -->
-                    <div class="noey-settings-section">
+                    <div class="knowly-settings-section">
                         <h2>Manual Upload</h2>
                         <p style="font-size:12px;color:#666;margin-bottom:8px;">
                             Paste a raw Railway package JSON (with or without <code>answer_sheet</code>).
@@ -223,20 +223,20 @@ class Knowly_Admin_Pool {
 
                     <!-- Railway Live Catalogue -->
                     <?php if ( $railway_ok ) : ?>
-                    <div class="noey-settings-section">
+                    <div class="knowly-settings-section">
                         <h2>Railway Catalogue</h2>
                         <p style="font-size:12px;color:#666;margin-bottom:10px;">
                             Live availability from Railway server.
                         </p>
-                        <button id="noey-load-railway-catalogue" class="button" style="width:100%;">
+                        <button id="knowly-load-railway-catalogue" class="button" style="width:100%;">
                             Load Live Catalogue
                         </button>
-                        <div id="noey-railway-catalogue-result" style="margin-top:10px;font-size:12px;"></div>
+                        <div id="knowly-railway-catalogue-result" style="margin-top:10px;font-size:12px;"></div>
                     </div>
                     <?php endif; ?>
 
                     <!-- Pool Health -->
-                    <div class="noey-settings-section">
+                    <div class="knowly-settings-section">
                         <h2>Quick Stats</h2>
                         <?php
                         $by_difficulty = $wpdb->get_results(
@@ -281,13 +281,13 @@ class Knowly_Admin_Pool {
             </div>
 
             <!-- Package Detail Modal (populated by AJAX) -->
-            <div id="noey-package-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow:auto;">
+            <div id="knowly-package-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow:auto;">
                 <div style="background:#fff;max-width:900px;margin:40px auto;border-radius:8px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);">
                     <div style="padding:16px 20px;background:#f6f7f7;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
-                        <h2 id="noey-modal-title" style="margin:0;font-size:15px;">Package Detail</h2>
-                        <button id="noey-modal-close" class="button">✕ Close</button>
+                        <h2 id="knowly-modal-title" style="margin:0;font-size:15px;">Package Detail</h2>
+                        <button id="knowly-modal-close" class="button">✕ Close</button>
                     </div>
-                    <div id="noey-modal-body" style="padding:20px;max-height:70vh;overflow:auto;"></div>
+                    <div id="knowly-modal-body" style="padding:20px;max-height:70vh;overflow:auto;"></div>
                 </div>
             </div>
         </div>
@@ -295,15 +295,15 @@ class Knowly_Admin_Pool {
         <script>
         ( function($) {
             // Filter table
-            $('#noey-pool-filter').on('input', function() {
+            $('#knowly-pool-filter').on('input', function() {
                 var q = $(this).val().toLowerCase();
-                $('.noey-pool-row').each(function() {
+                $('.knowly-pool-row').each(function() {
                     $(this).toggle( !q || $(this).data('subject').indexOf(q) >= 0 );
                 });
             });
 
             // View packages — fetch and show modal
-            $(document).on('click', '.noey-view-packages', function() {
+            $(document).on('click', '.knowly-view-packages', function() {
                 var key = $(this).data('key');
                 var parts = key.split('|');
                 var $btn = $(this).prop('disabled', true).text('Loading…');
@@ -326,19 +326,19 @@ class Knowly_Admin_Pool {
             });
 
             // Close modal
-            $('#noey-modal-close').on('click', function() { $('#noey-package-modal').hide(); });
-            $('#noey-package-modal').on('click', function(e) { if ($(e.target).is(this)) $(this).hide(); });
+            $('#knowly-modal-close').on('click', function() { $('#knowly-package-modal').hide(); });
+            $('#knowly-package-modal').on('click', function(e) { if ($(e.target).is(this)) $(this).hide(); });
 
             function renderModal(title, html) {
-                $('#noey-modal-title').text(title);
-                $('#noey-modal-body').html(html);
-                $('#noey-package-modal').show();
+                $('#knowly-modal-title').text(title);
+                $('#knowly-modal-body').html(html);
+                $('#knowly-package-modal').show();
             }
 
             // Load Railway catalogue
-            $('#noey-load-railway-catalogue').on('click', function() {
+            $('#knowly-load-railway-catalogue').on('click', function() {
                 var $btn = $(this).prop('disabled', true).text('Loading…');
-                var $result = $('#noey-railway-catalogue-result');
+                var $result = $('#knowly-railway-catalogue-result');
 
                 $.post(ajaxurl, {
                     action: 'knowly_railway_catalogue',
@@ -378,9 +378,9 @@ class Knowly_Admin_Pool {
         $result = self::sync_from_railway();
 
         if ( is_wp_error( $result ) ) {
-            wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&sync_error=' . urlencode( $result->get_error_message() ) ) );
+            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&sync_error=' . urlencode( $result->get_error_message() ) ) );
         } else {
-            wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&synced=' . urlencode( wp_json_encode( $result ) ) ) );
+            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&synced=' . urlencode( wp_json_encode( $result ) ) ) );
         }
         exit;
     }
@@ -412,11 +412,11 @@ class Knowly_Admin_Pool {
         $package = Knowly_Exam_Service::fetch_from_railway( $level, $period, $subject, $difficulty, $seen );
 
         if ( is_wp_error( $package ) ) {
-            wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&gen_error=' . urlencode( $package->get_error_message() ) ) );
+            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&gen_error=' . urlencode( $package->get_error_message() ) ) );
         } else {
             // Store in pool
             self::store_package( $package, $level, $period, $subject, $difficulty );
-            wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&generated=' . urlencode( $package['package_id'] ?? 'ok' ) ) );
+            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&generated=' . urlencode( $package['package_id'] ?? 'ok' ) ) );
         }
         exit;
     }
@@ -427,13 +427,13 @@ class Knowly_Admin_Pool {
 
         $json = wp_unslash( $_POST['knowly_package_json'] ?? '' );
         if ( ! trim( $json ) ) {
-            wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&upload_error=' . urlencode( 'No JSON provided.' ) ) );
+            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&upload_error=' . urlencode( 'No JSON provided.' ) ) );
             exit;
         }
 
         $pkg = json_decode( $json, true );
         if ( ! $pkg || empty( $pkg['package_id'] ) ) {
-            wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&upload_error=' . urlencode( 'Invalid JSON or missing package_id.' ) ) );
+            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&upload_error=' . urlencode( 'Invalid JSON or missing package_id.' ) ) );
             exit;
         }
 
@@ -454,7 +454,7 @@ class Knowly_Admin_Pool {
             'subject'    => $subject_display,
         ], null, 'info' );
 
-        wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&uploaded=' . urlencode( $pkg['package_id'] ) ) );
+        wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&uploaded=' . urlencode( $pkg['package_id'] ) ) );
         exit;
     }
 
@@ -469,7 +469,7 @@ class Knowly_Admin_Pool {
         $wpdb->delete( $wpdb->prefix . 'knowly_exam_pool', [ 'pool_id' => $pool_id ], [ '%d' ] );
 
         Knowly_Debug::log( 'admin.pool', 'Package deleted from pool', [ 'pool_id' => $pool_id ], null, 'info' );
-        wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&deleted=1' ) );
+        wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&deleted=1' ) );
         exit;
     }
 
@@ -669,7 +669,7 @@ class Knowly_Admin_Pool {
                 <summary style="cursor:pointer;font-size:12px;color:#2563eb;user-select:none;">
                     ▶ <?= count( $questions ) ?> questions
                 </summary>
-                <table class="noey-table" style="margin-top:8px;font-size:11px;">
+                <table class="knowly-table" style="margin-top:8px;font-size:11px;">
                     <thead>
                         <tr><th>ID</th><th>Topic</th><th>Subtopic</th><th>Level</th><th>Answer</th></tr>
                     </thead>

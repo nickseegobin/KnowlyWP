@@ -40,20 +40,20 @@ class Knowly_Admin_Debug {
         $total = Knowly_Debug::get_count( $filters );
         $pages = (int) ceil( $total / self::LOGS_PER_PAGE );
         ?>
-        <div class="wrap noey-wrap">
+        <div class="wrap knowly-wrap">
             <h1>KnowlyAPI — Debug Log
-                <span class="noey-log-count"><?= esc_html( $total ) ?> entries</span>
+                <span class="knowly-log-count"><?= esc_html( $total ) ?> entries</span>
             </h1>
 
             <?php if ( ! Knowly_Debug::is_enabled() ) : ?>
                 <div class="notice notice-warning">
-                    <p>Debug mode is <strong>OFF</strong>. Enable it in <a href="<?= esc_url( admin_url( 'admin.php?page=noey-settings' ) ) ?>">Settings</a> to start capturing logs.</p>
+                    <p>Debug mode is <strong>OFF</strong>. Enable it in <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>">Settings</a> to start capturing logs.</p>
                 </div>
             <?php endif; ?>
 
             <!-- Filters -->
-            <form method="get" action="" class="noey-filter-form">
-                <input type="hidden" name="page" value="noey-debug" />
+            <form method="get" action="" class="knowly-filter-form">
+                <input type="hidden" name="page" value="knowly-debug" />
                 <select name="level">
                     <option value="">All Levels</option>
                     <?php foreach ( Knowly_Debug::LEVELS as $l ) : ?>
@@ -64,16 +64,16 @@ class Knowly_Admin_Debug {
                 <input type="text" name="search"  value="<?= esc_attr( $search ) ?>"  placeholder="Search message…"  class="regular-text" />
                 <input type="number" name="user_id" value="<?= esc_attr( $user_id ?: '' ) ?>" placeholder="User ID" class="small-text" />
                 <button type="submit" class="button">Filter</button>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=noey-debug' ) ) ?>" class="button">Reset</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-debug' ) ) ?>" class="button">Reset</a>
             </form>
 
             <!-- Actions -->
-            <div class="noey-debug-actions">
-                <button id="noey-clear-logs" class="button button-link-delete" data-nonce="<?= esc_attr( wp_create_nonce( 'knowly_admin_nonce' ) ) ?>">
+            <div class="knowly-debug-actions">
+                <button id="knowly-clear-logs" class="button button-link-delete" data-nonce="<?= esc_attr( wp_create_nonce( 'knowly_admin_nonce' ) ) ?>">
                     Clear All Logs
                 </button>
-                <label class="noey-autorefresh">
-                    <input type="checkbox" id="noey-autorefresh" /> Auto-refresh (10s)
+                <label class="knowly-autorefresh">
+                    <input type="checkbox" id="knowly-autorefresh" /> Auto-refresh (10s)
                 </label>
             </div>
 
@@ -81,7 +81,7 @@ class Knowly_Admin_Debug {
             <?php if ( empty( $logs ) ) : ?>
                 <p>No log entries found.</p>
             <?php else : ?>
-                <table class="noey-table noey-log-table">
+                <table class="knowly-table knowly-log-table">
                     <thead>
                         <tr>
                             <th style="width:90px">Time (UTC)</th>
@@ -98,18 +98,18 @@ class Knowly_Admin_Debug {
                             $has_data = ! empty( $log['data'] );
                             $row_id   = 'log-' . (int) $log['log_id'];
                         ?>
-                        <tr class="noey-log-row level-<?= esc_attr( $log['level'] ) ?>" <?= $has_data ? "data-target=\"{$row_id}\" style=\"cursor:pointer\"" : '' ?>>
+                        <tr class="knowly-log-row level-<?= esc_attr( $log['level'] ) ?>" <?= $has_data ? "data-target=\"{$row_id}\" style=\"cursor:pointer\"" : '' ?>>
                             <td><code><?= esc_html( substr( $log['created_at'], 11, 8 ) ) ?></code><br><small><?= esc_html( substr( $log['created_at'], 0, 10 ) ) ?></small></td>
-                            <td><span class="noey-level-badge" style="background:<?= esc_attr( $colour ) ?>"><?= esc_html( strtoupper( $log['level'] ) ) ?></span></td>
+                            <td><span class="knowly-level-badge" style="background:<?= esc_attr( $colour ) ?>"><?= esc_html( strtoupper( $log['level'] ) ) ?></span></td>
                             <td><code><?= esc_html( $log['context'] ) ?></code></td>
-                            <td><?= esc_html( $log['message'] ) ?><?= $has_data ? ' <span class="noey-expand-hint">▾</span>' : '' ?></td>
+                            <td><?= esc_html( $log['message'] ) ?><?= $has_data ? ' <span class="knowly-expand-hint">▾</span>' : '' ?></td>
                             <td><?= $log['user_id'] ? esc_html( $log['user_id'] ) : '—' ?></td>
                             <td><code style="font-size:10px"><?= esc_html( $log['request_id'] ) ?></code></td>
                         </tr>
                         <?php if ( $has_data ) : ?>
-                        <tr id="<?= esc_attr( $row_id ) ?>" class="noey-log-data" style="display:none">
+                        <tr id="<?= esc_attr( $row_id ) ?>" class="knowly-log-data" style="display:none">
                             <td colspan="6">
-                                <pre class="noey-json"><?= esc_html( json_encode( json_decode( $log['data'] ), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE ) ) ?></pre>
+                                <pre class="knowly-json"><?= esc_html( json_encode( json_decode( $log['data'] ), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE ) ) ?></pre>
                             </td>
                         </tr>
                         <?php endif; ?>
@@ -119,13 +119,13 @@ class Knowly_Admin_Debug {
 
                 <!-- Pagination -->
                 <?php if ( $pages > 1 ) : ?>
-                <div class="noey-pagination">
+                <div class="knowly-pagination">
                     <?php for ( $i = 1; $i <= $pages; $i++ ) :
                         $url = add_query_arg( array_merge( $_GET, [ 'paged' => $i ] ) );
                     ?>
                         <a href="<?= esc_url( $url ) ?>" class="button <?= $i === $paged ? 'button-primary' : '' ?>"><?= $i ?></a>
                     <?php endfor; ?>
-                    <span class="noey-page-info">Page <?= $paged ?> of <?= $pages ?></span>
+                    <span class="knowly-page-info">Page <?= $paged ?> of <?= $pages ?></span>
                 </div>
                 <?php endif; ?>
             <?php endif; ?>

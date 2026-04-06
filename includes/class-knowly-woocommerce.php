@@ -48,8 +48,8 @@ class Knowly_WooCommerce {
 
         woocommerce_wp_text_input( [
             'id'                => '_knowly_token_amount',
-            'label'             => __( 'Noey Tokens granted', 'noey-api' ),
-            'description'       => __( 'Number of tokens credited to the buyer\'s Noey account when this product is purchased. Leave 0 or blank for no tokens.', 'noey-api' ),
+            'label'             => __( 'Noey Tokens granted', 'knowly-api' ),
+            'description'       => __( 'Number of tokens credited to the buyer\'s Noey account when this product is purchased. Leave 0 or blank for no tokens.', 'knowly-api' ),
             'desc_tip'          => true,
             'type'              => 'number',
             'custom_attributes' => [ 'min' => '0', 'step' => '1' ],

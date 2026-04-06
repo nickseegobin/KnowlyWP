@@ -29,14 +29,14 @@ class Knowly_Admin_Settings {
         $dev_bypass         = get_option( 'knowly_dev_bypass_tokens', false );
         $pool_target        = get_option( 'knowly_pool_default_target', 10 );
         ?>
-        <div class="wrap noey-wrap">
+        <div class="wrap knowly-wrap">
             <h1>KnowlyAPI — Settings</h1>
 
             <form method="post" action="">
                 <?php wp_nonce_field( 'knowly_save_settings', 'knowly_settings_nonce' ); ?>
 
                 <!-- Railway -->
-                <div class="noey-settings-section">
+                <div class="knowly-settings-section">
                     <h2>Railway AI Server</h2>
                     <table class="form-table">
                         <tr>
@@ -85,7 +85,7 @@ class Knowly_Admin_Settings {
                 </div>
 
                 <!-- CORS -->
-                <div class="noey-settings-section">
+                <div class="knowly-settings-section">
                     <h2>React / Next.js Integration</h2>
                     <table class="form-table">
                         <tr>
@@ -100,7 +100,7 @@ class Knowly_Admin_Settings {
                 </div>
 
                 <!-- Debug -->
-                <div class="noey-settings-section">
+                <div class="knowly-settings-section">
                     <h2>Debug & Development</h2>
                     <table class="form-table">
                         <tr>
@@ -112,7 +112,7 @@ class Knowly_Admin_Settings {
                                     Enable debug logging
                                 </label>
                                 <p class="description">
-                                    When enabled, detailed logs are written to the <a href="<?= esc_url( admin_url( 'admin.php?page=noey-debug' ) ) ?>">Debug Log</a>.
+                                    When enabled, detailed logs are written to the <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-debug' ) ) ?>">Debug Log</a>.
                                     <strong>Disable in production.</strong>
                                 </p>
                             </td>
@@ -135,14 +135,14 @@ class Knowly_Admin_Settings {
             </form>
 
             <!-- JWT Secret Status -->
-            <div class="noey-settings-section">
+            <div class="knowly-settings-section">
                 <h2>JWT Configuration</h2>
                 <?php if ( defined( 'KNOWLY_JWT_SECRET' ) && KNOWLY_JWT_SECRET ) : ?>
-                    <p class="noey-badge ok">✓ KNOWLY_JWT_SECRET is defined in wp-config.php</p>
+                    <p class="knowly-badge ok">✓ KNOWLY_JWT_SECRET is defined in wp-config.php</p>
                 <?php elseif ( defined( 'JWT_AUTH_SECRET_KEY' ) && JWT_AUTH_SECRET_KEY ) : ?>
-                    <p class="noey-badge warn">⚠ Using JWT_AUTH_SECRET_KEY — define KNOWLY_JWT_SECRET in wp-config.php for dedicated key.</p>
+                    <p class="knowly-badge warn">⚠ Using JWT_AUTH_SECRET_KEY — define KNOWLY_JWT_SECRET in wp-config.php for dedicated key.</p>
                 <?php else : ?>
-                    <p class="noey-badge error">✗ No JWT secret defined. Add to wp-config.php:<br><code>define( 'KNOWLY_JWT_SECRET', 'your-strong-random-secret-here' );</code></p>
+                    <p class="knowly-badge error">✗ No JWT secret defined. Add to wp-config.php:<br><code>define( 'KNOWLY_JWT_SECRET', 'your-strong-random-secret-here' );</code></p>
                 <?php endif; ?>
             </div>
         </div>

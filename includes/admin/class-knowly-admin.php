@@ -35,25 +35,25 @@ class Knowly_Admin {
             'KnowlyAPI',
             'KnowlyAPI',
             'manage_options',
-            'noey-api',
+            'knowly-api',
             [ __CLASS__, 'render_dashboard' ],
             'dashicons-rest-api',
             30
         );
 
-        add_submenu_page( 'noey-api', 'Dashboard',    'Dashboard',    'manage_options', 'noey-api',          [ __CLASS__, 'render_dashboard' ] );
-        add_submenu_page( 'noey-api', 'Members',      'Members',      'manage_options', 'noey-members',      [ 'Knowly_Admin_Members', 'render' ] );
-        add_submenu_page( 'noey-api', 'Tokens',       'Tokens',       'manage_options', 'noey-tokens',       [ 'Knowly_Admin_Tokens', 'render' ] );
-        add_submenu_page( 'noey-api', 'Pool Manager', 'Pool Manager', 'manage_options', 'noey-pool',         [ 'Knowly_Admin_Pool', 'render' ] );
-        add_submenu_page( 'noey-api', 'Settings',     'Settings',     'manage_options', 'noey-settings',     [ 'Knowly_Admin_Settings', 'render' ] );
-        add_submenu_page( 'noey-api', 'Debug Log',    'Debug Log',    'manage_options', 'noey-debug',        [ 'Knowly_Admin_Debug', 'render' ] );
-        add_submenu_page( 'noey-api', 'Test Suite',   'Test Suite',   'manage_options', 'noey-test-suite',   [ 'Knowly_Admin_Testing', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Dashboard',    'Dashboard',    'manage_options', 'knowly-api',          [ __CLASS__, 'render_dashboard' ] );
+        add_submenu_page( 'knowly-api', 'Members',      'Members',      'manage_options', 'knowly-members',      [ 'Knowly_Admin_Members', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Tokens',       'Tokens',       'manage_options', 'knowly-tokens',       [ 'Knowly_Admin_Tokens', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Pool Manager', 'Pool Manager', 'manage_options', 'knowly-pool',         [ 'Knowly_Admin_Pool', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Settings',     'Settings',     'manage_options', 'knowly-settings',     [ 'Knowly_Admin_Settings', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Debug Log',    'Debug Log',    'manage_options', 'knowly-debug',        [ 'Knowly_Admin_Debug', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Test Suite',   'Test Suite',   'manage_options', 'knowly-test-suite',   [ 'Knowly_Admin_Testing', 'render' ] );
     }
 
     // ── Assets ────────────────────────────────────────────────────────────────
 
     public static function enqueue_assets( string $hook ): void {
-        $knowly_pages = [ 'toplevel_page_noey-api', 'noeyapi_page_noey-members', 'noeyapi_page_noey-tokens', 'noeyapi_page_noey-pool', 'noeyapi_page_noey-settings', 'noeyapi_page_noey-debug', 'noeyapi_page_noey-test-suite' ];
+        $knowly_pages = [ 'toplevel_page_knowly-api', 'knowly-api_page_knowly-members', 'knowly-api_page_knowly-tokens', 'knowly-api_page_knowly-pool', 'knowly-api_page_knowly-settings', 'knowly-api_page_knowly-debug', 'knowly-api_page_knowly-test-suite' ];
 
         if ( ! in_array( $hook, $knowly_pages, true ) ) {
             return;
@@ -98,59 +98,59 @@ class Knowly_Admin {
 
         $railway_ok = ! empty( get_option( 'knowly_railway_endpoint' ) );
         ?>
-        <div class="wrap noey-wrap">
-            <h1>KnowlyAPI <span class="noey-version">v<?= esc_html( KNOWLY_VERSION ) ?></span></h1>
+        <div class="wrap knowly-wrap">
+            <h1>KnowlyAPI <span class="knowly-version">v<?= esc_html( KNOWLY_VERSION ) ?></span></h1>
 
-            <div class="noey-status-bar <?= Knowly_Debug::is_enabled() ? 'debug-on' : 'debug-off' ?>">
+            <div class="knowly-status-bar <?= Knowly_Debug::is_enabled() ? 'debug-on' : 'debug-off' ?>">
                 <?php if ( Knowly_Debug::is_enabled() ) : ?>
                     <span class="dashicons dashicons-visibility"></span> Debug Mode is <strong>ON</strong> — <?= esc_html( $log_count ) ?> log entries
                 <?php else : ?>
                     <span class="dashicons dashicons-hidden"></span> Debug Mode is <strong>OFF</strong>
                 <?php endif; ?>
                 &nbsp;|&nbsp;
-                Railway: <?= $railway_ok ? '<span class="noey-badge ok">Configured</span>' : '<span class="noey-badge warn">Not configured</span>' ?>
+                Railway: <?= $railway_ok ? '<span class="knowly-badge ok">Configured</span>' : '<span class="knowly-badge warn">Not configured</span>' ?>
             </div>
 
-            <div class="noey-stat-grid">
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $parent_count ) ?></div>
-                    <div class="noey-stat-label">Parent Accounts</div>
+            <div class="knowly-stat-grid">
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $parent_count ) ?></div>
+                    <div class="knowly-stat-label">Parent Accounts</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $child_count ) ?></div>
-                    <div class="noey-stat-label">Student Profiles</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $child_count ) ?></div>
+                    <div class="knowly-stat-label">Student Profiles</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $pool_count ) ?></div>
-                    <div class="noey-stat-label">Exam Packages in Pool</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $pool_count ) ?></div>
+                    <div class="knowly-stat-label">Exam Packages in Pool</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $session_count ) ?></div>
-                    <div class="noey-stat-label">Completed Exams</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $session_count ) ?></div>
+                    <div class="knowly-stat-label">Completed Exams</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $insight_count ) ?></div>
-                    <div class="noey-stat-label">AI Insights Generated</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $insight_count ) ?></div>
+                    <div class="knowly-stat-label">AI Insights Generated</div>
                 </div>
             </div>
 
-            <div class="noey-quick-links">
-                <a href="<?= esc_url( admin_url( 'admin.php?page=noey-members' ) ) ?>" class="button button-primary">Members</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=noey-tokens' ) ) ?>" class="button button-primary">Tokens</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=noey-pool' ) ) ?>" class="button button-primary">Pool Manager</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=noey-settings' ) ) ?>" class="button">Settings</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=noey-debug' ) ) ?>" class="button">Debug Log</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=noey-test-suite' ) ) ?>" class="button">Test Suite</a>
+            <div class="knowly-quick-links">
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-members' ) ) ?>" class="button button-primary">Members</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-tokens' ) ) ?>" class="button button-primary">Tokens</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-pool' ) ) ?>" class="button button-primary">Pool Manager</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>" class="button">Settings</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-debug' ) ) ?>" class="button">Debug Log</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-test-suite' ) ) ?>" class="button">Test Suite</a>
             </div>
 
-            <div class="noey-api-table-wrapper">
+            <div class="knowly-api-table-wrapper">
                 <h2>API Endpoints Reference</h2>
-                <table class="noey-table">
+                <table class="knowly-table">
                     <thead><tr><th>Method</th><th>Route</th><th>Auth</th><th>Description</th></tr></thead>
                     <tbody>
                         <?php foreach ( self::endpoint_reference() as $ep ) : ?>
                         <tr>
-                            <td><span class="noey-method <?= esc_attr( strtolower( $ep[0] ) ) ?>"><?= esc_html( $ep[0] ) ?></span></td>
+                            <td><span class="knowly-method <?= esc_attr( strtolower( $ep[0] ) ) ?>"><?= esc_html( $ep[0] ) ?></span></td>
                             <td><code><?= esc_html( '/knowly/v1' . $ep[1] ) ?></code></td>
                             <td><?= esc_html( $ep[2] ) ?></td>
                             <td><?= esc_html( $ep[3] ) ?></td>

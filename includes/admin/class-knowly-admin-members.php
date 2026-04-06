@@ -41,36 +41,36 @@ class Knowly_Admin_Members {
         $total_parents  = count( $parents );
         $total_children = (int) ( new WP_User_Query( [ 'role' => 'knowly_child', 'count_total' => true, 'number' => 0 ] ) )->get_total();
         ?>
-        <div class="wrap noey-wrap">
+        <div class="wrap knowly-wrap">
             <h1>KnowlyAPI — Members</h1>
 
             <!-- Stats -->
-            <div class="noey-stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:24px;">
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $total_parents ) ?></div>
-                    <div class="noey-stat-label">Parent Accounts</div>
+            <div class="knowly-stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:24px;">
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $total_parents ) ?></div>
+                    <div class="knowly-stat-label">Parent Accounts</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number"><?= esc_html( $total_children ) ?></div>
-                    <div class="noey-stat-label">Student Profiles</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number"><?= esc_html( $total_children ) ?></div>
+                    <div class="knowly-stat-label">Student Profiles</div>
                 </div>
-                <div class="noey-stat-card">
-                    <div class="noey-stat-number" id="noey-members-filtered-count"><?= esc_html( $total_parents ) ?></div>
-                    <div class="noey-stat-label">Showing</div>
+                <div class="knowly-stat-card">
+                    <div class="knowly-stat-number" id="knowly-members-filtered-count"><?= esc_html( $total_parents ) ?></div>
+                    <div class="knowly-stat-label">Showing</div>
                 </div>
             </div>
 
             <!-- Toolbar -->
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;">
-                <input type="text" id="noey-member-search"
+                <input type="text" id="knowly-member-search"
                     placeholder="Search by name or email…"
                     class="regular-text" style="height:34px;max-width:320px;" />
-                <button id="noey-create-parent-btn" class="button button-primary">+ Create Parent Account</button>
+                <button id="knowly-create-parent-btn" class="button button-primary">+ Create Parent Account</button>
             </div>
 
             <!-- Parents table -->
-            <div class="noey-settings-section" style="padding:0;overflow:hidden;">
-                <table class="noey-table noey-members-table" style="border:none;border-radius:0;">
+            <div class="knowly-settings-section" style="padding:0;overflow:hidden;">
+                <table class="knowly-table knowly-members-table" style="border:none;border-radius:0;">
                     <thead>
                         <tr>
                             <th style="width:28px;"></th>
@@ -93,12 +93,12 @@ class Knowly_Admin_Members {
                         $pin_label    = $is_locked ? 'Locked' : ( $pin_hash ? 'Set' : 'None' );
                         $pin_color    = $is_locked ? '#dc2626' : ( $pin_hash ? '#16a34a' : '#9ca3af' );
                     ?>
-                    <tr class="noey-member-row"
+                    <tr class="knowly-member-row"
                         data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                         data-name="<?= esc_attr( strtolower( $parent->display_name ) ) ?>"
                         data-email="<?= esc_attr( strtolower( $parent->user_email ) ) ?>">
-                        <td style="text-align:center;cursor:pointer;" class="noey-expand-toggle" title="Show children">
-                            <span class="noey-arrow" style="font-size:10px;color:#888;display:inline-block;transition:transform .2s;">▶</span>
+                        <td style="text-align:center;cursor:pointer;" class="knowly-expand-toggle" title="Show children">
+                            <span class="knowly-arrow" style="font-size:10px;color:#888;display:inline-block;transition:transform .2s;">▶</span>
                         </td>
                         <td>
                             <strong><?= esc_html( $parent->display_name ) ?></strong>
@@ -113,18 +113,18 @@ class Knowly_Admin_Members {
                         <td style="font-size:12px;color:#666;"><?= esc_html( date_i18n( 'M j, Y', strtotime( $parent->user_registered ) ) ) ?></td>
                         <td>
                             <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                                <button class="button button-small noey-reset-pin"
+                                <button class="button button-small knowly-reset-pin"
                                     data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                     data-name="<?= esc_attr( $parent->display_name ) ?>"
                                     title="Clear PIN so parent can set a new one">
                                     Reset PIN
                                 </button>
-                                <button class="button button-small noey-send-recovery"
+                                <button class="button button-small knowly-send-recovery"
                                     data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                     data-email="<?= esc_attr( $parent->user_email ) ?>">
                                     Send Recovery
                                 </button>
-                                <button class="button button-small noey-credit-tokens"
+                                <button class="button button-small knowly-credit-tokens"
                                     data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                     data-name="<?= esc_attr( $parent->display_name ) ?>"
                                     data-balance="<?= esc_attr( $balance ) ?>">
@@ -134,14 +134,14 @@ class Knowly_Admin_Members {
                         </td>
                     </tr>
                     <!-- Children drawer row -->
-                    <tr class="noey-children-row" data-parent-id="<?= esc_attr( $parent->ID ) ?>" style="display:none;">
+                    <tr class="knowly-children-row" data-parent-id="<?= esc_attr( $parent->ID ) ?>" style="display:none;">
                         <td colspan="8" style="padding:0;background:#f9fafb;">
-                            <div class="noey-children-panel" style="padding:14px 20px 14px 48px;">
-                                <div class="noey-children-content" data-loaded="0">
+                            <div class="knowly-children-panel" style="padding:14px 20px 14px 48px;">
+                                <div class="knowly-children-content" data-loaded="0">
                                     <p style="color:#888;font-size:12px;margin:0;">Loading…</p>
                                 </div>
                                 <div style="margin-top:10px;">
-                                    <button class="button button-small noey-add-child-btn"
+                                    <button class="button button-small knowly-add-child-btn"
                                         data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                         data-parent-name="<?= esc_attr( $parent->display_name ) ?>"
                                         <?= $child_count >= KNOWLY_MAX_CHILDREN ? 'disabled title="Max ' . KNOWLY_MAX_CHILDREN . ' children reached"' : '' ?>>
@@ -161,13 +161,13 @@ class Knowly_Admin_Members {
         </div>
 
         <!-- ── Create Parent Modal ─────────────────────────────────────────── -->
-        <div id="noey-create-parent-modal" class="noey-modal-overlay" style="display:none;">
-            <div class="noey-modal-box" style="max-width:480px;">
-                <div class="noey-modal-header">
+        <div id="knowly-create-parent-modal" class="knowly-modal-overlay" style="display:none;">
+            <div class="knowly-modal-box" style="max-width:480px;">
+                <div class="knowly-modal-header">
                     <h2>Create Parent Account</h2>
-                    <button class="button noey-modal-close">✕</button>
+                    <button class="button knowly-modal-close">✕</button>
                 </div>
-                <div class="noey-modal-body">
+                <div class="knowly-modal-body">
                     <table class="form-table" style="margin:0;">
                         <tr>
                             <th>Display Name</th>
@@ -192,21 +192,21 @@ class Knowly_Admin_Members {
                     </table>
                     <div id="cp-error" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
                 </div>
-                <div class="noey-modal-footer">
+                <div class="knowly-modal-footer">
                     <button id="cp-submit" class="button button-primary">Create Account</button>
-                    <button class="button noey-modal-close">Cancel</button>
+                    <button class="button knowly-modal-close">Cancel</button>
                 </div>
             </div>
         </div>
 
         <!-- ── Add Child Modal ─────────────────────────────────────────────── -->
-        <div id="noey-add-child-modal" class="noey-modal-overlay" style="display:none;">
-            <div class="noey-modal-box" style="max-width:480px;">
-                <div class="noey-modal-header">
+        <div id="knowly-add-child-modal" class="knowly-modal-overlay" style="display:none;">
+            <div class="knowly-modal-box" style="max-width:480px;">
+                <div class="knowly-modal-header">
                     <h2>Add Child to <span id="ac-parent-name"></span></h2>
-                    <button class="button noey-modal-close">✕</button>
+                    <button class="button knowly-modal-close">✕</button>
                 </div>
-                <div class="noey-modal-body">
+                <div class="knowly-modal-body">
                     <input type="hidden" id="ac-parent-id" value="" />
                     <table class="form-table" style="margin:0;">
                         <tr>
@@ -247,47 +247,47 @@ class Knowly_Admin_Members {
                     </table>
                     <div id="ac-error" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
                 </div>
-                <div class="noey-modal-footer">
+                <div class="knowly-modal-footer">
                     <button id="ac-submit" class="button button-primary">Add Child</button>
-                    <button class="button noey-modal-close">Cancel</button>
+                    <button class="button knowly-modal-close">Cancel</button>
                 </div>
             </div>
         </div>
 
         <!-- ── Credit Tokens Modal ─────────────────────────────────────────── -->
-        <div id="noey-credit-modal" class="noey-modal-overlay" style="display:none;">
-            <div class="noey-modal-box" style="max-width:360px;">
-                <div class="noey-modal-header">
+        <div id="knowly-credit-modal" class="knowly-modal-overlay" style="display:none;">
+            <div class="knowly-modal-box" style="max-width:360px;">
+                <div class="knowly-modal-header">
                     <h2>Credit Tokens — <span id="ct-parent-name"></span></h2>
-                    <button class="button noey-modal-close">✕</button>
+                    <button class="button knowly-modal-close">✕</button>
                 </div>
-                <div class="noey-modal-body">
+                <div class="knowly-modal-body">
                     <input type="hidden" id="ct-parent-id" value="" />
                     <p style="font-size:13px;margin:0 0 12px;">Current balance: <strong id="ct-current-balance"></strong> tokens</p>
                     <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Tokens to add</label>
                     <input type="number" id="ct-amount" class="regular-text" value="5" min="1" max="1000" />
                     <div id="ct-error" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
                 </div>
-                <div class="noey-modal-footer">
+                <div class="knowly-modal-footer">
                     <button id="ct-submit" class="button button-primary">Credit Tokens</button>
-                    <button class="button noey-modal-close">Cancel</button>
+                    <button class="button knowly-modal-close">Cancel</button>
                 </div>
             </div>
         </div>
 
         <!-- ── Child Exams Modal ───────────────────────────────────────────── -->
-        <div id="noey-exams-modal" class="noey-modal-overlay" style="display:none;">
-            <div class="noey-modal-box" style="max-width:860px;">
-                <div class="noey-modal-header">
+        <div id="knowly-exams-modal" class="knowly-modal-overlay" style="display:none;">
+            <div class="knowly-modal-box" style="max-width:860px;">
+                <div class="knowly-modal-header">
                     <h2>Exam History — <span id="ex-child-name"></span></h2>
-                    <button class="button noey-modal-close">✕</button>
+                    <button class="button knowly-modal-close">✕</button>
                 </div>
-                <div id="ex-body" class="noey-modal-body" style="max-height:65vh;overflow:auto;padding:20px;"></div>
+                <div id="ex-body" class="knowly-modal-body" style="max-height:65vh;overflow:auto;padding:20px;"></div>
             </div>
         </div>
 
         <style>
-        .noey-modal-overlay {
+        .knowly-modal-overlay {
             position: fixed; inset: 0;
             background: rgba(0,0,0,.5);
             z-index: 99999;
@@ -297,14 +297,14 @@ class Knowly_Admin_Members {
             padding-top: 60px;
             overflow: auto;
         }
-        .noey-modal-box {
+        .knowly-modal-box {
             background: #fff;
             width: 100%;
             border-radius: 8px;
             overflow: hidden;
             box-shadow: 0 20px 60px rgba(0,0,0,.3);
         }
-        .noey-modal-header {
+        .knowly-modal-header {
             padding: 14px 20px;
             background: #f6f7f7;
             border-bottom: 1px solid #ddd;
@@ -312,19 +312,19 @@ class Knowly_Admin_Members {
             justify-content: space-between;
             align-items: center;
         }
-        .noey-modal-header h2 { margin: 0; font-size: 15px; }
-        .noey-modal-body { padding: 20px; }
-        .noey-modal-footer {
+        .knowly-modal-header h2 { margin: 0; font-size: 15px; }
+        .knowly-modal-body { padding: 20px; }
+        .knowly-modal-footer {
             padding: 12px 20px;
             background: #f6f7f7;
             border-top: 1px solid #ddd;
             display: flex;
             gap: 8px;
         }
-        .noey-member-row td { vertical-align: middle; }
-        .noey-children-row td { border-top: none !important; }
-        .noey-member-row.is-open .noey-arrow { transform: rotate(90deg); }
-        .noey-child-card {
+        .knowly-member-row td { vertical-align: middle; }
+        .knowly-children-row td { border-top: none !important; }
+        .knowly-member-row.is-open .knowly-arrow { transform: rotate(90deg); }
+        .knowly-child-card {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -335,9 +335,9 @@ class Knowly_Admin_Members {
             margin-bottom: 8px;
             gap: 12px;
         }
-        .noey-child-card .noey-child-info { flex: 1; }
-        .noey-child-card .noey-child-name { font-weight: 600; font-size: 13px; }
-        .noey-child-card .noey-child-meta { font-size: 11px; color: #888; margin-top: 2px; }
+        .knowly-child-card .knowly-child-info { flex: 1; }
+        .knowly-child-card .knowly-child-name { font-weight: 600; font-size: 13px; }
+        .knowly-child-card .knowly-child-meta { font-size: 11px; color: #888; margin-top: 2px; }
         </style>
 
         <script>
@@ -345,26 +345,26 @@ class Knowly_Admin_Members {
             var nonce = '<?= wp_create_nonce( 'knowly_admin_nonce' ) ?>';
 
             // ── Search / filter ───────────────────────────────────────────────
-            $('#noey-member-search').on('input', function() {
+            $('#knowly-member-search').on('input', function() {
                 var q = $(this).val().toLowerCase();
                 var visible = 0;
-                $('.noey-member-row').each(function() {
+                $('.knowly-member-row').each(function() {
                     var match = !q || $(this).data('name').indexOf(q) >= 0 || $(this).data('email').indexOf(q) >= 0;
                     $(this).toggle(match);
                     var pid = $(this).data('parent-id');
-                    $('.noey-children-row[data-parent-id="' + pid + '"]').toggle(match && $(this).hasClass('is-open'));
+                    $('.knowly-children-row[data-parent-id="' + pid + '"]').toggle(match && $(this).hasClass('is-open'));
                     if (match) visible++;
                 });
-                $('#noey-members-filtered-count').text(visible);
+                $('#knowly-members-filtered-count').text(visible);
             });
 
             // ── Expand/collapse children row ──────────────────────────────────
-            $(document).on('click', '.noey-expand-toggle, .noey-member-row td:not(:last-child)', function(e) {
+            $(document).on('click', '.knowly-expand-toggle, .knowly-member-row td:not(:last-child)', function(e) {
                 if ($(e.target).is('button, input, a')) return;
-                var $row    = $(this).closest('.noey-member-row');
+                var $row    = $(this).closest('.knowly-member-row');
                 var pid     = $row.data('parent-id');
-                var $drawer = $('.noey-children-row[data-parent-id="' + pid + '"]');
-                var $panel  = $drawer.find('.noey-children-content');
+                var $drawer = $('.knowly-children-row[data-parent-id="' + pid + '"]');
+                var $panel  = $drawer.find('.knowly-children-content');
                 var isOpen  = $row.hasClass('is-open');
 
                 $row.toggleClass('is-open', !isOpen);
@@ -390,19 +390,19 @@ class Knowly_Admin_Members {
 
             // ── Modal helpers ─────────────────────────────────────────────────
             function openModal(id) { $('#' + id).fadeIn(150); }
-            function closeAllModals() { $('.noey-modal-overlay').fadeOut(150); }
+            function closeAllModals() { $('.knowly-modal-overlay').fadeOut(150); }
 
-            $(document).on('click', '.noey-modal-close', closeAllModals);
-            $(document).on('click', '.noey-modal-overlay', function(e) {
-                if ($(e.target).hasClass('noey-modal-overlay')) closeAllModals();
+            $(document).on('click', '.knowly-modal-close', closeAllModals);
+            $(document).on('click', '.knowly-modal-overlay', function(e) {
+                if ($(e.target).hasClass('knowly-modal-overlay')) closeAllModals();
             });
 
             // ── Create Parent ─────────────────────────────────────────────────
-            $('#noey-create-parent-btn').on('click', function() {
+            $('#knowly-create-parent-btn').on('click', function() {
                 $('#cp-display-name,#cp-username,#cp-email,#cp-password').val('');
                 $('#cp-tokens').val(3);
                 $('#cp-error').hide();
-                openModal('noey-create-parent-modal');
+                openModal('knowly-create-parent-modal');
             });
 
             $('#cp-submit').on('click', function() {
@@ -429,7 +429,7 @@ class Knowly_Admin_Members {
             });
 
             // ── Add Child ─────────────────────────────────────────────────────
-            $(document).on('click', '.noey-add-child-btn', function() {
+            $(document).on('click', '.knowly-add-child-btn', function() {
                 var pid  = $(this).data('parent-id');
                 var name = $(this).data('parent-name');
                 $('#ac-parent-id').val(pid);
@@ -439,7 +439,7 @@ class Knowly_Admin_Members {
                 $('#ac-term').val('term_1');
                 $('#ac-term-row').show();
                 $('#ac-error').hide();
-                openModal('noey-add-child-modal');
+                openModal('knowly-add-child-modal');
             });
 
             $('#ac-standard').on('change', function() {
@@ -467,16 +467,16 @@ class Knowly_Admin_Members {
                         var pid = $('#ac-parent-id').val();
                         closeAllModals();
                         // Reload children panel
-                        var $panel = $('.noey-children-row[data-parent-id="' + pid + '"] .noey-children-content');
+                        var $panel = $('.knowly-children-row[data-parent-id="' + pid + '"] .knowly-children-content');
                         $panel.data('loaded', 1);
                         loadChildren(pid, $panel);
                         // Update child count cell
-                        var $row = $('.noey-member-row[data-parent-id="' + pid + '"]');
+                        var $row = $('.knowly-member-row[data-parent-id="' + pid + '"]');
                         var cnt  = parseInt($row.find('td:eq(4)').text()) + 1;
                         $row.find('td:eq(4)').text(cnt);
                         // Disable add button if at max
                         if (cnt >= <?= KNOWLY_MAX_CHILDREN ?>) {
-                            $row.next('.noey-children-row').find('.noey-add-child-btn')
+                            $row.next('.knowly-children-row').find('.knowly-add-child-btn')
                                 .prop('disabled', true)
                                 .attr('title', 'Max <?= KNOWLY_MAX_CHILDREN ?> children reached');
                         }
@@ -487,7 +487,7 @@ class Knowly_Admin_Members {
             });
 
             // ── Remove Child ──────────────────────────────────────────────────
-            $(document).on('click', '.noey-remove-child', function() {
+            $(document).on('click', '.knowly-remove-child', function() {
                 var $btn     = $(this);
                 var childId  = $btn.data('child-id');
                 var childName = $btn.data('child-name');
@@ -503,12 +503,12 @@ class Knowly_Admin_Members {
                     child_id:  childId
                 }, function(res) {
                     if (res.success) {
-                        var $panel = $('.noey-children-row[data-parent-id="' + parentId + '"] .noey-children-content');
+                        var $panel = $('.knowly-children-row[data-parent-id="' + parentId + '"] .knowly-children-content');
                         loadChildren(parentId, $panel);
-                        var $row = $('.noey-member-row[data-parent-id="' + parentId + '"]');
+                        var $row = $('.knowly-member-row[data-parent-id="' + parentId + '"]');
                         var cnt  = Math.max(0, parseInt($row.find('td:eq(4)').text()) - 1);
                         $row.find('td:eq(4)').text(cnt);
-                        $row.next('.noey-children-row').find('.noey-add-child-btn')
+                        $row.next('.knowly-children-row').find('.knowly-add-child-btn')
                             .prop('disabled', false)
                             .attr('title', '');
                     } else {
@@ -519,7 +519,7 @@ class Knowly_Admin_Members {
             });
 
             // ── Reset PIN ─────────────────────────────────────────────────────
-            $(document).on('click', '.noey-reset-pin', function() {
+            $(document).on('click', '.knowly-reset-pin', function() {
                 var $btn  = $(this);
                 var pid   = $btn.data('parent-id');
                 var name  = $btn.data('name');
@@ -535,7 +535,7 @@ class Knowly_Admin_Members {
                     $btn.prop('disabled', false).text('Reset PIN');
                     if (res.success) {
                         // Update PIN badge in row
-                        var $row   = $('.noey-member-row[data-parent-id="' + pid + '"]');
+                        var $row   = $('.knowly-member-row[data-parent-id="' + pid + '"]');
                         $row.find('td:eq(5) span').css('color', '#9ca3af').text('● None');
                         alert('PIN cleared for ' + name + '.');
                     } else {
@@ -545,7 +545,7 @@ class Knowly_Admin_Members {
             });
 
             // ── Send Recovery Email ────────────────────────────────────────────
-            $(document).on('click', '.noey-send-recovery', function() {
+            $(document).on('click', '.knowly-send-recovery', function() {
                 var $btn  = $(this);
                 var pid   = $btn.data('parent-id');
                 var email = $btn.data('email');
@@ -568,7 +568,7 @@ class Knowly_Admin_Members {
             });
 
             // ── Credit Tokens ─────────────────────────────────────────────────
-            $(document).on('click', '.noey-credit-tokens', function() {
+            $(document).on('click', '.knowly-credit-tokens', function() {
                 var pid     = $(this).data('parent-id');
                 var name    = $(this).data('name');
                 var balance = $(this).data('balance');
@@ -577,7 +577,7 @@ class Knowly_Admin_Members {
                 $('#ct-current-balance').text(balance);
                 $('#ct-amount').val(5);
                 $('#ct-error').hide();
-                openModal('noey-credit-modal');
+                openModal('knowly-credit-modal');
             });
 
             $('#ct-submit').on('click', function() {
@@ -596,9 +596,9 @@ class Knowly_Admin_Members {
                         var newBalance  = res.data.balance_after;
                         closeAllModals();
                         // Update balance cell and button data
-                        var $row = $('.noey-member-row[data-parent-id="' + pid + '"]');
+                        var $row = $('.knowly-member-row[data-parent-id="' + pid + '"]');
                         $row.find('td:eq(3)').text(newBalance);
-                        $row.find('.noey-credit-tokens').data('balance', newBalance);
+                        $row.find('.knowly-credit-tokens').data('balance', newBalance);
                         alert('Tokens credited. New balance: ' + newBalance);
                     } else {
                         $('#ct-error').text(res.data.message).show();
@@ -607,14 +607,14 @@ class Knowly_Admin_Members {
             });
 
             // ── View Child Exams ───────────────────────────────────────────────
-            $(document).on('click', '.noey-view-exams', function() {
+            $(document).on('click', '.knowly-view-exams', function() {
                 var cid  = $(this).data('child-id');
                 var name = $(this).data('child-name');
                 var $btn = $(this).prop('disabled', true).text('Loading…');
 
                 $('#ex-child-name').text(name);
                 $('#ex-body').html('<p style="color:#888;padding:20px 0;">Loading exam history…</p>');
-                openModal('noey-exams-modal');
+                openModal('knowly-exams-modal');
 
                 $.post(ajaxurl, {
                     action:   'knowly_members_child_exams',
@@ -655,15 +655,15 @@ class Knowly_Admin_Members {
                 $exams    = self::get_child_session_count( $child['child_id'] );
                 $nickname = get_user_meta( $child['child_id'], 'knowly_nickname', true );
             ?>
-            <div class="noey-child-card">
-                <div class="noey-child-info">
-                    <div class="noey-child-name">
+            <div class="knowly-child-card">
+                <div class="knowly-child-info">
+                    <div class="knowly-child-name">
                         <?= esc_html( $child['display_name'] ) ?>
                         <?php if ( $nickname ) : ?>
                             <span style="font-size:11px;font-weight:400;color:#6366f1;margin-left:6px;">🏷 <?= esc_html( $nickname ) ?></span>
                         <?php endif; ?>
                     </div>
-                    <div class="noey-child-meta">
+                    <div class="knowly-child-meta">
                         ID: <?= esc_html( $child['child_id'] ) ?>
                         <?= $user ? ' · @' . esc_html( $user->user_login ) : '' ?>
                         · <?= esc_html( strtoupper( $child['level'] ) ) ?>
@@ -673,12 +673,12 @@ class Knowly_Admin_Members {
                     </div>
                 </div>
                 <div style="display:flex;gap:6px;">
-                    <button class="button button-small noey-view-exams"
+                    <button class="button button-small knowly-view-exams"
                         data-child-id="<?= esc_attr( $child['child_id'] ) ?>"
                         data-child-name="<?= esc_attr( $child['display_name'] ) ?>">
                         View Exams
                     </button>
-                    <button class="button button-small noey-remove-child"
+                    <button class="button button-small knowly-remove-child"
                         data-child-id="<?= esc_attr( $child['child_id'] ) ?>"
                         data-child-name="<?= esc_attr( $child['display_name'] ) ?>"
                         data-parent-id="<?= esc_attr( $parent_id ) ?>"
@@ -917,7 +917,7 @@ class Knowly_Admin_Members {
                     <div style="font-size:11px;color:#666;">Avg Score</div>
                 </div>
             </div>
-            <table class="noey-table" style="font-size:12px;">
+            <table class="knowly-table" style="font-size:12px;">
                 <thead>
                     <tr>
                         <th>Subject</th>

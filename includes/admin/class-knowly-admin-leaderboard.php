@@ -35,11 +35,11 @@ class Knowly_Admin_Leaderboard {
 
     public static function add_menu(): void {
         add_submenu_page(
-            'noey-api',
+            'knowly-api',
             'Leaderboards',
             'Leaderboards',
             'manage_options',
-            'noey-leaderboard',
+            'knowly-leaderboard',
             [ __CLASS__, 'render' ]
         );
     }
@@ -107,7 +107,7 @@ class Knowly_Admin_Leaderboard {
         </p>
 
         <form method="GET" action="">
-            <input type="hidden" name="page" value="noey-leaderboard">
+            <input type="hidden" name="page" value="knowly-leaderboard">
             <input type="hidden" name="tab"  value="boards">
 
             <table class="form-table" style="max-width: 600px;">
@@ -233,7 +233,7 @@ class Knowly_Admin_Leaderboard {
         <?php endif; ?>
 
         <form method="GET" action="" style="margin-bottom: 20px;">
-            <input type="hidden" name="page" value="noey-leaderboard">
+            <input type="hidden" name="page" value="knowly-leaderboard">
             <input type="hidden" name="tab"  value="nicknames">
             <input type="text" name="search" value="<?php echo esc_attr( $search ); ?>"
                    placeholder="Search by display name or child ID…"
@@ -366,7 +366,7 @@ class Knowly_Admin_Leaderboard {
         <p class="description">Fetches the top 10 for any board. Same call React makes when a student views the leaderboard page.</p>
 
         <form method="GET" action="" style="margin-bottom: 8px;">
-            <input type="hidden" name="page" value="noey-leaderboard">
+            <input type="hidden" name="page" value="knowly-leaderboard">
             <input type="hidden" name="tab"  value="testing">
             <?php echo self::board_selectors( 'read', $levels, $periods, $subjects ); ?>
             <?php submit_button( 'Read Board', 'secondary', 'read_board', false ); ?>
@@ -398,7 +398,7 @@ class Knowly_Admin_Leaderboard {
         </p>
 
         <form method="GET" action="" style="margin-bottom: 8px;">
-            <input type="hidden" name="page" value="noey-leaderboard">
+            <input type="hidden" name="page" value="knowly-leaderboard">
             <input type="hidden" name="tab"  value="testing">
             <label>Child ID:
                 <input type="number" name="my_child_id"
@@ -720,7 +720,7 @@ class Knowly_Admin_Leaderboard {
         // Call the real upsert handler — identical to the exam submit hook
         $leaderboard_update = Knowly_Leaderboard_Service::handle_submit_upsert( $fake_session, $fake_result );
 
-        $base = admin_url( 'admin.php?page=noey-leaderboard&tab=testing' );
+        $base = admin_url( 'admin.php?page=knowly-leaderboard&tab=testing' );
 
         if ( $leaderboard_update === null ) {
             wp_redirect( add_query_arg( [
@@ -747,7 +747,7 @@ class Knowly_Admin_Leaderboard {
             'score_pct' => (int) ( $_POST['score_pct'] ?? 75 ),
         ] );
 
-        $base = admin_url( 'admin.php?page=noey-leaderboard&tab=testing' );
+        $base = admin_url( 'admin.php?page=knowly-leaderboard&tab=testing' );
 
         if ( is_wp_error( $result ) ) {
             wp_redirect( add_query_arg( [ 'test_error' => urlencode( $result->get_error_message() ) ], $base ) );
@@ -801,7 +801,7 @@ class Knowly_Admin_Leaderboard {
     }
 
     private static function redirect_testing_result( string $tab, mixed $result, string $success_msg, array $extra = [] ): void {
-        $base   = admin_url( 'admin.php?page=noey-leaderboard&tab=' . $tab );
+        $base   = admin_url( 'admin.php?page=knowly-leaderboard&tab=' . $tab );
         $params = is_wp_error( $result )
             ? array_merge( $extra, [ 'test_error'  => urlencode( $result->get_error_message() ) ] )
             : array_merge( $extra, [ 'test_result' => urlencode( $success_msg ) ] );
@@ -888,6 +888,6 @@ class Knowly_Admin_Leaderboard {
     }
 
     private static function tab_url( string $tab ): string {
-        return admin_url( 'admin.php?page=noey-leaderboard&tab=' . $tab );
+        return admin_url( 'admin.php?page=knowly-leaderboard&tab=' . $tab );
     }
 }

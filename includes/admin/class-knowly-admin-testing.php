@@ -29,35 +29,35 @@ class Knowly_Admin_Testing {
             wp_die( 'Insufficient permissions.' );
         }
         ?>
-        <div class="wrap noey-wrap">
+        <div class="wrap knowly-wrap">
             <h1>KnowlyAPI — Test Suite</h1>
-            <p class="noey-test-intro">
+            <p class="knowly-test-intro">
                 Tests call your actual REST API endpoints (with valid admin credentials) and report pass/fail with full request/response detail.
                 Run individual tests or click <strong>Run All</strong>.
             </p>
 
-            <div class="noey-test-toolbar">
-                <button id="noey-run-all" class="button button-primary">▶ Run All Tests</button>
-                <button id="noey-clear-results" class="button">Clear Results</button>
-                <span id="noey-test-summary" class="noey-test-summary"></span>
+            <div class="knowly-test-toolbar">
+                <button id="knowly-run-all" class="button button-primary">▶ Run All Tests</button>
+                <button id="knowly-clear-results" class="button">Clear Results</button>
+                <span id="knowly-test-summary" class="knowly-test-summary"></span>
             </div>
 
             <?php foreach ( self::test_groups() as $group_id => $group ) : ?>
-            <div class="noey-test-group" id="group-<?= esc_attr( $group_id ) ?>">
-                <div class="noey-test-group-header">
+            <div class="knowly-test-group" id="group-<?= esc_attr( $group_id ) ?>">
+                <div class="knowly-test-group-header">
                     <h2><?= esc_html( $group['label'] ) ?></h2>
-                    <button class="button noey-run-group" data-group="<?= esc_attr( $group_id ) ?>">Run Group</button>
+                    <button class="button knowly-run-group" data-group="<?= esc_attr( $group_id ) ?>">Run Group</button>
                 </div>
-                <div class="noey-test-list">
+                <div class="knowly-test-list">
                     <?php foreach ( $group['tests'] as $test_id => $test ) : ?>
-                    <div class="noey-test-item" id="test-<?= esc_attr( $test_id ) ?>">
-                        <div class="noey-test-header">
-                            <span class="noey-test-status" id="status-<?= esc_attr( $test_id ) ?>">○</span>
-                            <span class="noey-test-name"><?= esc_html( $test['label'] ) ?></span>
-                            <code class="noey-test-route"><?= esc_html( $test['method'] . ' /knowly/v1' . $test['route'] ) ?></code>
-                            <button class="button button-small noey-run-test" data-test="<?= esc_attr( $test_id ) ?>">Run</button>
+                    <div class="knowly-test-item" id="test-<?= esc_attr( $test_id ) ?>">
+                        <div class="knowly-test-header">
+                            <span class="knowly-test-status" id="status-<?= esc_attr( $test_id ) ?>">○</span>
+                            <span class="knowly-test-name"><?= esc_html( $test['label'] ) ?></span>
+                            <code class="knowly-test-route"><?= esc_html( $test['method'] . ' /knowly/v1' . $test['route'] ) ?></code>
+                            <button class="button button-small knowly-run-test" data-test="<?= esc_attr( $test_id ) ?>">Run</button>
                         </div>
-                        <div class="noey-test-result" id="result-<?= esc_attr( $test_id ) ?>" style="display:none"></div>
+                        <div class="knowly-test-result" id="result-<?= esc_attr( $test_id ) ?>" style="display:none"></div>
                     </div>
                     <?php endforeach; ?>
                 </div>
