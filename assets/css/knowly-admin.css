@@ -1,0 +1,146 @@
+/* ═══════════════════════════════════════════════════════════════
+   NoeyAPI Admin Styles
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Layout ───────────────────────────────────────────────────── */
+.knowly-wrap { max-width: 1400px; }
+.knowly-wrap h1 { display: flex; align-items: center; gap: 10px; }
+.knowly-version { font-size: 13px; font-weight: 400; color: #666; background: #f0f0f1; padding: 2px 8px; border-radius: 3px; }
+
+/* ── Status Bar ───────────────────────────────────────────────── */
+.knowly-status-bar {
+    padding: 10px 16px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.knowly-status-bar.debug-on  { background: #fff8e1; border-left: 4px solid #f59e0b; }
+.knowly-status-bar.debug-off { background: #f0f0f1; border-left: 4px solid #aaa; }
+
+/* ── Stat Grid ────────────────────────────────────────────────── */
+.knowly-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.knowly-stat-card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 20px 16px;
+    text-align: center;
+}
+.knowly-stat-number { font-size: 36px; font-weight: 700; color: #2563eb; line-height: 1; }
+.knowly-stat-label  { font-size: 12px; color: #666; margin-top: 6px; }
+
+/* ── Quick Links ──────────────────────────────────────────────── */
+.knowly-quick-links { margin-bottom: 24px; display: flex; gap: 8px; }
+
+/* ── Badge ────────────────────────────────────────────────────── */
+.knowly-badge          { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 12px; font-weight: 600; }
+.knowly-badge.ok       { background: #dcfce7; color: #166534; }
+.knowly-badge.warn     { background: #fef9c3; color: #713f12; }
+.knowly-badge.error    { background: #fee2e2; color: #7f1d1d; }
+
+/* ── HTTP Method Badges ───────────────────────────────────────── */
+.knowly-method         { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 700; color: #fff; }
+.knowly-method.get     { background: #2563eb; }
+.knowly-method.post    { background: #16a34a; }
+.knowly-method.patch   { background: #d97706; }
+.knowly-method.delete  { background: #dc2626; }
+.knowly-method.check   { background: #7c3aed; }
+
+/* ── Tables ───────────────────────────────────────────────────── */
+.knowly-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #ddd; border-radius: 6px; overflow: hidden; }
+.knowly-table th { background: #f6f7f7; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; padding: 10px 12px; border-bottom: 1px solid #ddd; text-align: left; }
+.knowly-table td { padding: 9px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; vertical-align: top; }
+.knowly-table tr:last-child td { border-bottom: none; }
+.knowly-table tr:hover td { background: #fafafa; }
+.knowly-api-table-wrapper { margin-top: 24px; }
+
+/* ── Settings ─────────────────────────────────────────────────── */
+.knowly-settings-section { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 20px 24px; margin-bottom: 20px; }
+.knowly-settings-section h2 { margin-top: 0; padding-bottom: 12px; border-bottom: 1px solid #eee; font-size: 15px; }
+
+/* ── Debug Log ────────────────────────────────────────────────── */
+.knowly-filter-form  { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.knowly-log-count    { font-size: 14px; font-weight: 400; color: #666; }
+.knowly-debug-actions { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.knowly-autorefresh  { font-size: 13px; }
+
+.knowly-log-table { table-layout: fixed; }
+.knowly-log-row:hover { background: #fafaf8 !important; }
+
+.knowly-level-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.05em;
+}
+.knowly-expand-hint  { color: #aaa; font-size: 11px; }
+.knowly-log-data td  { background: #f6f7f7; }
+.knowly-json {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    padding: 12px 16px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+.knowly-pagination { display: flex; gap: 4px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.knowly-page-info   { font-size: 13px; color: #666; margin-left: 8px; }
+
+/* ── Test Suite ───────────────────────────────────────────────── */
+.knowly-test-intro   { color: #555; margin-bottom: 16px; }
+.knowly-test-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+.knowly-test-summary { font-size: 13px; font-weight: 600; }
+
+.knowly-test-group   { background: #fff; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 16px; overflow: hidden; }
+.knowly-test-group-header {
+    background: #f6f7f7;
+    padding: 12px 16px;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.knowly-test-group-header h2 { margin: 0; font-size: 14px; }
+
+.knowly-test-list    { padding: 0; }
+.knowly-test-item    { border-bottom: 1px solid #f0f0f0; }
+.knowly-test-item:last-child { border-bottom: none; }
+
+.knowly-test-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+}
+.knowly-test-status  { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
+.knowly-test-name    { flex: 1; font-size: 13px; }
+.knowly-test-route   { font-size: 11px; color: #666; background: #f0f0f0; padding: 2px 6px; border-radius: 3px; }
+
+.knowly-test-result  {
+    padding: 12px 16px 12px 48px;
+    border-top: 1px solid #f0f0f0;
+    background: #fafafa;
+}
+.knowly-test-result.pass { background: #f0fdf4; border-top-color: #bbf7d0; }
+.knowly-test-result.fail { background: #fff1f2; border-top-color: #fecdd3; }
+.knowly-test-result.warn { background: #fffbeb; border-top-color: #fde68a; }
+
+.knowly-result-message { font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.knowly-result-data    { font-size: 12px; }
+.knowly-duration       { font-size: 11px; color: #888; margin-top: 4px; }

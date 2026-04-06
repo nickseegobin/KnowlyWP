@@ -60,21 +60,21 @@ class Knowly_Admin {
         }
 
         wp_enqueue_style(
-            'noey-admin',
-            KNOWLY_PLUGIN_URL . 'assets/css/noey-admin.css',
+            'knowly-admin',
+            KNOWLY_PLUGIN_URL . 'assets/css/knowly-admin.css',
             [],
             KNOWLY_VERSION
         );
 
         wp_enqueue_script(
-            'noey-admin',
-            KNOWLY_PLUGIN_URL . 'assets/js/noey-admin.js',
+            'knowly-admin',
+            KNOWLY_PLUGIN_URL . 'assets/js/knowly-admin.js',
             [ 'jquery' ],
             KNOWLY_VERSION,
             true
         );
 
-        wp_localize_script( 'noey-admin', 'NoeyAdmin', [
+        wp_localize_script( 'knowly-admin', 'KnowlyAdmin', [
             'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
             'nonce'     => wp_create_nonce( 'knowly_admin_nonce' ),
             'siteUrl'   => get_site_url(),

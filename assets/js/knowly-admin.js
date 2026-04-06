@@ -1,8 +1,8 @@
 /**
- * NoeyAPI Admin JavaScript
+ * KnowlyAPI Admin JavaScript
  * Handles: Test Suite AJAX, Debug Log interactions, auto-refresh
  */
-/* global NoeyAdmin, jQuery */
+/* global KnowlyAdmin, jQuery */
 ( function ( $ ) {
     'use strict';
 
@@ -15,14 +15,14 @@
     } );
 
     // Clear logs
-    $( '#noey-clear-logs' ).on( 'click', function () {
+    $( '#knowly-clear-logs' ).on( 'click', function () {
         if ( ! confirm( 'Delete all debug log entries? This cannot be undone.' ) ) return;
 
         const $btn = $( this ).prop( 'disabled', true ).text( 'Clearing…' );
 
-        $.post( NoeyAdmin.ajaxUrl, {
-            action : 'noey_clear_logs',
-            nonce  : NoeyAdmin.nonce,
+        $.post( KnowlyAdmin.ajaxUrl, {
+            action : 'knowly_clear_logs',
+            nonce  : KnowlyAdmin.nonce,
         }, function ( res ) {
             if ( res.success ) {
                 location.reload();
@@ -36,7 +36,7 @@
     // Auto-refresh
     let autoRefreshTimer = null;
 
-    $( '#noey-autorefresh' ).on( 'change', function () {
+    $( '#knowly-autorefresh' ).on( 'change', function () {
         if ( this.checked ) {
             autoRefreshTimer = setInterval( () => location.reload(), 10000 );
         } else {
@@ -49,31 +49,31 @@
     const testData = {};   // Shared data across tests (e.g. token from login)
 
     // Run single test
-    $( document ).on( 'click', '.noey-run-test', function ( e ) {
+    $( document ).on( 'click', '.knowly-run-test', function ( e ) {
         e.stopPropagation();
         const testId = $( this ).data( 'test' );
         runTest( testId );
     } );
 
     // Run all tests in a group
-    $( document ).on( 'click', '.noey-run-group', function ( e ) {
+    $( document ).on( 'click', '.knowly-run-group', function ( e ) {
         e.stopPropagation();
         const groupId = $( this ).data( 'group' );
-        const tests   = $( '#group-' + groupId + ' .noey-run-test' );
+        const tests   = $( '#group-' + groupId + ' .knowly-run-test' );
         runSequential( tests.map( ( i, el ) => $( el ).data( 'test' ) ).get() );
     } );
 
     // Run all tests
-    $( '#noey-run-all' ).on( 'click', function () {
-        const tests = $( '.noey-run-test' ).map( ( i, el ) => $( el ).data( 'test' ) ).get();
+    $( '#knowly-run-all' ).on( 'click', function () {
+        const tests = $( '.knowly-run-test' ).map( ( i, el ) => $( el ).data( 'test' ) ).get();
         runSequential( tests );
     } );
 
     // Clear results
-    $( '#noey-clear-results' ).on( 'click', function () {
-        $( '.noey-test-status' ).text( '○' ).css( 'color', '' );
-        $( '.noey-test-result' ).hide().removeClass( 'pass fail warn' ).html( '' );
-        $( '#noey-test-summary' ).text( '' );
+    $( '#knowly-clear-results' ).on( 'click', function () {
+        $( '.knowly-test-status' ).text( '○' ).css( 'color', '' );
+        $( '.knowly-test-result' ).hide().removeClass( 'pass fail warn' ).html( '' );
+        $( '#knowly-test-summary' ).text( '' );
         Object.keys( testData ).forEach( k => delete testData[k] );
     } );
 
@@ -91,9 +91,9 @@
         $result.hide().html( '' );
 
         return new Promise( resolve => {
-            $.post( NoeyAdmin.ajaxUrl, {
-                action : 'noey_test',
-                nonce  : NoeyAdmin.nonce,
+            $.post( KnowlyAdmin.ajaxUrl, {
+                action : 'knowly_test',
+                nonce  : KnowlyAdmin.nonce,
                 test   : testId,
                 data   : JSON.stringify( testData ),
             }, function ( res ) {
@@ -133,27 +133,27 @@
 
         const cls      = res.pass === true ? 'pass' : ( res.pass === null ? 'warn' : 'fail' );
         const dataHtml = res.data && Object.keys( res.data ).length
-            ? '<pre class="noey-json noey-result-data">' + escHtml( JSON.stringify( res.data, null, 2 ) ) + '</pre>'
+            ? '<pre class="knowly-json knowly-result-data">' + escHtml( JSON.stringify( res.data, null, 2 ) ) + '</pre>'
             : '';
 
         $result
             .removeClass( 'pass fail warn' )
             .addClass( cls )
             .html(
-                '<div class="noey-result-message">' + escHtml( res.message || '' ) + '</div>'
+                '<div class="knowly-result-message">' + escHtml( res.message || '' ) + '</div>'
                 + dataHtml
-                + '<div class="noey-duration">' + ( res.duration_ms || 0 ) + 'ms</div>'
+                + '<div class="knowly-duration">' + ( res.duration_ms || 0 ) + 'ms</div>'
             )
             .show();
     }
 
     function updateSummary() {
-        const pass  = $( '.noey-test-status:contains(✓)' ).length;
-        const fail  = $( '.noey-test-status:contains(✗)' ).length;
-        const warn  = $( '.noey-test-status:contains(⚠)' ).length;
+        const pass  = $( '.knowly-test-status:contains(✓)' ).length;
+        const fail  = $( '.knowly-test-status:contains(✗)' ).length;
+        const warn  = $( '.knowly-test-status:contains(⚠)' ).length;
         const total = pass + fail + warn;
 
-        $( '#noey-test-summary' ).html(
+        $( '#knowly-test-summary' ).html(
             '<span style="color:#16a34a">✓ ' + pass + ' passed</span>  '
             + '<span style="color:#dc2626">✗ ' + fail + ' failed</span>  '
             + '<span style="color:#d97706">⚠ ' + warn + ' warnings</span>'
