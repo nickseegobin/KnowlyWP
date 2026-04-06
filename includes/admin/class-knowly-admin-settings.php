@@ -26,7 +26,6 @@ class Knowly_Admin_Settings {
         $allowed_origins     = get_option( 'knowly_allowed_origins', '' );
         $content_source      = get_option( 'knowly_content_source', 'pool_only' );
         $debug_enabled       = get_option( 'knowly_debug_enabled', false );
-        $dev_bypass          = get_option( 'knowly_dev_bypass_tokens', false );
         $pool_target         = get_option( 'knowly_pool_default_target', 10 );
         // Block 2
         $max_children        = get_option( 'knowly_max_children', 3 );
@@ -122,17 +121,6 @@ class Knowly_Admin_Settings {
                                 </p>
                             </td>
                         </tr>
-                        <tr>
-                            <th><label for="knowly_dev_bypass_tokens">Bypass Token Deduction</label></th>
-                            <td>
-                                <label>
-                                    <input type="checkbox" id="knowly_dev_bypass_tokens" name="knowly_dev_bypass_tokens" value="1"
-                                           <?= checked( $dev_bypass, true, false ) ?> />
-                                    Skip token deduction on exam start
-                                </label>
-                                <p class="description"><strong>Development only.</strong> Exams will not consume tokens.</p>
-                            </td>
-                        </tr>
                     </table>
                 </div>
 
@@ -207,7 +195,6 @@ class Knowly_Admin_Settings {
         update_option( 'knowly_content_source',      sanitize_key( $_POST['knowly_content_source'] ?? 'pool_only' ) );
         update_option( 'knowly_pool_default_target', max( 1, (int) ( $_POST['knowly_pool_default_target'] ?? 10 ) ) );
         update_option( 'knowly_debug_enabled',       ! empty( $_POST['knowly_debug_enabled'] ) );
-        update_option( 'knowly_dev_bypass_tokens',   ! empty( $_POST['knowly_dev_bypass_tokens'] ) );
         // Block 2
         update_option( 'knowly_max_children',        max( 1, min( 10, (int) ( $_POST['knowly_max_children'] ?? 3 ) ) ) );
         update_option( 'knowly_email_verification',  ! empty( $_POST['knowly_email_verification'] ) );

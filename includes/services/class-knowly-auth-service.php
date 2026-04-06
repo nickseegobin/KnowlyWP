@@ -77,8 +77,8 @@ class Knowly_Auth_Service {
         update_user_meta( $user_id, 'knowly_phone',        $phone );
         update_user_meta( $user_id, 'knowly_avatar_index', $avatar_index );
 
-        // Grant welcome tokens
-        Knowly_Token_Service::grant_on_registration( $user_id );
+        // Grant welcome gems
+        Knowly_Gem_Service::grant_on_registration( $user_id );
 
         $token = Knowly_JWT::encode( $user_id );
 
@@ -222,7 +222,6 @@ class Knowly_Auth_Service {
         $active_child = $is_parent
                       ? (int) get_user_meta( $user_id, 'knowly_active_child_id', true ) ?: null
                       : null;
-        $balance      = $is_parent ? Knowly_Token_Service::get_balance( $user_id ) : null;
 
         $profile = [
             'user_id'         => $user_id,
@@ -232,7 +231,7 @@ class Knowly_Auth_Service {
             'email'           => $user->user_email,
             'role'            => $is_parent ? 'parent' : 'child',
             'active_child_id' => $active_child,
-            'token_balance'   => $balance,
+            'gem_balance'     => Knowly_Gem_Service::get_balance( $user_id ),
             'avatar_index'    => (int) get_user_meta( $user_id, 'knowly_avatar_index', true ) ?: 1,
         ];
 

@@ -26,7 +26,6 @@ class Knowly_Admin {
         add_action( 'wp_ajax_knowly_railway_catalogue',  [ 'Knowly_Admin_Pool', 'handle_ajax_railway_catalogue' ] );
         Knowly_Admin_Pool::boot();
         Knowly_Admin_Members::boot();
-        Knowly_Admin_Tokens::boot();
         Knowly_Admin_Leaderboard::register();
         // Block 2
         Knowly_Admin_Teachers::boot();
@@ -51,7 +50,6 @@ class Knowly_Admin {
         add_submenu_page( 'knowly-api', 'Dashboard',    'Dashboard',    'manage_options', 'knowly-api',          [ __CLASS__, 'render_dashboard' ] );
         add_submenu_page( 'knowly-api', 'Members',      'Members',      'manage_options', 'knowly-members',      [ 'Knowly_Admin_Members', 'render' ] );
         add_submenu_page( 'knowly-api', 'Teachers',     'Teachers',     'manage_options', 'knowly-teachers',     [ 'Knowly_Admin_Teachers', 'render' ] );
-        add_submenu_page( 'knowly-api', 'Tokens',       'Tokens',       'manage_options', 'knowly-tokens',       [ 'Knowly_Admin_Tokens', 'render' ] );
         add_submenu_page( 'knowly-api', 'Pool Manager', 'Pool Manager', 'manage_options', 'knowly-pool',         [ 'Knowly_Admin_Pool', 'render' ] );
         add_submenu_page( 'knowly-api', 'Gems',         'Gems',         'manage_options', 'knowly-gems',         [ 'Knowly_Admin_Gems', 'render' ] );
         add_submenu_page( 'knowly-api', 'Settings',     'Settings',     'manage_options', 'knowly-settings',     [ 'Knowly_Admin_Settings', 'render' ] );
@@ -154,7 +152,6 @@ class Knowly_Admin {
             <div class="knowly-quick-links">
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-members' ) ) ?>" class="button button-primary">Members</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-teachers' ) ) ?>" class="button button-primary<?= $pending_teachers > 0 ? ' knowly-alert-btn' : '' ?>">Teachers<?= $pending_teachers > 0 ? " ({$pending_teachers})" : '' ?></a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-tokens' ) ) ?>" class="button button-primary">Tokens</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-gems' ) ) ?>" class="button button-primary">Gems</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-pool' ) ) ?>" class="button button-primary">Pool Manager</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>" class="button">Settings</a>
@@ -247,8 +244,6 @@ class Knowly_Admin {
             [ 'DELETE', '/children/{id}',                 'JWT Parent', 'Remove child' ],
             [ 'POST',   '/children/{id}/switch',          'JWT Parent', 'Switch active child' ],
             [ 'POST',   '/children/deselect',             'JWT Parent', 'Return to parent view' ],
-            [ 'GET',    '/tokens/balance',                'JWT',        'Token balance' ],
-            [ 'GET',    '/tokens/ledger',                 'JWT',        'Transaction history' ],
             [ 'GET',    '/exams',                         'JWT',        'Exam catalogue' ],
             [ 'POST',   '/exams/start',                   'JWT',        'Start exam (deduct token)' ],
             [ 'GET',    '/exams/{id}/checkpoint',         'JWT',        'Get checkpoint' ],

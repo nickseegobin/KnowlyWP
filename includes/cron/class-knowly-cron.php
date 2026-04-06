@@ -3,9 +3,6 @@
  * Knowly_Cron — Scheduled background jobs.
  *
  * Jobs:
- *  knowly_monthly_token_refresh  — 1st of each month at 00:05 UTC
- *                                 Resets free-tier token balances to KNOWLY_FREE_TOKEN_MONTHLY.
- *
  *  knowly_monthly_gem_refresh    — 1st of each month at 00:10 UTC
  *                                 Resets free-tier parent gem balances (reads knowly_gem_free_monthly_{curriculum}).
  *
@@ -29,25 +26,12 @@ class Knowly_Cron {
      * Called from Knowly_Core::boot().
      */
     public static function register_hooks(): void {
-        add_action( 'knowly_monthly_token_refresh',   [ __CLASS__, 'run_monthly_token_refresh' ] );
         add_action( 'knowly_monthly_gem_refresh',     [ __CLASS__, 'run_monthly_gem_refresh' ] );
         add_action( 'knowly_monthly_red_gem_stipend', [ __CLASS__, 'run_monthly_red_gem_stipend' ] );
         add_action( 'knowly_weekly_digest',           [ __CLASS__, 'run_weekly_digest' ] );
 
         // Add 'monthly' to WP cron schedules if not present
         add_filter( 'cron_schedules', [ __CLASS__, 'add_cron_schedules' ] );
-    }
-
-    // ── Monthly Token Refresh ─────────────────────────────────────────────────
-
-    public static function run_monthly_token_refresh(): void {
-        Knowly_Debug::log( 'cron.token_refresh', 'Monthly token refresh cron started', [], null, 'info' );
-
-        $count = Knowly_Token_Service::run_monthly_refresh();
-
-        Knowly_Debug::log( 'cron.token_refresh', 'Monthly token refresh cron completed', [
-            'accounts_refreshed' => $count,
-        ], null, 'info' );
     }
 
     // ── Monthly Gem Refresh ───────────────────────────────────────────────────

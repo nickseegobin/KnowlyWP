@@ -728,10 +728,9 @@ class Knowly_Admin_Members {
         $user->set_role( 'knowly_parent' );
         wp_update_user( [ 'ID' => $user_id, 'display_name' => $display_name ] );
 
+        Knowly_Gem_Service::grant_on_registration( $user_id );
         if ( $tokens > 0 ) {
-            Knowly_Token_Service::credit( $user_id, $tokens, 'admin_credit', '', 'Initial token grant' );
-        } else {
-            update_user_meta( $user_id, 'knowly_token_balance', 0 );
+            Knowly_Gem_Service::credit( $user_id, $tokens, 'admin_credit', '', '', 'Initial gem grant' );
         }
 
         Knowly_Debug::log( 'admin.members', 'Parent account created via admin', [
@@ -867,7 +866,7 @@ class Knowly_Admin_Members {
         if ( ! $parent_id ) wp_send_json_error( [ 'message' => 'Invalid parent.' ] );
         if ( $amount <= 0 ) wp_send_json_error( [ 'message' => 'Amount must be greater than zero.' ] );
 
-        $result = Knowly_Token_Service::credit( $parent_id, $amount, 'admin_credit', '', 'Admin credit' );
+        $result = Knowly_Gem_Service::credit( $parent_id, $amount, 'admin_credit', '', '', 'Admin gem credit' );
         if ( is_wp_error( $result ) ) {
             wp_send_json_error( [ 'message' => $result->get_error_message() ] );
         }

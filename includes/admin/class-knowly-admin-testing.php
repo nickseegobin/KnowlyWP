@@ -10,7 +10,6 @@
  *   System     — JWT secret, DB tables, Railway connection
  *   Auth       — Login, /me, PIN set/verify
  *   Children   — Create, list, switch, remove
- *   Tokens     — Balance, credit, deduct, monthly refresh
  *   Exams      — Catalogue, start, checkpoint, submit
  *   Results    — History, stats, session detail
  *   Insights   — Per-exam insight, weekly digest
@@ -110,11 +109,6 @@ class Knowly_Admin_Testing {
                 'children_list'        => self::test_children_list( $data ),
                 'children_create'      => self::test_children_create( $data ),
                 'children_switch'      => self::test_children_switch( $data ),
-                // Tokens
-                'tokens_balance'       => self::test_tokens_balance( $data ),
-                'tokens_credit'        => self::test_tokens_credit( $data ),
-                'tokens_deduct'        => self::test_tokens_deduct( $data ),
-                'tokens_monthly'       => self::test_tokens_monthly(),
                 // Exams
                 'exams_catalogue'      => self::test_exams_catalogue( $data ),
                 'exams_start'          => self::test_exams_start( $data ),
@@ -165,10 +159,11 @@ class Knowly_Admin_Testing {
     private static function test_db_tables(): array {
         global $wpdb;
         $tables = [
-            'knowly_children', 'knowly_token_ledger', 'knowly_exam_pool',
+            'knowly_children', 'knowly_exam_pool',
             'knowly_exam_sessions', 'knowly_exam_answers', 'knowly_topic_breakdown',
             'knowly_exam_insights', 'knowly_weekly_insights',
             'knowly_notifications', 'knowly_migration_log', 'knowly_debug_log',
+            'knowly_gem_transactions', 'knowly_red_gem_transactions', 'knowly_processed_webhooks',
         ];
 
         $missing = [];
@@ -306,57 +301,6 @@ class Knowly_Admin_Testing {
         return $res['status'] === 200
             ? self::pass( 'Child switched.', $res['body']['data'] ?? [] )
             : self::fail( 'Switch failed.', $res );
-    }
-
-    // ── Token Tests ───────────────────────────────────────────────────────────
-
-    private static function test_tokens_balance( array $data ): array {
-        if ( empty( $data['token'] ) ) return self::warn( 'Provide token.' );
-        $res = self::api_get( '/tokens/balance', $data['token'] );
-        return $res['status'] === 200
-            ? self::pass( 'Balance fetched.', $res['body']['data'] ?? [] )
-            : self::fail( 'Balance failed.', $res );
-    }
-
-    private static function test_tokens_credit( array $data ): array {
-        if ( empty( $data['user_id'] ) ) return self::warn( 'Provide user_id for admin credit test.' );
-        $admin_token = self::get_admin_token();
-        if ( ! $admin_token ) return self::warn( 'Could not generate admin token.' );
-
-        $res = self::api_post( '/tokens/admin/credit', [
-            'user_id' => (int) $data['user_id'],
-            'amount'  => 1,
-            'note'    => 'Test Suite credit',
-        ], $admin_token );
-
-        return $res['status'] === 200
-            ? self::pass( 'Credit applied.', $res['body']['data'] ?? [] )
-            : self::fail( 'Credit failed.', $res );
-    }
-
-    private static function test_tokens_deduct( array $data ): array {
-        if ( empty( $data['user_id'] ) ) return self::warn( 'Provide user_id.' );
-        $admin_token = self::get_admin_token();
-        if ( ! $admin_token ) return self::warn( 'Could not generate admin token.' );
-
-        $res = self::api_post( '/tokens/admin/deduct', [
-            'user_id' => (int) $data['user_id'],
-            'amount'  => 1,
-            'note'    => 'Test Suite deduct',
-        ], $admin_token );
-
-        return $res['status'] === 200
-            ? self::pass( 'Deduct applied.', $res['body']['data'] ?? [] )
-            : self::fail( 'Deduct failed.', $res );
-    }
-
-    private static function test_tokens_monthly(): array {
-        $admin_token = self::get_admin_token();
-        if ( ! $admin_token ) return self::warn( 'Could not generate admin token.' );
-        $res = self::api_post( '/tokens/admin/refresh', [], $admin_token );
-        return $res['status'] === 200
-            ? self::pass( 'Monthly refresh triggered.', $res['body']['data'] ?? [] )
-            : self::fail( 'Monthly refresh failed.', $res );
     }
 
     // ── Exam Tests ────────────────────────────────────────────────────────────
@@ -590,7 +534,7 @@ class Knowly_Admin_Testing {
                 ( new WP_User( $parent_id ) )->set_role( 'knowly_parent' );
                 wp_update_user( [ 'ID' => $parent_id, 'first_name' => 'Test', 'last_name' => 'Parent', 'display_name' => 'Test' ] );
                 update_user_meta( $parent_id, 'knowly_is_test_account', true );
-                Knowly_Token_Service::grant_on_registration( $parent_id );
+                Knowly_Gem_Service::grant_on_registration( $parent_id );
                 $report[] = "✓ Parent created (ID: {$parent_id}, email: {$parent_email})";
             } else {
                 $report[] = '✗ Parent creation failed: ' . $parent_id->get_error_message();
@@ -694,15 +638,6 @@ class Knowly_Admin_Testing {
                     'children_list'   => [ 'label' => 'List children',     'method' => 'GET',    'route' => '/children' ],
                     'children_create' => [ 'label' => 'Create child',      'method' => 'POST',   'route' => '/children' ],
                     'children_switch' => [ 'label' => 'Switch active child', 'method' => 'POST', 'route' => '/children/{id}/switch' ],
-                ],
-            ],
-            'tokens' => [
-                'label' => '🪙 Tokens',
-                'tests' => [
-                    'tokens_balance' => [ 'label' => 'Get balance',          'method' => 'GET',  'route' => '/tokens/balance' ],
-                    'tokens_credit'  => [ 'label' => 'Admin credit',         'method' => 'POST', 'route' => '/tokens/admin/credit' ],
-                    'tokens_deduct'  => [ 'label' => 'Admin deduct',         'method' => 'POST', 'route' => '/tokens/admin/deduct' ],
-                    'tokens_monthly' => [ 'label' => 'Trigger monthly reset','method' => 'POST', 'route' => '/tokens/admin/refresh' ],
                 ],
             ],
             'exams' => [

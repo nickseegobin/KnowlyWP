@@ -52,7 +52,6 @@ class Knowly_Core {
     public static function register_routes(): void {
         ( new Knowly_Auth_API() )->register_routes();
         ( new Knowly_Children_API() )->register_routes();
-        ( new Knowly_Tokens_API() )->register_routes();
         ( new Knowly_Exams_API() )->register_routes();
         ( new Knowly_Results_API() )->register_routes();
         ( new Knowly_Insights_API() )->register_routes();

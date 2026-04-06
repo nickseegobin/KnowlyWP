@@ -27,7 +27,6 @@ class Knowly_Activator {
     // ── Deactivation ─────────────────────────────────────────────────────────
 
     public static function deactivate(): void {
-        wp_clear_scheduled_hook( 'knowly_monthly_token_refresh' );
         wp_clear_scheduled_hook( 'knowly_weekly_digest' );
         wp_clear_scheduled_hook( 'knowly_monthly_gem_refresh' );
         wp_clear_scheduled_hook( 'knowly_monthly_red_gem_stipend' );
@@ -309,7 +308,6 @@ class Knowly_Activator {
             'knowly_railway_server_key'    => '',
             'knowly_allowed_origins'       => '',
             'knowly_content_source'        => 'pool_only', // pool_only | railway | both
-            'knowly_dev_bypass_tokens'     => false,
             'knowly_pool_default_target'   => 10,
             // Block 2
             'knowly_max_children'          => 3,
@@ -332,12 +330,6 @@ class Knowly_Activator {
     // ── Cron Scheduling ───────────────────────────────────────────────────────
 
     private static function schedule_crons(): void {
-        // Monthly token refresh — 1st of month at 00:05 UTC
-        if ( ! wp_next_scheduled( 'knowly_monthly_token_refresh' ) ) {
-            $first_of_month = mktime( 0, 5, 0, (int) date( 'n' ) + 1, 1, (int) date( 'Y' ) );
-            wp_schedule_event( $first_of_month, 'monthly', 'knowly_monthly_token_refresh' );
-        }
-
         // Weekly digest — every Monday at 06:00 UTC
         if ( ! wp_next_scheduled( 'knowly_weekly_digest' ) ) {
             // Find next Monday
