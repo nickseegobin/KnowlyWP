@@ -1,22 +1,22 @@
 <?php
 /**
- * Noey_Results_API — Exam results and history endpoints.
+ * Knowly_Results_API — Exam results and history endpoints.
  *
  * Routes:
- *   GET /noey/v1/results                    JWT  Paginated session history
- *   GET /noey/v1/results/stats              JWT  Aggregate stats + topic breakdown
- *   GET /noey/v1/results/{session_id}       JWT  Full session detail with answers
+ *   GET /knowly/v1/results                    JWT  Paginated session history
+ *   GET /knowly/v1/results/stats              JWT  Aggregate stats + topic breakdown
+ *   GET /knowly/v1/results/{session_id}       JWT  Full session detail with answers
  *
  * Parent override: pass ?child_id={id} to /results or /results/stats to read any owned
  * child's data without changing the active-child context (useful for analytics overview).
  * The parent must own the child or a 403 is returned.
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Results_API extends Noey_API_Base {
+class Knowly_Results_API extends Knowly_API_Base {
 
     public function register_routes(): void {
         $ns = $this->namespace;
@@ -55,7 +55,7 @@ class Noey_Results_API extends Noey_API_Base {
         if ( is_wp_error( $child_id ) ) return $child_id;
 
         $paging = $this->paginate( $request );
-        $result = Noey_Results_Service::get_sessions( $child_id, $paging['page'], $paging['per_page'] );
+        $result = Knowly_Results_Service::get_sessions( $child_id, $paging['page'], $paging['per_page'] );
 
         return $this->success( $result );
     }
@@ -64,14 +64,14 @@ class Noey_Results_API extends Noey_API_Base {
         $child_id = $this->resolve_child_id( $request );
         if ( is_wp_error( $child_id ) ) return $child_id;
 
-        return $this->success( Noey_Results_Service::get_stats( $child_id ) );
+        return $this->success( Knowly_Results_Service::get_stats( $child_id ) );
     }
 
     public function detail( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Noey_Results_Service::get_session_detail( (int) $request['session_id'], $ctx['child_id'] );
+        $result = Knowly_Results_Service::get_session_detail( (int) $request['session_id'], $ctx['child_id'] );
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }
 }

@@ -1,22 +1,22 @@
 <?php
 /**
- * Noey_Exams_API — Exam delivery endpoints.
+ * Knowly_Exams_API — Exam delivery endpoints.
  *
  * Routes:
- *   GET    /noey/v1/exams                          JWT  Exam catalogue
- *   GET    /noey/v1/exams/active                   JWT  Active session for current child (or null)
- *   POST   /noey/v1/exams/start                    JWT  Start exam (deduct token + serve package)
- *   GET    /noey/v1/exams/{session_id}/checkpoint  JWT  Get saved checkpoint
- *   POST   /noey/v1/exams/{session_id}/checkpoint  JWT  Save mid-exam checkpoint
- *   POST   /noey/v1/exams/{session_id}/submit      JWT  Submit exam answers
- *   DELETE /noey/v1/exams/{session_id}             JWT  Cancel an active exam session
+ *   GET    /knowly/v1/exams                          JWT  Exam catalogue
+ *   GET    /knowly/v1/exams/active                   JWT  Active session for current child (or null)
+ *   POST   /knowly/v1/exams/start                    JWT  Start exam (deduct token + serve package)
+ *   GET    /knowly/v1/exams/{session_id}/checkpoint  JWT  Get saved checkpoint
+ *   POST   /knowly/v1/exams/{session_id}/checkpoint  JWT  Save mid-exam checkpoint
+ *   POST   /knowly/v1/exams/{session_id}/submit      JWT  Submit exam answers
+ *   DELETE /knowly/v1/exams/{session_id}             JWT  Cancel an active exam session
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Exams_API extends Noey_API_Base {
+class Knowly_Exams_API extends Knowly_API_Base {
 
     public function register_routes(): void {
         $ns = $this->namespace;
@@ -26,8 +26,8 @@ class Noey_Exams_API extends Noey_API_Base {
             'callback'            => [ $this, 'catalogue' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'standard'   => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
-                'term'       => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'level'     => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'period'   => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
                 'subject'    => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
                 'difficulty' => [ 'type' => 'string', 'enum' => [ 'easy', 'medium', 'hard' ] ],
             ],
@@ -44,8 +44,8 @@ class Noey_Exams_API extends Noey_API_Base {
             'callback'            => [ $this, 'start' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'standard'   => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
-                'term'       => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'level'     => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'period'   => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
                 'subject'    => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
                 'difficulty' => [ 'required' => false, 'type' => 'string', 'default' => 'medium', 'enum' => [ 'easy', 'medium', 'hard' ] ],
             ],
@@ -89,7 +89,7 @@ class Noey_Exams_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $session = Noey_Exam_Service::get_active_session( $ctx['child_id'] );
+        $session = Knowly_Exam_Service::get_active_session( $ctx['child_id'] );
         return $this->success( [ 'session' => $session ] );
     }
 
@@ -98,14 +98,14 @@ class Noey_Exams_API extends Noey_API_Base {
         if ( is_wp_error( $user_id ) ) return $user_id;
 
         $filters = array_filter( [
-            'standard'   => $request->get_param( 'standard' ),
-            'term'       => $request->get_param( 'term' ),
+            'level'     => $request->get_param( 'level' ),
+            'period'   => $request->get_param( 'period' ),
             'subject'    => $request->get_param( 'subject' ),
             'difficulty' => $request->get_param( 'difficulty' ),
         ] );
 
         return $this->success( [
-            'catalogue' => Noey_Exam_Service::get_catalogue( $filters ),
+            'catalogue' => Knowly_Exam_Service::get_catalogue( $filters ),
         ] );
     }
 
@@ -113,11 +113,11 @@ class Noey_Exams_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Noey_Exam_Service::start(
+        $result = Knowly_Exam_Service::start(
             $ctx['parent_id'],
             $ctx['child_id'],
-            $request->get_param( 'standard' ),
-            $request->get_param( 'term' ),
+            $request->get_param( 'level' ),
+            $request->get_param( 'period' ),
             $request->get_param( 'subject' ),
             $request->get_param( 'difficulty' )
         );
@@ -129,7 +129,7 @@ class Noey_Exams_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $raw = get_user_meta( $ctx['child_id'], 'noey_checkpoint', true );
+        $raw = get_user_meta( $ctx['child_id'], 'knowly_checkpoint', true );
         if ( ! $raw ) {
             return $this->success( [ 'checkpoint' => null ] );
         }
@@ -148,7 +148,7 @@ class Noey_Exams_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Noey_Exam_Service::checkpoint(
+        $result = Knowly_Exam_Service::checkpoint(
             (int) $request['session_id'],
             $ctx['child_id'],
             $request->get_param( 'state' )
@@ -161,7 +161,7 @@ class Noey_Exams_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Noey_Exam_Service::submit(
+        $result = Knowly_Exam_Service::submit(
             (int) $request['session_id'],
             $ctx['child_id'],
             $request->get_param( 'answers' )
@@ -174,7 +174,7 @@ class Noey_Exams_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Noey_Exam_Service::cancel( (int) $request['session_id'], $ctx['child_id'] );
+        $result = Knowly_Exam_Service::cancel( (int) $request['session_id'], $ctx['child_id'] );
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }
 }

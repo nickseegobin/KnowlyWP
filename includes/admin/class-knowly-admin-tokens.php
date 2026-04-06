@@ -1,6 +1,6 @@
 <?php
 /**
- * Noey_Admin_Tokens — Token management admin page.
+ * Knowly_Admin_Tokens — Token management admin page.
  *
  * Features:
  *  - Platform stats: total tokens in circulation, total spent, zero-balance accounts
@@ -12,25 +12,25 @@
  *  - Dev bypass toggle — disable token deduction globally for testing
  *  - Recent transactions feed — cross-account last 50 ledger entries
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Admin_Tokens {
+class Knowly_Admin_Tokens {
 
     // ── Boot ──────────────────────────────────────────────────────────────────
 
     public static function boot(): void {
-        add_action( 'wp_ajax_noey_tokens_credit',          [ __CLASS__, 'ajax_credit' ] );
-        add_action( 'wp_ajax_noey_tokens_deduct',          [ __CLASS__, 'ajax_deduct' ] );
-        add_action( 'wp_ajax_noey_tokens_set',             [ __CLASS__, 'ajax_set' ] );
-        add_action( 'wp_ajax_noey_tokens_ledger',          [ __CLASS__, 'ajax_ledger' ] );
-        add_action( 'wp_ajax_noey_tokens_bulk_credit',     [ __CLASS__, 'ajax_bulk_credit' ] );
-        add_action( 'wp_ajax_noey_tokens_monthly_refresh', [ __CLASS__, 'ajax_monthly_refresh' ] );
-        add_action( 'wp_ajax_noey_tokens_toggle_premium',  [ __CLASS__, 'ajax_toggle_premium' ] );
-        add_action( 'wp_ajax_noey_tokens_bypass_toggle',   [ __CLASS__, 'ajax_bypass_toggle' ] );
-        add_action( 'wp_ajax_noey_tokens_recent',          [ __CLASS__, 'ajax_recent' ] );
+        add_action( 'wp_ajax_knowly_tokens_credit',          [ __CLASS__, 'ajax_credit' ] );
+        add_action( 'wp_ajax_knowly_tokens_deduct',          [ __CLASS__, 'ajax_deduct' ] );
+        add_action( 'wp_ajax_knowly_tokens_set',             [ __CLASS__, 'ajax_set' ] );
+        add_action( 'wp_ajax_knowly_tokens_ledger',          [ __CLASS__, 'ajax_ledger' ] );
+        add_action( 'wp_ajax_knowly_tokens_bulk_credit',     [ __CLASS__, 'ajax_bulk_credit' ] );
+        add_action( 'wp_ajax_knowly_tokens_monthly_refresh', [ __CLASS__, 'ajax_monthly_refresh' ] );
+        add_action( 'wp_ajax_knowly_tokens_toggle_premium',  [ __CLASS__, 'ajax_toggle_premium' ] );
+        add_action( 'wp_ajax_knowly_tokens_bypass_toggle',   [ __CLASS__, 'ajax_bypass_toggle' ] );
+        add_action( 'wp_ajax_knowly_tokens_recent',          [ __CLASS__, 'ajax_recent' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -39,9 +39,9 @@ class Noey_Admin_Tokens {
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Insufficient permissions.' );
 
         global $wpdb;
-        $ledger_table = $wpdb->prefix . 'noey_token_ledger';
+        $ledger_table = $wpdb->prefix . 'knowly_token_ledger';
 
-        $parents = get_users( [ 'role' => 'noey_parent', 'orderby' => 'registered', 'order' => 'DESC' ] );
+        $parents = get_users( [ 'role' => 'knowly_parent', 'orderby' => 'registered', 'order' => 'DESC' ] );
 
         // Platform stats
         $total_in_circulation = 0;
@@ -50,16 +50,16 @@ class Noey_Admin_Tokens {
         $premium_count        = 0;
 
         foreach ( $parents as $p ) {
-            $bal = (int) get_user_meta( $p->ID, 'noey_token_balance', true );
+            $bal = (int) get_user_meta( $p->ID, 'knowly_token_balance', true );
             $total_in_circulation += $bal;
-            $total_lifetime_spent += (int) get_user_meta( $p->ID, 'noey_tokens_lifetime', true );
+            $total_lifetime_spent += (int) get_user_meta( $p->ID, 'knowly_tokens_lifetime', true );
             if ( $bal === 0 )   $zero_balance_count++;
-            if ( get_user_meta( $p->ID, 'noey_premium', true ) ) $premium_count++;
+            if ( get_user_meta( $p->ID, 'knowly_premium', true ) ) $premium_count++;
         }
 
         $total_tx = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$ledger_table}" );
-        $dev_bypass = (bool) get_option( 'noey_dev_bypass_tokens', false );
-        $next_refresh = wp_next_scheduled( 'noey_monthly_token_refresh' );
+        $dev_bypass = (bool) get_option( 'knowly_dev_bypass_tokens', false );
+        $next_refresh = wp_next_scheduled( 'knowly_monthly_token_refresh' );
         ?>
         <div class="wrap noey-wrap">
             <h1>NoeyAPI — Tokens</h1>
@@ -140,9 +140,9 @@ class Noey_Admin_Tokens {
                             </thead>
                             <tbody>
                             <?php foreach ( $parents as $parent ) :
-                                $balance    = (int) get_user_meta( $parent->ID, 'noey_token_balance', true );
-                                $lifetime   = (int) get_user_meta( $parent->ID, 'noey_tokens_lifetime', true );
-                                $is_premium = (bool) get_user_meta( $parent->ID, 'noey_premium', true );
+                                $balance    = (int) get_user_meta( $parent->ID, 'knowly_token_balance', true );
+                                $lifetime   = (int) get_user_meta( $parent->ID, 'knowly_tokens_lifetime', true );
+                                $is_premium = (bool) get_user_meta( $parent->ID, 'knowly_premium', true );
                                 $last_tx    = $wpdb->get_row( $wpdb->prepare(
                                     "SELECT amount, type, created_at FROM {$ledger_table} WHERE user_id=%d ORDER BY ledger_id DESC LIMIT 1",
                                     $parent->ID
@@ -250,7 +250,7 @@ class Noey_Admin_Tokens {
                     <div class="noey-settings-section">
                         <h2>Monthly Refresh</h2>
                         <p style="font-size:12px;color:#666;margin-bottom:6px;">
-                            Resets all <em>free-tier</em> accounts to <strong><?= esc_html( NOEY_FREE_TOKEN_MONTHLY ) ?> tokens</strong>.
+                            Resets all <em>free-tier</em> accounts to <strong><?= esc_html( KNOWLY_FREE_TOKEN_MONTHLY ) ?> tokens</strong>.
                             Premium accounts are excluded.
                         </p>
                         <?php if ( $next_refresh ) : ?>
@@ -389,7 +389,7 @@ class Noey_Admin_Tokens {
 
         <script>
         (function($) {
-            var nonce = '<?= wp_create_nonce( 'noey_admin_nonce' ) ?>';
+            var nonce = '<?= wp_create_nonce( 'knowly_admin_nonce' ) ?>';
 
             // ── Search & Filter ───────────────────────────────────────────────
             function applyFilters() {
@@ -462,7 +462,7 @@ class Noey_Admin_Tokens {
                 var note   = $('#adj-note').val();
                 $('#adj-error').hide();
 
-                var ajaxAction = 'noey_tokens_' + action; // credit | deduct | set
+                var ajaxAction = 'knowly_tokens_' + action; // credit | deduct | set
 
                 $.post(ajaxurl, {
                     action:    ajaxAction,
@@ -494,7 +494,7 @@ class Noey_Admin_Tokens {
                 $('#ledger-body').html('<p style="color:#888;padding:10px 0;">Loading…</p>');
                 openModal('noey-ledger-modal');
 
-                $.post(ajaxurl, { action: 'noey_tokens_ledger', nonce: nonce, parent_id: pid },
+                $.post(ajaxurl, { action: 'knowly_tokens_ledger', nonce: nonce, parent_id: pid },
                     function(res) {
                         if (res.success) {
                             $('#ledger-body').html(res.data.html);
@@ -518,7 +518,7 @@ class Noey_Admin_Tokens {
                 $('#bulk-error').hide();
 
                 $.post(ajaxurl, {
-                    action:  'noey_tokens_bulk_credit',
+                    action:  'knowly_tokens_bulk_credit',
                     nonce:   nonce,
                     target:  $('#bulk-target').val(),
                     amount:  $('#bulk-amount').val(),
@@ -538,7 +538,7 @@ class Noey_Admin_Tokens {
             // ── Monthly Refresh ───────────────────────────────────────────────
             function runMonthlyRefresh($btn, $resultEl) {
                 $btn.prop('disabled', true).text('Running…');
-                $.post(ajaxurl, { action: 'noey_tokens_monthly_refresh', nonce: nonce },
+                $.post(ajaxurl, { action: 'knowly_tokens_monthly_refresh', nonce: nonce },
                     function(res) {
                         $btn.prop('disabled', false).text('Run Now');
                         if (res.success) {
@@ -551,7 +551,7 @@ class Noey_Admin_Tokens {
             }
 
             $('#noey-monthly-refresh-btn').on('click', function() {
-                if (!confirm('Run the monthly token refresh now? This will reset all free-tier accounts to <?= NOEY_FREE_TOKEN_MONTHLY ?> tokens.')) return;
+                if (!confirm('Run the monthly token refresh now? This will reset all free-tier accounts to <?= KNOWLY_FREE_TOKEN_MONTHLY ?> tokens.')) return;
                 runMonthlyRefresh($(this), $('<span>'));
                 location.reload();
             });
@@ -568,7 +568,7 @@ class Noey_Admin_Tokens {
                 var state = parseInt($btn.data('state'));
 
                 $.post(ajaxurl, {
-                    action:    'noey_tokens_toggle_premium',
+                    action:    'knowly_tokens_toggle_premium',
                     nonce:     nonce,
                     parent_id: pid,
                     premium:   state ? 0 : 1
@@ -595,7 +595,7 @@ class Noey_Admin_Tokens {
                 if (!confirm('Turn token bypass ' + label + '?')) return;
 
                 $.post(ajaxurl, {
-                    action:  'noey_tokens_bypass_toggle',
+                    action:  'knowly_tokens_bypass_toggle',
                     nonce:   nonce,
                     enabled: newState
                 }, function(res) {
@@ -608,7 +608,7 @@ class Noey_Admin_Tokens {
             // ── Recent Transactions ───────────────────────────────────────────
             $('#noey-load-recent').on('click', function() {
                 var $btn = $(this).prop('disabled', true).text('Loading…');
-                $.post(ajaxurl, { action: 'noey_tokens_recent', nonce: nonce },
+                $.post(ajaxurl, { action: 'knowly_tokens_recent', nonce: nonce },
                     function(res) {
                         $btn.prop('disabled', false).text('Refresh');
                         if (res.success) {
@@ -626,7 +626,7 @@ class Noey_Admin_Tokens {
     // ── AJAX: Credit ──────────────────────────────────────────────────────────
 
     public static function ajax_credit(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
@@ -635,17 +635,17 @@ class Noey_Admin_Tokens {
 
         if ( $amount <= 0 ) wp_send_json_error( [ 'message' => 'Amount must be greater than zero.' ] );
 
-        $result = Noey_Token_Service::credit( $parent_id, $amount, 'admin_credit', '', $note ?: 'Admin credit' );
+        $result = Knowly_Token_Service::credit( $parent_id, $amount, 'admin_credit', '', $note ?: 'Admin credit' );
         if ( is_wp_error( $result ) ) wp_send_json_error( [ 'message' => $result->get_error_message() ] );
 
-        Noey_Debug::log( 'admin.tokens', 'Tokens credited', [ 'parent_id' => $parent_id, 'amount' => $amount ], null, 'info' );
+        Knowly_Debug::log( 'admin.tokens', 'Tokens credited', [ 'parent_id' => $parent_id, 'amount' => $amount ], null, 'info' );
         wp_send_json_success( $result );
     }
 
     // ── AJAX: Deduct ──────────────────────────────────────────────────────────
 
     public static function ajax_deduct(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
@@ -654,17 +654,17 @@ class Noey_Admin_Tokens {
 
         if ( $amount <= 0 ) wp_send_json_error( [ 'message' => 'Amount must be greater than zero.' ] );
 
-        $balance_before = Noey_Token_Service::get_balance( $parent_id );
+        $balance_before = Knowly_Token_Service::get_balance( $parent_id );
         if ( $amount > $balance_before ) {
             wp_send_json_error( [ 'message' => "Cannot deduct {$amount} — current balance is only {$balance_before}." ] );
         }
 
         $balance_after = $balance_before - $amount;
-        update_user_meta( $parent_id, 'noey_token_balance', $balance_after );
+        update_user_meta( $parent_id, 'knowly_token_balance', $balance_after );
 
         global $wpdb;
         $wpdb->insert(
-            $wpdb->prefix . 'noey_token_ledger',
+            $wpdb->prefix . 'knowly_token_ledger',
             [
                 'user_id'       => $parent_id,
                 'amount'        => -$amount,
@@ -677,14 +677,14 @@ class Noey_Admin_Tokens {
             [ '%d', '%d', '%d', '%s', '%s', '%s', '%s' ]
         );
 
-        Noey_Debug::log( 'admin.tokens', 'Tokens deducted', [ 'parent_id' => $parent_id, 'amount' => $amount ], null, 'info' );
+        Knowly_Debug::log( 'admin.tokens', 'Tokens deducted', [ 'parent_id' => $parent_id, 'amount' => $amount ], null, 'info' );
         wp_send_json_success( [ 'balance_before' => $balance_before, 'balance_after' => $balance_after ] );
     }
 
     // ── AJAX: Set exact balance ───────────────────────────────────────────────
 
     public static function ajax_set(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
@@ -693,14 +693,14 @@ class Noey_Admin_Tokens {
 
         if ( $amount < 0 ) wp_send_json_error( [ 'message' => 'Balance cannot be negative.' ] );
 
-        $balance_before = Noey_Token_Service::get_balance( $parent_id );
+        $balance_before = Knowly_Token_Service::get_balance( $parent_id );
         $diff           = $amount - $balance_before;
 
-        update_user_meta( $parent_id, 'noey_token_balance', $amount );
+        update_user_meta( $parent_id, 'knowly_token_balance', $amount );
 
         global $wpdb;
         $wpdb->insert(
-            $wpdb->prefix . 'noey_token_ledger',
+            $wpdb->prefix . 'knowly_token_ledger',
             [
                 'user_id'       => $parent_id,
                 'amount'        => $diff,
@@ -713,7 +713,7 @@ class Noey_Admin_Tokens {
             [ '%d', '%d', '%d', '%s', '%s', '%s', '%s' ]
         );
 
-        Noey_Debug::log( 'admin.tokens', 'Balance set directly', [
+        Knowly_Debug::log( 'admin.tokens', 'Balance set directly', [
             'parent_id' => $parent_id,
             'from'      => $balance_before,
             'to'        => $amount,
@@ -725,17 +725,17 @@ class Noey_Admin_Tokens {
     // ── AJAX: Ledger ──────────────────────────────────────────────────────────
 
     public static function ajax_ledger(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
-        $rows      = Noey_Token_Service::get_ledger( $parent_id, 100 );
+        $rows      = Knowly_Token_Service::get_ledger( $parent_id, 100 );
 
         ob_start();
         if ( empty( $rows ) ) {
             echo '<p style="color:#888;text-align:center;padding:10px 0;">No transactions yet.</p>';
         } else {
-            $balance = Noey_Token_Service::get_balance( $parent_id );
+            $balance = Knowly_Token_Service::get_balance( $parent_id );
             echo '<p style="font-size:13px;margin:0 0 12px;">Current balance: <strong>' . esc_html( $balance ) . ' tokens</strong></p>';
             ?>
             <table class="noey-table" style="font-size:12px;">
@@ -774,7 +774,7 @@ class Noey_Admin_Tokens {
     // ── AJAX: Bulk credit ─────────────────────────────────────────────────────
 
     public static function ajax_bulk_credit(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $target = sanitize_key( $_POST['target'] ?? 'all' );
@@ -783,18 +783,18 @@ class Noey_Admin_Tokens {
 
         if ( $amount <= 0 ) wp_send_json_error( [ 'message' => 'Amount must be greater than zero.' ] );
 
-        $parents  = get_users( [ 'role' => 'noey_parent', 'fields' => 'ID' ] );
+        $parents  = get_users( [ 'role' => 'knowly_parent', 'fields' => 'ID' ] );
         $credited = 0;
 
         foreach ( $parents as $pid ) {
-            if ( $target === 'zero' && Noey_Token_Service::get_balance( $pid ) > 0 ) {
+            if ( $target === 'zero' && Knowly_Token_Service::get_balance( $pid ) > 0 ) {
                 continue;
             }
-            Noey_Token_Service::credit( $pid, $amount, 'admin_credit', '', $note ?: 'Bulk admin credit' );
+            Knowly_Token_Service::credit( $pid, $amount, 'admin_credit', '', $note ?: 'Bulk admin credit' );
             $credited++;
         }
 
-        Noey_Debug::log( 'admin.tokens', 'Bulk credit applied', [
+        Knowly_Debug::log( 'admin.tokens', 'Bulk credit applied', [
             'target'   => $target,
             'amount'   => $amount,
             'credited' => $credited,
@@ -806,57 +806,57 @@ class Noey_Admin_Tokens {
     // ── AJAX: Monthly refresh ─────────────────────────────────────────────────
 
     public static function ajax_monthly_refresh(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        $refreshed = Noey_Token_Service::run_monthly_refresh();
+        $refreshed = Knowly_Token_Service::run_monthly_refresh();
 
-        Noey_Debug::log( 'admin.tokens', 'Monthly refresh triggered from admin', [ 'refreshed' => $refreshed ], null, 'info' );
+        Knowly_Debug::log( 'admin.tokens', 'Monthly refresh triggered from admin', [ 'refreshed' => $refreshed ], null, 'info' );
         wp_send_json_success( [ 'refreshed' => $refreshed ] );
     }
 
     // ── AJAX: Toggle premium ──────────────────────────────────────────────────
 
     public static function ajax_toggle_premium(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
         $premium   = (int) ( $_POST['premium']   ?? 0 );
 
         if ( $premium ) {
-            update_user_meta( $parent_id, 'noey_premium', 1 );
+            update_user_meta( $parent_id, 'knowly_premium', 1 );
         } else {
-            delete_user_meta( $parent_id, 'noey_premium' );
+            delete_user_meta( $parent_id, 'knowly_premium' );
         }
 
-        Noey_Debug::log( 'admin.tokens', 'Premium status toggled', [ 'parent_id' => $parent_id, 'premium' => $premium ], null, 'info' );
+        Knowly_Debug::log( 'admin.tokens', 'Premium status toggled', [ 'parent_id' => $parent_id, 'premium' => $premium ], null, 'info' );
         wp_send_json_success( [ 'premium' => (bool) $premium ] );
     }
 
     // ── AJAX: Dev bypass toggle ───────────────────────────────────────────────
 
     public static function ajax_bypass_toggle(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $enabled = (int) ( $_POST['enabled'] ?? 0 );
-        update_option( 'noey_dev_bypass_tokens', (bool) $enabled );
+        update_option( 'knowly_dev_bypass_tokens', (bool) $enabled );
 
-        Noey_Debug::log( 'admin.tokens', 'Dev bypass toggled', [ 'enabled' => $enabled ], null, 'info' );
+        Knowly_Debug::log( 'admin.tokens', 'Dev bypass toggled', [ 'enabled' => $enabled ], null, 'info' );
         wp_send_json_success( [ 'enabled' => (bool) $enabled ] );
     }
 
     // ── AJAX: Recent transactions ─────────────────────────────────────────────
 
     public static function ajax_recent(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         global $wpdb;
         $rows = $wpdb->get_results(
             "SELECT l.*, u.display_name
-             FROM {$wpdb->prefix}noey_token_ledger l
+             FROM {$wpdb->prefix}knowly_token_ledger l
              LEFT JOIN {$wpdb->users} u ON u.ID = l.user_id
              ORDER BY l.ledger_id DESC
              LIMIT 50",

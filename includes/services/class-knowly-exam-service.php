@@ -1,127 +1,109 @@
 <?php
 /**
- * Noey_Exam_Service — Exam pool management and Railway AI integration.
+ * Knowly_Exam_Service — Trial delivery and Railway integration.
  *
  * Flow:
- *  1. start() — check tokens → query pool (excluding seen packages) → Railway fallback → deduct token
- *  2. checkpoint() — persist mid-exam state to user meta
- *  3. submit() — pass results to Noey_Results_Service
+ *  1. start() — check gems → call Railway generate-exam (sequential pool) → deduct gem
+ *  2. checkpoint() — persist mid-trial state to user meta
+ *  3. submit() — pass results to Knowly_Results_Service
  *
- * @package NoeyAPI
+ * Railway returns 200 (package from pool) or 503 pool_empty (background generation triggered).
+ * Plugin never waits on Claude directly — all AI generation is async on Railway.
+ *
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Exam_Service {
+class Knowly_Exam_Service {
 
     // ── Start Exam ────────────────────────────────────────────────────────────
 
     /**
-     * Serve an exam package and deduct a token atomically.
+     * Serve a Trial package and deduct a gem atomically.
      *
      * @param int    $parent_id   Billing account.
      * @param int    $child_id    Learner.
-     * @param string $standard    e.g. 'std_4'
-     * @param string $term        e.g. 'term_1'
-     * @param string $subject     e.g. 'Mathematics'
+     * @param string $level       e.g. 'std_4'
+     * @param string $period      e.g. 'term_1'
+     * @param string $subject     e.g. 'math'
      * @param string $difficulty  easy | medium | hard
+     * @param string $trial_type  practice | sea_paper (default: practice)
+     * @param string $topic       topic slug for std_5 topic practice (nullable)
      * @return array|WP_Error  { session_id, package, balance_after }
      */
     public static function start(
         int    $parent_id,
         int    $child_id,
-        string $standard,
-        string $term,
+        string $level,
+        string $period,
         string $subject,
-        string $difficulty = 'medium'
+        string $difficulty = 'medium',
+        string $trial_type = 'practice',
+        string $topic = ''
     ): array|WP_Error {
-        Noey_Debug::log( 'exam.start', 'Exam start requested', [
-            'parent_id' => $parent_id,
-            'child_id'  => $child_id,
-            'standard'  => $standard,
-            'term'      => $term,
-            'subject'   => $subject,
+        Knowly_Debug::log( 'exam.start', 'Trial start requested', [
+            'parent_id'  => $parent_id,
+            'child_id'   => $child_id,
+            'level'      => $level,
+            'period'     => $period,
+            'subject'    => $subject,
             'difficulty' => $difficulty,
+            'trial_type' => $trial_type,
+            'topic'      => $topic,
         ], $parent_id, 'info' );
 
-        // ── 1. Pre-check token balance ────────────────────────────────────────
-        if ( ! Noey_Token_Service::has_enough( $parent_id ) ) {
-            Noey_Debug::log( 'exam.start', 'Token pre-check failed', [
+        // ── 1. Pre-check gem balance ──────────────────────────────────────────
+        if ( ! Knowly_Token_Service::has_enough( $parent_id ) ) {
+            Knowly_Debug::log( 'exam.start', 'Gem pre-check failed', [
                 'parent_id' => $parent_id,
-                'balance'   => Noey_Token_Service::get_balance( $parent_id ),
+                'balance'   => Knowly_Token_Service::get_balance( $parent_id ),
             ], $parent_id, 'warning' );
-            return new WP_Error( 'noey_insufficient_tokens', 'No tokens available. Please purchase more to continue.', [
+            return new WP_Error( 'knowly_insufficient_gems', 'Not enough Blue Gems. Please purchase more to continue.', [
                 'status'  => 402,
-                'balance' => Noey_Token_Service::get_balance( $parent_id ),
+                'balance' => Knowly_Token_Service::get_balance( $parent_id ),
             ] );
         }
 
-        // ── 2. Get seen package IDs for this child ────────────────────────────
-        $seen_ids = self::get_seen_package_ids( $child_id );
-        Noey_Debug::log( 'exam.start', 'Seen package IDs fetched', [
-            'child_id' => $child_id,
-            'count'    => count( $seen_ids ),
-        ], $child_id, 'debug' );
+        // ── 2. Fetch from Railway sequential pool ─────────────────────────────
+        $package = self::fetch_from_railway( $child_id, $level, $period, $subject, $difficulty, $trial_type, $topic );
 
-        // ── 3. Query pool ─────────────────────────────────────────────────────
-        $package = self::serve_from_pool( $standard, $term, $subject, $difficulty, $seen_ids );
-
-        if ( ! $package ) {
-            Noey_Debug::log( 'exam.start', 'Pool miss — falling back to Railway', [
-                'standard'  => $standard,
-                'term'      => $term,
-                'subject'   => $subject,
-                'difficulty' => $difficulty,
-            ], $parent_id, 'info' );
-
-            $source = get_option( 'noey_content_source', 'pool_only' );
-            if ( $source === 'pool_only' ) {
-                return new WP_Error( 'noey_no_exam_available', 'No exam available for this selection right now. Please try a different subject or difficulty.', [ 'status' => 404 ] );
-            }
-
-            $package = self::fetch_from_railway( $standard, $term, $subject, $difficulty, $seen_ids );
-            if ( is_wp_error( $package ) ) {
-                return $package;
-            }
-
-            // Store in pool for future use
-            self::store_in_pool( $package, $standard, $term, $subject, $difficulty );
+        if ( is_wp_error( $package ) ) {
+            return $package;
         }
 
-        // ── 4. Generate session ID ────────────────────────────────────────────
+        // ── 3. Generate session ID ────────────────────────────────────────────
         $external_session_id = self::generate_session_id();
 
-        // ── 5. Deduct token ───────────────────────────────────────────────────
-        $deduction = Noey_Token_Service::deduct( $parent_id, 1, $external_session_id, "Exam started: {$subject}" );
+        // ── 4. Deduct gem ─────────────────────────────────────────────────────
+        $deduction = Knowly_Token_Service::deduct( $parent_id, 1, $external_session_id, "Trial started: {$subject}" );
         if ( is_wp_error( $deduction ) ) {
             return $deduction;
         }
 
-        // ── 6. Create active session record ───────────────────────────────────
+        // ── 5. Create active session record ───────────────────────────────────
         global $wpdb;
         $wpdb->insert(
-            $wpdb->prefix . 'noey_exam_sessions',
+            $wpdb->prefix . 'knowly_exam_sessions',
             [
                 'external_session_id' => $external_session_id,
                 'child_id'            => $child_id,
                 'parent_id'           => $parent_id,
                 'package_id'          => $package['package_id'],
                 'subject'             => $subject,
-                'standard'            => $standard,
-                'term'                => $term,
+                'level'               => $level,
+                'period'              => $period,
                 'difficulty'          => $difficulty,
+                'trial_type'          => $trial_type,
                 'state'               => 'active',
                 'started_at'          => current_time( 'mysql', true ),
             ],
-            [ '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
+            [ '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
         );
 
         $session_id = $wpdb->insert_id;
 
-        // Mark pool package as served
-        self::mark_served( $package['package_id'] );
-
-        Noey_Debug::log( 'exam.start', 'Exam session created', [
+        Knowly_Debug::log( 'exam.start', 'Trial session created', [
             'session_id'          => $session_id,
             'external_session_id' => $external_session_id,
             'package_id'          => $package['package_id'],
@@ -150,7 +132,7 @@ class Noey_Exam_Service {
         global $wpdb;
         $session = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}noey_exam_sessions WHERE session_id = %d AND child_id = %d AND state = 'active'",
+                "SELECT * FROM {$wpdb->prefix}knowly_exam_sessions WHERE session_id = %d AND child_id = %d AND state = 'active'",
                 $session_id,
                 $child_id
             ),
@@ -158,16 +140,16 @@ class Noey_Exam_Service {
         );
 
         if ( ! $session ) {
-            return new WP_Error( 'noey_session_not_found', 'Active session not found.', [ 'status' => 404 ] );
+            return new WP_Error( 'knowly_session_not_found', 'Active session not found.', [ 'status' => 404 ] );
         }
 
-        update_user_meta( $child_id, 'noey_checkpoint', wp_json_encode( [
+        update_user_meta( $child_id, 'knowly_checkpoint', wp_json_encode( [
             'session_id' => $session_id,
             'state'      => $state,
             'saved_at'   => current_time( 'mysql', true ),
         ] ) );
 
-        Noey_Debug::log( 'exam.checkpoint', 'Checkpoint saved', [
+        Knowly_Debug::log( 'exam.checkpoint', 'Checkpoint saved', [
             'session_id' => $session_id,
             'child_id'   => $child_id,
         ], $child_id, 'debug' );
@@ -178,7 +160,7 @@ class Noey_Exam_Service {
     // ── Submit ────────────────────────────────────────────────────────────────
 
     /**
-     * Submit a completed exam. Delegates storage to Noey_Results_Service.
+     * Submit a completed exam. Delegates storage to Knowly_Results_Service.
      *
      * @param  int   $session_id
      * @param  int   $child_id
@@ -186,7 +168,7 @@ class Noey_Exam_Service {
      * @return array|WP_Error     Session summary.
      */
     public static function submit( int $session_id, int $child_id, array $answers ): array|WP_Error {
-        Noey_Debug::log( 'exam.submit', 'Exam submission received', [
+        Knowly_Debug::log( 'exam.submit', 'Exam submission received', [
             'session_id' => $session_id,
             'child_id'   => $child_id,
             'answers'    => count( $answers ),
@@ -196,7 +178,7 @@ class Noey_Exam_Service {
         global $wpdb;
         $session = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}noey_exam_sessions WHERE session_id = %d AND child_id = %d AND state = 'active'",
+                "SELECT * FROM {$wpdb->prefix}knowly_exam_sessions WHERE session_id = %d AND child_id = %d AND state = 'active'",
                 $session_id,
                 $child_id
             ),
@@ -204,23 +186,23 @@ class Noey_Exam_Service {
         );
 
         if ( ! $session ) {
-            Noey_Debug::log( 'exam.submit', 'Session not found or not active', [
+            Knowly_Debug::log( 'exam.submit', 'Session not found or not active', [
                 'session_id' => $session_id,
                 'child_id'   => $child_id,
             ], $child_id, 'warning' );
-            return new WP_Error( 'noey_session_not_found', 'Active exam session not found.', [ 'status' => 404 ] );
+            return new WP_Error( 'knowly_session_not_found', 'Active exam session not found.', [ 'status' => 404 ] );
         }
 
         // Store results
-        $result = Noey_Results_Service::save_submission( $session, $answers );
+        $result = Knowly_Results_Service::save_submission( $session, $answers );
         if ( is_wp_error( $result ) ) {
             return $result;
         }
 
         // Clear checkpoint
-        delete_user_meta( $child_id, 'noey_checkpoint' );
+        delete_user_meta( $child_id, 'knowly_checkpoint' );
 
-        Noey_Debug::log( 'exam.submit', 'Exam submitted and results saved', [
+        Knowly_Debug::log( 'exam.submit', 'Exam submitted and results saved', [
             'session_id' => $session_id,
             'score'      => $result['percentage'],
         ], $child_id, 'info' );
@@ -228,7 +210,7 @@ class Noey_Exam_Service {
         // ── Leaderboard upsert (synchronous, non-fatal) ──────────────────────
         // Runs before we respond so new_rank / was_personal_best are accurate.
         // Any failure returns null — exam result is never affected.
-        $leaderboard_update = Noey_Leaderboard_Service::handle_submit_upsert( $session, $result );
+        $leaderboard_update = Knowly_Leaderboard_Service::handle_submit_upsert( $session, $result );
  
         // Append to the result array returned to the API layer
         $result['leaderboard_update'] = $leaderboard_update;
@@ -250,13 +232,13 @@ class Noey_Exam_Service {
         $where  = [ '1=1' ];
         $values = [];
 
-        if ( ! empty( $filters['standard'] ) ) {
+        if ( ! empty( $filters['level'] ) ) {
             $where[]  = 'standard = %s';
-            $values[] = $filters['standard'];
+            $values[] = $filters['level'];
         }
-        if ( ! empty( $filters['term'] ) ) {
+        if ( ! empty( $filters['period'] ) ) {
             $where[]  = 'term = %s';
-            $values[] = $filters['term'];
+            $values[] = $filters['period'];
         }
         if ( ! empty( $filters['subject'] ) ) {
             $where[]  = 'subject LIKE %s';
@@ -268,7 +250,7 @@ class Noey_Exam_Service {
         }
 
         $sql = "SELECT standard, term, subject, difficulty, COUNT(*) as pool_count
-                FROM {$wpdb->prefix}noey_exam_pool
+                FROM {$wpdb->prefix}knowly_exam_pool
                 WHERE " . implode( ' AND ', $where ) . "
                 GROUP BY standard, term, subject, difficulty
                 ORDER BY subject, difficulty";
@@ -277,7 +259,7 @@ class Noey_Exam_Service {
             ? $wpdb->get_results( $sql, ARRAY_A )
             : $wpdb->get_results( $wpdb->prepare( $sql, ...$values ), ARRAY_A );
 
-        Noey_Debug::log( 'exam.catalogue', 'Catalogue fetched', [
+        Knowly_Debug::log( 'exam.catalogue', 'Catalogue fetched', [
             'filters' => $filters,
             'count'   => count( $rows ?: [] ),
         ], null, 'debug' );
@@ -285,91 +267,42 @@ class Noey_Exam_Service {
         return $rows ?: [];
     }
 
-    // ── Pool Management ───────────────────────────────────────────────────────
-
-    private static function serve_from_pool( string $standard, string $term, string $subject, string $difficulty, array $exclude_ids ): ?array {
-        global $wpdb;
-
-        $exclude_clause = '';
-        if ( ! empty( $exclude_ids ) ) {
-            $placeholders   = implode( ',', array_fill( 0, count( $exclude_ids ), '%s' ) );
-            $exclude_clause = "AND package_id NOT IN ({$placeholders})";
-        }
-
-        $sql  = "SELECT * FROM {$wpdb->prefix}noey_exam_pool
-                 WHERE standard = %s AND term = %s AND subject = %s AND difficulty = %s
-                 {$exclude_clause}
-                 ORDER BY times_served ASC, RAND()
-                 LIMIT 1";
-
-        $args = [ $standard, $term, $subject, $difficulty ];
-        if ( ! empty( $exclude_ids ) ) {
-            $args = array_merge( $args, $exclude_ids );
-        }
-
-        $row = $wpdb->get_row( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
-        if ( ! $row ) {
-            return null;
-        }
-
-        $decoded = json_decode( $row['package_json'], true );
-        if ( ! $decoded ) {
-            return null;
-        }
-
-        return array_merge( $decoded, [ 'package_id' => $row['package_id'] ] );
-    }
-
-    private static function store_in_pool( array $package, string $standard, string $term, string $subject, string $difficulty ): void {
-        global $wpdb;
-        $wpdb->replace(
-            $wpdb->prefix . 'noey_exam_pool',
-            [
-                'package_id'   => $package['package_id'],
-                'standard'     => $standard,
-                'term'         => $term,
-                'subject'      => $subject,
-                'difficulty'   => $difficulty,
-                'package_json' => wp_json_encode( $package ),
-                'created_at'   => current_time( 'mysql', true ),
-            ],
-            [ '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
-        );
-    }
-
-    private static function mark_served( string $package_id ): void {
-        global $wpdb;
-        $wpdb->query(
-            $wpdb->prepare(
-                "UPDATE {$wpdb->prefix}noey_exam_pool
-                 SET times_served = times_served + 1, last_served_at = %s
-                 WHERE package_id = %s",
-                current_time( 'mysql', true ),
-                $package_id
-            )
-        );
-    }
-
     // ── Railway API ───────────────────────────────────────────────────────────
 
-    public static function fetch_from_railway( string $standard, string $term, string $subject, string $difficulty, array $seen_ids = [] ): array|WP_Error {
-        $endpoint   = rtrim( get_option( 'noey_railway_endpoint', '' ), '/' );
-        $api_key    = get_option( 'noey_railway_api_key', '' );
-        $server_key = get_option( 'noey_railway_server_key', '' );
+    /**
+     * Fetch the next Trial package from Railway's sequential pool.
+     * Railway handles all generation — this plugin never waits on Claude directly.
+     *
+     * Returns WP_Error on connection failure or pool_empty (503).
+     * pool_empty means Railway has triggered background generation — client should retry shortly.
+     */
+    public static function fetch_from_railway(
+        int    $child_id,
+        string $level,
+        string $period,
+        string $subject,
+        string $difficulty,
+        string $trial_type = 'practice',
+        string $topic = ''
+    ): array|WP_Error {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $api_key    = get_option( 'knowly_railway_api_key', '' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
 
         if ( ! $endpoint ) {
-            return new WP_Error( 'noey_railway_not_configured', 'Railway endpoint not configured.', [ 'status' => 503 ] );
+            return new WP_Error( 'knowly_railway_not_configured', 'Railway endpoint not configured.', [ 'status' => 503 ] );
         }
 
-        // Railway uses lowercase subject slugs
         $railway_subject = self::normalise_subject( $subject );
 
-        Noey_Debug::log( 'exam.railway', 'Calling Railway generate-exam', [
-            'standard'        => $standard,
-            'term'            => $term,
-            'subject'         => $railway_subject,
-            'difficulty'      => $difficulty,
-            'seen_ids_count'  => count( $seen_ids ),
+        Knowly_Debug::log( 'exam.railway', 'Calling Railway generate-exam', [
+            'child_id'   => $child_id,
+            'level'      => $level,
+            'period'     => $period,
+            'subject'    => $railway_subject,
+            'difficulty' => $difficulty,
+            'trial_type' => $trial_type,
+            'topic'      => $topic,
         ], null, 'info' );
 
         $headers = [
@@ -377,46 +310,59 @@ class Noey_Exam_Service {
             'Content-Type'  => 'application/json',
         ];
 
-        // Include server key to receive answer_sheet for server-side scoring
         if ( $server_key ) {
             $headers['X-AEP-Server-Key'] = $server_key;
         }
 
         $body_payload = [
-            'standard'               => $standard,
-            'term'                   => $term,
-            'subject'                => $railway_subject,
-            'difficulty'             => $difficulty,
-            'completed_package_ids'  => $seen_ids,
+            'user_id'    => (string) $child_id,
+            'curriculum' => 'tt_primary',
+            'level'      => $level,
+            'period'     => $period ?: null,
+            'subject'    => $railway_subject,
+            'difficulty' => $difficulty,
+            'trial_type' => $trial_type,
+            'topic'      => $topic ?: null,
+            'source'     => 'direct',
         ];
 
-        $response = wp_remote_post( "{$endpoint}/generate-exam", [
-            'timeout' => 30,
+        $response = wp_remote_post( "{$endpoint}/api/v1/generate-exam", [
+            'timeout' => 15,
             'headers' => $headers,
             'body'    => wp_json_encode( $body_payload ),
         ] );
 
         if ( is_wp_error( $response ) ) {
-            Noey_Debug::log( 'exam.railway', 'Railway HTTP error', [
+            Knowly_Debug::log( 'exam.railway', 'Railway HTTP error', [
                 'error' => $response->get_error_message(),
             ], null, 'error' );
-            return new WP_Error( 'noey_railway_error', 'Failed to connect to exam generation service.', [ 'status' => 503 ] );
+            return new WP_Error( 'knowly_railway_error', 'Failed to connect to Trial service.', [ 'status' => 503 ] );
         }
 
         $code = wp_remote_retrieve_response_code( $response );
         $body = json_decode( wp_remote_retrieve_body( $response ), true );
 
+        // 503 pool_empty — Railway has triggered background generation, client should retry
+        if ( $code === 503 ) {
+            Knowly_Debug::log( 'exam.railway', 'Railway pool empty — background generation triggered', [
+                'level'   => $level,
+                'period'  => $period,
+                'subject' => $railway_subject,
+            ], null, 'info' );
+            return new WP_Error( 'knowly_pool_empty', 'No Trials available right now. Please try again in a moment.', [ 'status' => 503 ] );
+        }
+
         if ( $code !== 200 || empty( $body ) ) {
-            Noey_Debug::log( 'exam.railway', 'Railway bad response', [
+            Knowly_Debug::log( 'exam.railway', 'Railway bad response', [
                 'http_code' => $code,
                 'body'      => $body,
             ], null, 'error' );
-            return new WP_Error( 'noey_railway_error', 'Exam generation service returned an error.', [ 'status' => 503 ] );
+            return new WP_Error( 'knowly_railway_error', 'Trial service returned an error.', [ 'status' => 503 ] );
         }
 
-        Noey_Debug::log( 'exam.railway', 'Railway package received', [
-            'package_id' => $body['package_id'] ?? 'unknown',
-            'source'     => $body['source'] ?? 'unknown',
+        Knowly_Debug::log( 'exam.railway', 'Railway package received', [
+            'package_id'  => $body['package_id'] ?? 'unknown',
+            'source'      => $body['source'] ?? 'unknown',
             'has_answers' => isset( $body['answer_sheet'] ),
         ], null, 'info' );
 
@@ -440,20 +386,6 @@ class Noey_Exam_Service {
         };
     }
 
-    // ── Utilities ─────────────────────────────────────────────────────────────
-
-    public static function get_seen_package_ids( int $child_id ): array {
-        global $wpdb;
-        $rows = $wpdb->get_col(
-            $wpdb->prepare(
-                "SELECT DISTINCT package_id FROM {$wpdb->prefix}noey_exam_sessions
-                 WHERE child_id = %d AND state = 'completed'",
-                $child_id
-            )
-        );
-        return $rows ?: [];
-    }
-
     // ── Active Session ────────────────────────────────────────────────────────
 
     /**
@@ -467,8 +399,8 @@ class Noey_Exam_Service {
 
         $session = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT session_id, external_session_id, subject, standard, term, difficulty, started_at
-                 FROM {$wpdb->prefix}noey_exam_sessions
+                "SELECT session_id, external_session_id, subject, level, period, difficulty, trial_type, started_at
+                 FROM {$wpdb->prefix}knowly_exam_sessions
                  WHERE child_id = %d AND state = 'active'
                  ORDER BY started_at DESC
                  LIMIT 1",
@@ -482,7 +414,7 @@ class Noey_Exam_Service {
         }
 
         // Attach matching checkpoint, if any
-        $raw        = get_user_meta( $child_id, 'noey_checkpoint', true );
+        $raw        = get_user_meta( $child_id, 'knowly_checkpoint', true );
         $checkpoint = null;
         if ( $raw ) {
             $decoded = json_decode( $raw, true );
@@ -512,7 +444,7 @@ class Noey_Exam_Service {
 
         $session = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT session_id FROM {$wpdb->prefix}noey_exam_sessions
+                "SELECT session_id FROM {$wpdb->prefix}knowly_exam_sessions
                  WHERE session_id = %d AND child_id = %d AND state = 'active'",
                 $session_id,
                 $child_id
@@ -522,14 +454,14 @@ class Noey_Exam_Service {
 
         if ( ! $session ) {
             return new WP_Error(
-                'noey_session_not_found',
+                'knowly_session_not_found',
                 'Active exam session not found.',
                 [ 'status' => 404 ]
             );
         }
 
         $wpdb->update(
-            $wpdb->prefix . 'noey_exam_sessions',
+            $wpdb->prefix . 'knowly_exam_sessions',
             [ 'state' => 'cancelled' ],
             [ 'session_id' => $session_id ],
             [ '%s' ],
@@ -537,9 +469,9 @@ class Noey_Exam_Service {
         );
 
         // Clear checkpoint so it doesn't linger
-        delete_user_meta( $child_id, 'noey_checkpoint' );
+        delete_user_meta( $child_id, 'knowly_checkpoint' );
 
-        Noey_Debug::log( 'exam.cancel', 'Exam session cancelled', [
+        Knowly_Debug::log( 'exam.cancel', 'Exam session cancelled', [
             'session_id' => $session_id,
             'child_id'   => $child_id,
         ], $child_id, 'info' );

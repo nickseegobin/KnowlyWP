@@ -1,6 +1,6 @@
 <?php
 /**
- * Noey_Admin_Leaderboard — Leaderboard admin panel.
+ * Knowly_Admin_Leaderboard — Leaderboard admin panel.
  *
  * v2.1 changes:
  *  - Testing tab: added Simulate Submit Upsert (mirrors real exam submit flow)
@@ -14,23 +14,23 @@
  *   2. Nickname Mgmt     — search, view, regenerate child nicknames
  *   3. Testing           — full test suite mirroring React frontend use cases
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Admin_Leaderboard {
+class Knowly_Admin_Leaderboard {
 
     // ── Boot ──────────────────────────────────────────────────────────────────
 
     public static function register(): void {
         add_action( 'admin_menu', [ __CLASS__, 'add_menu' ] );
-        add_action( 'admin_post_noey_regenerate_nickname',   [ __CLASS__, 'handle_regenerate_nickname' ] );
-        add_action( 'admin_post_noey_lb_inject_entry',       [ __CLASS__, 'handle_inject_entry' ] );
-        add_action( 'admin_post_noey_lb_simulate_upsert',    [ __CLASS__, 'handle_simulate_upsert' ] );
-        add_action( 'admin_post_noey_lb_reset_board',        [ __CLASS__, 'handle_reset_board' ] );
-        add_action( 'admin_post_noey_lb_daily_reset',        [ __CLASS__, 'handle_daily_reset' ] );
-        add_action( 'admin_post_noey_lb_generate_nickname',  [ __CLASS__, 'handle_generate_nickname' ] );
+        add_action( 'admin_post_knowly_regenerate_nickname',   [ __CLASS__, 'handle_regenerate_nickname' ] );
+        add_action( 'admin_post_knowly_lb_inject_entry',       [ __CLASS__, 'handle_inject_entry' ] );
+        add_action( 'admin_post_knowly_lb_simulate_upsert',    [ __CLASS__, 'handle_simulate_upsert' ] );
+        add_action( 'admin_post_knowly_lb_reset_board',        [ __CLASS__, 'handle_reset_board' ] );
+        add_action( 'admin_post_knowly_lb_daily_reset',        [ __CLASS__, 'handle_daily_reset' ] );
+        add_action( 'admin_post_knowly_lb_generate_nickname',  [ __CLASS__, 'handle_generate_nickname' ] );
     }
 
     public static function add_menu(): void {
@@ -81,19 +81,19 @@ class Noey_Admin_Leaderboard {
     // ── Tab 1: Today's Boards ─────────────────────────────────────────────────
 
     private static function render_boards_tab(): void {
-        $standard = sanitize_text_field( $_GET['standard'] ?? '' );
-        $term     = sanitize_text_field( $_GET['term']     ?? 'none' );
+        $level = sanitize_text_field( $_GET['level'] ?? '' );
+        $period     = sanitize_text_field( $_GET['period']     ?? 'none' );
         $subject  = sanitize_text_field( $_GET['subject']  ?? '' );
 
-        $standards = self::standards();
-        $terms     = self::terms();
+        $levels = self::standards();
+        $periods     = self::periods();
         $subjects  = self::subjects();
 
         $board_data = null;
         $error      = null;
 
-        if ( $standard && $subject ) {
-            $result = Noey_Leaderboard_Service::get_board( $standard, $term, $subject );
+        if ( $level && $subject ) {
+            $result = Knowly_Leaderboard_Service::get_board( $level, $period, $subject );
             if ( is_wp_error( $result ) ) {
                 $error = $result->get_error_message();
             } else {
@@ -114,10 +114,10 @@ class Noey_Admin_Leaderboard {
                 <tr>
                     <th><label for="standard">Standard</label></th>
                     <td>
-                        <select name="standard" id="standard">
+                        <select name="level" id="standard">
                             <option value="">— Select —</option>
-                            <?php foreach ( $standards as $val => $label ) : ?>
-                                <option value="<?php echo esc_attr( $val ); ?>" <?php selected( $standard, $val ); ?>>
+                            <?php foreach ( $levels as $val => $label ) : ?>
+                                <option value="<?php echo esc_attr( $val ); ?>" <?php selected( $level, $val ); ?>>
                                     <?php echo esc_html( $label ); ?>
                                 </option>
                             <?php endforeach; ?>
@@ -127,9 +127,9 @@ class Noey_Admin_Leaderboard {
                 <tr>
                     <th><label for="term">Term</label></th>
                     <td>
-                        <select name="term" id="term">
-                            <?php foreach ( $terms as $val => $label ) : ?>
-                                <option value="<?php echo esc_attr( $val ); ?>" <?php selected( $term, $val ); ?>>
+                        <select name="period" id="term">
+                            <?php foreach ( $periods as $val => $label ) : ?>
+                                <option value="<?php echo esc_attr( $val ); ?>" <?php selected( $period, $val ); ?>>
                                     <?php echo esc_html( $label ); ?>
                                 </option>
                             <?php endforeach; ?>
@@ -163,10 +163,10 @@ class Noey_Admin_Leaderboard {
             <hr style="margin: 24px 0;">
             <h2 style="margin-bottom: 4px;">
                 <?php
-                $label_standard = $standards[ $standard ] ?? strtoupper( $standard );
-                $label_term     = $term !== 'none' ? ' / ' . ucwords( str_replace( '_', ' ', $term ) ) : '';
+                $label_level = $levels[ $level ] ?? strtoupper( $level );
+                $label_period     = $period !== 'none' ? ' / ' . ucwords( str_replace( '_', ' ', $period ) ) : '';
                 $label_subject  = $subjects[ $subject ] ?? ucfirst( $subject );
-                echo esc_html( "{$label_subject} — {$label_standard}{$label_term}" );
+                echo esc_html( "{$label_subject} — {$label_level}{$label_period}" );
                 ?>
             </h2>
             <p style="color: #666; margin-top: 0;">
@@ -261,17 +261,17 @@ class Noey_Admin_Leaderboard {
                     <?php foreach ( $children as $child ) : ?>
                         <?php
                         $child_id = (int) $child['child_id'];
-                        $nickname = get_user_meta( $child_id, 'noey_nickname', true );
-                        $pending  = get_user_meta( $child_id, 'noey_nickname_pending', true );
+                        $nickname = get_user_meta( $child_id, 'knowly_nickname', true );
+                        $pending  = get_user_meta( $child_id, 'knowly_nickname_pending', true );
                         ?>
                         <tr>
                             <td><?php echo esc_html( $child_id ); ?></td>
                             <td><?php echo esc_html( $child['display_name'] ); ?></td>
                             <td>
                                 <?php
-                                echo esc_html( strtoupper( $child['standard'] ?? '—' ) );
-                                if ( ! empty( $child['term'] ) ) {
-                                    echo ' / ' . esc_html( ucwords( str_replace( '_', ' ', $child['term'] ) ) );
+                                echo esc_html( strtoupper( $child['level'] ?? '—' ) );
+                                if ( ! empty( $child['period'] ) ) {
+                                    echo ' / ' . esc_html( ucwords( str_replace( '_', ' ', $child['period'] ) ) );
                                 }
                                 ?>
                             </td>
@@ -294,8 +294,8 @@ class Noey_Admin_Leaderboard {
                             <td>
                                 <?php if ( ! $nickname ) : ?>
                                     <form method="POST" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline; margin-right:6px;">
-                                        <?php wp_nonce_field( 'noey_lb_generate_nickname_' . $child_id, '_nonce' ); ?>
-                                        <input type="hidden" name="action"   value="noey_lb_generate_nickname">
+                                        <?php wp_nonce_field( 'knowly_lb_generate_nickname_' . $child_id, '_nonce' ); ?>
+                                        <input type="hidden" name="action"   value="knowly_lb_generate_nickname">
                                         <input type="hidden" name="child_id" value="<?php echo esc_attr( $child_id ); ?>">
                                         <input type="hidden" name="search"   value="<?php echo esc_attr( $search ); ?>">
                                         <button type="submit" class="button button-primary button-small">Generate</button>
@@ -303,8 +303,8 @@ class Noey_Admin_Leaderboard {
                                 <?php else : ?>
                                     <form method="POST" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline;"
                                           onsubmit="return confirm('Regenerate nickname for <?php echo esc_attr( $child['display_name'] ); ?>?');">
-                                        <?php wp_nonce_field( 'noey_regenerate_nickname_' . $child_id, '_nonce' ); ?>
-                                        <input type="hidden" name="action"   value="noey_regenerate_nickname">
+                                        <?php wp_nonce_field( 'knowly_regenerate_nickname_' . $child_id, '_nonce' ); ?>
+                                        <input type="hidden" name="action"   value="knowly_regenerate_nickname">
                                         <input type="hidden" name="child_id" value="<?php echo esc_attr( $child_id ); ?>">
                                         <input type="hidden" name="search"   value="<?php echo esc_attr( $search ); ?>">
                                         <select name="reason" style="margin-right:4px;">
@@ -330,8 +330,8 @@ class Noey_Admin_Leaderboard {
         $feedback = sanitize_text_field( $_GET['test_result'] ?? '' );
         $error    = sanitize_text_field( $_GET['test_error']  ?? '' );
 
-        $standards  = self::standards();
-        $terms      = self::terms();
+        $levels  = self::standards();
+        $periods      = self::periods();
         $subjects   = self::subjects();
         $difficulties = [ 'easy' => 'Easy', 'medium' => 'Medium', 'hard' => 'Hard' ];
         ?>
@@ -368,13 +368,13 @@ class Noey_Admin_Leaderboard {
         <form method="GET" action="" style="margin-bottom: 8px;">
             <input type="hidden" name="page" value="noey-leaderboard">
             <input type="hidden" name="tab"  value="testing">
-            <?php echo self::board_selectors( 'read', $standards, $terms, $subjects ); ?>
+            <?php echo self::board_selectors( 'read', $levels, $periods, $subjects ); ?>
             <?php submit_button( 'Read Board', 'secondary', 'read_board', false ); ?>
         </form>
 
         <?php
         if ( isset( $_GET['read_board'] ) && ( $_GET['read_std'] ?? '' ) ) {
-            $read_result = Noey_Leaderboard_Service::get_board(
+            $read_result = Knowly_Leaderboard_Service::get_board(
                 sanitize_text_field( $_GET['read_std'] ),
                 sanitize_text_field( $_GET['read_term'] ?? 'none' ),
                 sanitize_text_field( $_GET['read_subject'] ?? '' )
@@ -410,7 +410,7 @@ class Noey_Admin_Leaderboard {
 
         <?php
         if ( isset( $_GET['read_my_boards'] ) && ( $_GET['my_child_id'] ?? '' ) ) {
-            $my_result = Noey_Leaderboard_Service::get_my_boards( (int) $_GET['my_child_id'] );
+            $my_result = Knowly_Leaderboard_Service::get_my_boards( (int) $_GET['my_child_id'] );
             self::render_raw_response( $my_result );
         }
         ?>
@@ -433,8 +433,8 @@ class Noey_Admin_Leaderboard {
         </p>
 
         <form method="POST" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="max-width: 560px;">
-            <?php wp_nonce_field( 'noey_lb_simulate_upsert', '_nonce' ); ?>
-            <input type="hidden" name="action" value="noey_lb_simulate_upsert">
+            <?php wp_nonce_field( 'knowly_lb_simulate_upsert', '_nonce' ); ?>
+            <input type="hidden" name="action" value="knowly_lb_simulate_upsert">
 
             <table class="form-table">
                 <tr>
@@ -444,7 +444,7 @@ class Noey_Admin_Leaderboard {
                         <p class="description">Must have a nickname in user_profiles</p>
                     </td>
                 </tr>
-                <?php echo self::board_selectors_tr( 'sim', $standards, $terms, $subjects ); ?>
+                <?php echo self::board_selectors_tr( 'sim', $levels, $periods, $subjects ); ?>
                 <tr>
                     <th><label>Difficulty</label></th>
                     <td>
@@ -506,8 +506,8 @@ class Noey_Admin_Leaderboard {
         </p>
 
         <form method="POST" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="max-width: 520px;">
-            <?php wp_nonce_field( 'noey_lb_inject_entry', '_nonce' ); ?>
-            <input type="hidden" name="action" value="noey_lb_inject_entry">
+            <?php wp_nonce_field( 'knowly_lb_inject_entry', '_nonce' ); ?>
+            <input type="hidden" name="action" value="knowly_lb_inject_entry">
 
             <table class="form-table">
                 <tr>
@@ -518,7 +518,7 @@ class Noey_Admin_Leaderboard {
                         <p class="description">Must be unique on the board for today</p>
                     </td>
                 </tr>
-                <?php echo self::board_selectors_tr( 'inj', $standards, $terms, $subjects ); ?>
+                <?php echo self::board_selectors_tr( 'inj', $levels, $periods, $subjects ); ?>
                 <tr>
                     <th><label>Total Points</label></th>
                     <td>
@@ -559,9 +559,9 @@ class Noey_Admin_Leaderboard {
 
         <form method="POST" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"
               onsubmit="return confirm('Reset this board? Today\'s entries will be cleared.');">
-            <?php wp_nonce_field( 'noey_lb_reset_board', '_nonce' ); ?>
-            <input type="hidden" name="action" value="noey_lb_reset_board">
-            <?php echo self::board_selectors( 'rst', $standards, $terms, $subjects ); ?>
+            <?php wp_nonce_field( 'knowly_lb_reset_board', '_nonce' ); ?>
+            <input type="hidden" name="action" value="knowly_lb_reset_board">
+            <?php echo self::board_selectors( 'rst', $levels, $periods, $subjects ); ?>
             &nbsp;
             <?php submit_button( 'Reset This Board', 'delete', 'submit', false ); ?>
         </form>
@@ -582,8 +582,8 @@ class Noey_Admin_Leaderboard {
 
         <form method="POST" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"
               onsubmit="return confirm('This clears ALL leaderboard entries for today. Continue?');">
-            <?php wp_nonce_field( 'noey_lb_daily_reset', '_nonce' ); ?>
-            <input type="hidden" name="action" value="noey_lb_daily_reset">
+            <?php wp_nonce_field( 'knowly_lb_daily_reset', '_nonce' ); ?>
+            <input type="hidden" name="action" value="knowly_lb_daily_reset">
             <?php submit_button( 'Run Full Daily Reset', 'delete', 'submit', false ); ?>
         </form>
 
@@ -602,8 +602,8 @@ class Noey_Admin_Leaderboard {
         </p>
 
         <form method="POST" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-            <?php wp_nonce_field( 'noey_lb_generate_nickname_test', '_nonce' ); ?>
-            <input type="hidden" name="action"  value="noey_lb_generate_nickname">
+            <?php wp_nonce_field( 'knowly_lb_generate_nickname_test', '_nonce' ); ?>
+            <input type="hidden" name="action"  value="knowly_lb_generate_nickname">
             <input type="hidden" name="is_test" value="1">
 
             <table class="form-table" style="max-width:420px;">
@@ -614,8 +614,8 @@ class Noey_Admin_Leaderboard {
                 <tr>
                     <th><label>Standard</label></th>
                     <td>
-                        <select name="standard">
-                            <?php foreach ( $standards as $v => $l ) : ?>
+                        <select name="level">
+                            <?php foreach ( $levels as $v => $l ) : ?>
                                 <option value="<?php echo esc_attr( $v ); ?>"><?php echo esc_html( $l ); ?></option>
                             <?php endforeach; ?>
                         </select>
@@ -624,8 +624,8 @@ class Noey_Admin_Leaderboard {
                 <tr>
                     <th><label>Term</label></th>
                     <td>
-                        <select name="term">
-                            <?php foreach ( $terms as $v => $l ) : ?>
+                        <select name="period">
+                            <?php foreach ( $periods as $v => $l ) : ?>
                                 <option value="<?php echo esc_attr( $v ); ?>"><?php echo esc_html( $l ); ?></option>
                             <?php endforeach; ?>
                         </select>
@@ -645,25 +645,25 @@ class Noey_Admin_Leaderboard {
         $reason   = sanitize_text_field( $_POST['reason'] ?? 'request' );
         $search   = sanitize_text_field( $_POST['search'] ?? '' );
 
-        if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', 'noey_regenerate_nickname_' . $child_id ) ) wp_die( 'Security check failed.' );
+        if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', 'knowly_regenerate_nickname_' . $child_id ) ) wp_die( 'Security check failed.' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Insufficient permissions.' );
 
-        $result = Noey_Leaderboard_Service::regenerate_nickname( $child_id, get_current_user_id(), $reason );
+        $result = Knowly_Leaderboard_Service::regenerate_nickname( $child_id, get_current_user_id(), $reason );
         self::redirect_testing_result( 'nicknames', $result, 'Nickname regenerated successfully.', [ 'search' => $search ] );
     }
 
     public static function handle_generate_nickname(): void {
         $child_id = (int) ( $_POST['child_id'] ?? 0 );
-        $standard = sanitize_text_field( $_POST['standard'] ?? '' );
-        $term     = sanitize_text_field( $_POST['term']     ?? '' );
+        $level = sanitize_text_field( $_POST['level'] ?? '' );
+        $period     = sanitize_text_field( $_POST['period']     ?? '' );
         $is_test  = (bool) ( $_POST['is_test'] ?? false );
         $search   = sanitize_text_field( $_POST['search']   ?? '' );
 
-        $nonce_action = $is_test ? 'noey_lb_generate_nickname_test' : 'noey_lb_generate_nickname_' . $child_id;
+        $nonce_action = $is_test ? 'knowly_lb_generate_nickname_test' : 'knowly_lb_generate_nickname_' . $child_id;
         if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', $nonce_action ) ) wp_die( 'Security check failed.' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Insufficient permissions.' );
 
-        $result = Noey_Leaderboard_Service::generate_nickname( $child_id, $standard, $term );
+        $result = Knowly_Leaderboard_Service::generate_nickname( $child_id, $level, $period );
         $tab    = $is_test ? 'testing' : 'nicknames';
 
         self::redirect_testing_result(
@@ -681,12 +681,12 @@ class Noey_Admin_Leaderboard {
      * identical code path as a real exam submission.
      */
     public static function handle_simulate_upsert(): void {
-        if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', 'noey_lb_simulate_upsert' ) ) wp_die( 'Security check failed.' );
+        if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', 'knowly_lb_simulate_upsert' ) ) wp_die( 'Security check failed.' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Insufficient permissions.' );
 
         $child_id   = (int) ( $_POST['child_id']   ?? 0 );
-        $standard   = sanitize_text_field( $_POST['sim_std']       ?? '' );
-        $term       = sanitize_text_field( $_POST['sim_term']      ?? 'none' );
+        $level   = sanitize_text_field( $_POST['sim_level']       ?? '' );
+        $period       = sanitize_text_field( $_POST['sim_period']      ?? 'none' );
         $subject    = sanitize_text_field( $_POST['sim_subject']   ?? '' );
         $difficulty = sanitize_text_field( $_POST['difficulty']    ?? 'easy' );
         $correct    = (int) ( $_POST['correct']   ?? 15 );
@@ -694,31 +694,31 @@ class Noey_Admin_Leaderboard {
         $score_pct  = (int) ( $_POST['score_pct'] ?? 75 );
         $session_id = sanitize_text_field( $_POST['session_id']    ?? 'ses_test_admin' );
 
-        // Build fake session row matching the shape of noey_exam_sessions
+        // Build fake session row matching the shape of knowly_exam_sessions
         $fake_session = [
             'child_id'            => $child_id,
-            'standard'            => $standard,
-            'term'                => $term === 'none' ? '' : $term,
+            'level'     => $level,
+            'period'   => $period === 'none' ? '' : $period,
             'subject'             => $subject,   // normalised in handle_submit_upsert
             'difficulty'          => $difficulty,
             'external_session_id' => $session_id,
         ];
 
-        // Build fake result matching the shape returned by Noey_Results_Service
+        // Build fake result matching the shape returned by Knowly_Results_Service
         $fake_result = [
             'score'      => $correct,
             'total'      => $total,
             'percentage' => $score_pct,
         ];
 
-        Noey_Debug::log( 'leaderboard.test', 'Admin: simulating submit upsert', [
+        Knowly_Debug::log( 'leaderboard.test', 'Admin: simulating submit upsert', [
             'child_id'   => $child_id,
             'session'    => $fake_session,
             'result'     => $fake_result,
         ], get_current_user_id(), 'info' );
 
         // Call the real upsert handler — identical to the exam submit hook
-        $leaderboard_update = Noey_Leaderboard_Service::handle_submit_upsert( $fake_session, $fake_result );
+        $leaderboard_update = Knowly_Leaderboard_Service::handle_submit_upsert( $fake_session, $fake_result );
 
         $base = admin_url( 'admin.php?page=noey-leaderboard&tab=testing' );
 
@@ -735,13 +735,13 @@ class Noey_Admin_Leaderboard {
     }
 
     public static function handle_inject_entry(): void {
-        if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', 'noey_lb_inject_entry' ) ) wp_die( 'Security check failed.' );
+        if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', 'knowly_lb_inject_entry' ) ) wp_die( 'Security check failed.' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Insufficient permissions.' );
 
-        $result = Noey_Leaderboard_Service::inject_test_entry( [
+        $result = Knowly_Leaderboard_Service::inject_test_entry( [
             'nickname'  => sanitize_text_field( $_POST['nickname']    ?? 'TestPlayer' ),
-            'standard'  => sanitize_text_field( $_POST['inj_std']     ?? '' ),
-            'term'      => sanitize_text_field( $_POST['inj_term']    ?? 'none' ),
+            'level'     => sanitize_text_field( $_POST['inj_level']     ?? '' ),
+            'period'   => sanitize_text_field( $_POST['inj_period']    ?? 'none' ),
             'subject'   => sanitize_text_field( $_POST['inj_subject'] ?? '' ),
             'points'    => (int) ( $_POST['points']    ?? 10 ),
             'score_pct' => (int) ( $_POST['score_pct'] ?? 75 ),
@@ -758,10 +758,10 @@ class Noey_Admin_Leaderboard {
     }
 
     public static function handle_reset_board(): void {
-        if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', 'noey_lb_reset_board' ) ) wp_die( 'Security check failed.' );
+        if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', 'knowly_lb_reset_board' ) ) wp_die( 'Security check failed.' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Insufficient permissions.' );
 
-        $result = Noey_Leaderboard_Service::reset_board(
+        $result = Knowly_Leaderboard_Service::reset_board(
             sanitize_text_field( $_POST['rst_std']     ?? '' ),
             sanitize_text_field( $_POST['rst_term']    ?? 'none' ),
             sanitize_text_field( $_POST['rst_subject'] ?? '' )
@@ -771,10 +771,10 @@ class Noey_Admin_Leaderboard {
     }
 
     public static function handle_daily_reset(): void {
-        if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', 'noey_lb_daily_reset' ) ) wp_die( 'Security check failed.' );
+        if ( ! wp_verify_nonce( $_POST['_nonce'] ?? '', 'knowly_lb_daily_reset' ) ) wp_die( 'Security check failed.' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Insufficient permissions.' );
 
-        $result = Noey_Leaderboard_Service::trigger_daily_reset( get_current_user_id() );
+        $result = Knowly_Leaderboard_Service::trigger_daily_reset( get_current_user_id() );
         $msg    = is_array( $result )
             ? "Daily reset complete. Entries cleared: {$result['entries_cleared']}, Boards archived: {$result['boards_cleared']}"
             : 'Daily reset triggered.';
@@ -813,12 +813,12 @@ class Noey_Admin_Leaderboard {
         global $wpdb;
         if ( is_numeric( $search ) ) {
             $rows = $wpdb->get_results( $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}noey_children WHERE child_id = %d LIMIT 20",
+                "SELECT * FROM {$wpdb->prefix}knowly_children WHERE child_id = %d LIMIT 20",
                 (int) $search
             ), ARRAY_A );
         } else {
             $rows = $wpdb->get_results( $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}noey_children WHERE display_name LIKE %s ORDER BY display_name ASC LIMIT 20",
+                "SELECT * FROM {$wpdb->prefix}knowly_children WHERE display_name LIKE %s ORDER BY display_name ASC LIMIT 20",
                 '%' . $wpdb->esc_like( $search ) . '%'
             ), ARRAY_A );
         }
@@ -840,11 +840,11 @@ class Noey_Admin_Leaderboard {
     }
 
     /** Inline board selector labels for GET forms */
-    private static function board_selectors( string $prefix, array $standards, array $terms, array $subjects ): string {
+    private static function board_selectors( string $prefix, array $levels, array $periods, array $subjects ): string {
         ob_start();
         foreach ( [
-            "{$prefix}_std"     => [ 'Standard', $standards, '' ],
-            "{$prefix}_term"    => [ 'Term', $terms, 'none' ],
+            "{$prefix}_std"     => [ 'Standard', $levels, '' ],
+            "{$prefix}_period"    => [ 'Term', $periods, 'none' ],
             "{$prefix}_subject" => [ 'Subject', $subjects, '' ],
         ] as $name => [ $label, $options, $default ] ) :
             $current = sanitize_text_field( $_GET[ $name ] ?? $default );
@@ -863,11 +863,11 @@ class Noey_Admin_Leaderboard {
     }
 
     /** Board selector as <tr> rows for POST form-tables */
-    private static function board_selectors_tr( string $prefix, array $standards, array $terms, array $subjects ): string {
+    private static function board_selectors_tr( string $prefix, array $levels, array $periods, array $subjects ): string {
         ob_start();
         foreach ( [
-            "{$prefix}_std"     => [ 'Standard', $standards, '' ],
-            "{$prefix}_term"    => [ 'Term', $terms, 'none' ],
+            "{$prefix}_std"     => [ 'Standard', $levels, '' ],
+            "{$prefix}_period"    => [ 'Term', $periods, 'none' ],
             "{$prefix}_subject" => [ 'Subject', $subjects, '' ],
         ] as $name => [ $label, $options, $default ] ) :
             ?>

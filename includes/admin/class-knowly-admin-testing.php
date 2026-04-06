@@ -1,6 +1,6 @@
 <?php
 /**
- * Noey_Admin_Testing — Integrated API test suite.
+ * Knowly_Admin_Testing — Integrated API test suite.
  *
  * Each test group contains individual tests that can be run via AJAX.
  * Tests call the actual REST API endpoints internally (not mocked),
@@ -15,12 +15,12 @@
  *   Results    — History, stats, session detail
  *   Insights   — Per-exam insight, weekly digest
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Admin_Testing {
+class Knowly_Admin_Testing {
 
     // ── Render ────────────────────────────────────────────────────────────────
 
@@ -54,7 +54,7 @@ class Noey_Admin_Testing {
                         <div class="noey-test-header">
                             <span class="noey-test-status" id="status-<?= esc_attr( $test_id ) ?>">○</span>
                             <span class="noey-test-name"><?= esc_html( $test['label'] ) ?></span>
-                            <code class="noey-test-route"><?= esc_html( $test['method'] . ' /noey/v1' . $test['route'] ) ?></code>
+                            <code class="noey-test-route"><?= esc_html( $test['method'] . ' /knowly/v1' . $test['route'] ) ?></code>
                             <button class="button button-small noey-run-test" data-test="<?= esc_attr( $test_id ) ?>">Run</button>
                         </div>
                         <div class="noey-test-result" id="result-<?= esc_attr( $test_id ) ?>" style="display:none"></div>
@@ -118,11 +118,11 @@ class Noey_Admin_Testing {
     // ── System Tests ──────────────────────────────────────────────────────────
 
     private static function test_jwt_secret(): array {
-        if ( defined( 'NOEY_JWT_SECRET' ) && NOEY_JWT_SECRET ) {
-            return self::pass( 'NOEY_JWT_SECRET is defined.' );
+        if ( defined( 'KNOWLY_JWT_SECRET' ) && KNOWLY_JWT_SECRET ) {
+            return self::pass( 'KNOWLY_JWT_SECRET is defined.' );
         }
         if ( defined( 'JWT_AUTH_SECRET_KEY' ) && JWT_AUTH_SECRET_KEY ) {
-            return self::warn( 'Using JWT_AUTH_SECRET_KEY as fallback. Define NOEY_JWT_SECRET in wp-config.php.' );
+            return self::warn( 'Using JWT_AUTH_SECRET_KEY as fallback. Define KNOWLY_JWT_SECRET in wp-config.php.' );
         }
         return self::fail( 'No JWT secret defined. Plugin is using a derived key — not suitable for production.' );
     }
@@ -130,9 +130,9 @@ class Noey_Admin_Testing {
     private static function test_db_tables(): array {
         global $wpdb;
         $tables = [
-            'noey_children', 'noey_token_ledger', 'noey_exam_pool',
-            'noey_exam_sessions', 'noey_exam_answers', 'noey_topic_breakdown',
-            'noey_exam_insights', 'noey_weekly_insights', 'noey_debug_log',
+            'knowly_children', 'knowly_token_ledger', 'knowly_exam_pool',
+            'knowly_exam_sessions', 'knowly_exam_answers', 'knowly_topic_breakdown',
+            'knowly_exam_insights', 'knowly_weekly_insights', 'knowly_debug_log',
         ];
 
         $missing = [];
@@ -154,7 +154,7 @@ class Noey_Admin_Testing {
     }
 
     private static function test_railway_ping(): array {
-        $endpoint = rtrim( get_option( 'noey_railway_endpoint', '' ), '/' );
+        $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
         if ( ! $endpoint ) {
             return self::warn( 'Railway endpoint not configured. Configure it in Settings.' );
         }
@@ -251,8 +251,8 @@ class Noey_Admin_Testing {
             'display_name' => 'Test Student',
             'username'     => 'test_child_' . time(),
             'password'     => 'TestPass123!',
-            'standard'     => 'std_4',
-            'term'         => 'term_1',
+            'level'     => 'std_4',
+            'period'   => 'term_1',
             'age'          => 9,
         ], $data['token'] );
 
@@ -335,8 +335,8 @@ class Noey_Admin_Testing {
     private static function test_exams_start( array $data ): array {
         if ( empty( $data['token'] ) ) return self::warn( 'Provide token (with active child).' );
         $res = self::api_post( '/exams/start', [
-            'standard'   => $data['standard'] ?? 'std_4',
-            'term'       => $data['term'] ?? 'term_1',
+            'level'     => $data['level'] ?? 'std_4',
+            'period'   => $data['period'] ?? 'term_1',
             'subject'    => $data['subject'] ?? 'Mathematics',
             'difficulty' => $data['difficulty'] ?? 'medium',
         ], $data['token'] );
@@ -368,7 +368,7 @@ class Noey_Admin_Testing {
     private static function test_insights_weekly_build( array $data ): array {
         if ( empty( $data['child_id'] ) ) return self::warn( 'Provide child_id.' );
         $iso_week = $data['iso_week'] ?? date( 'o-\WW' );
-        $payload  = Noey_Insight_Service::build_weekly_payload( (int) $data['child_id'], $iso_week );
+        $payload  = Knowly_Insight_Service::build_weekly_payload( (int) $data['child_id'], $iso_week );
 
         if ( is_wp_error( $payload ) ) {
             return self::fail( 'Payload build failed: ' . $payload->get_error_message() );
@@ -455,7 +455,7 @@ class Noey_Admin_Testing {
     }
 
     private static function api_call( string $method, string $route, array $body, string $token ): array {
-        $url     = rest_url( NOEY_REST_NAMESPACE . $route );
+        $url     = rest_url( KNOWLY_REST_NAMESPACE . $route );
         $headers = [ 'Content-Type' => 'application/json' ];
 
         if ( $token ) {
@@ -487,7 +487,7 @@ class Noey_Admin_Testing {
     private static function get_admin_token(): string {
         $admin = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
         if ( empty( $admin ) ) return '';
-        return Noey_JWT::encode( (int) $admin[0] );
+        return Knowly_JWT::encode( (int) $admin[0] );
     }
 
     // ── Result Builders ───────────────────────────────────────────────────────

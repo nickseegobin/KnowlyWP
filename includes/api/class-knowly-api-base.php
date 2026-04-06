@@ -1,6 +1,6 @@
 <?php
 /**
- * Noey_API_Base — Abstract base for all NoeyAPI REST controllers.
+ * Knowly_API_Base — Abstract base for all NoeyAPI REST controllers.
  *
  * Provides:
  *  - JWT-based authentication helpers
@@ -8,14 +8,14 @@
  *  - Standardised success / error response builders
  *  - Active-child resolution
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-abstract class Noey_API_Base extends WP_REST_Controller {
+abstract class Knowly_API_Base extends WP_REST_Controller {
 
-    protected $namespace = NOEY_REST_NAMESPACE;
+    protected $namespace = KNOWLY_REST_NAMESPACE;
 
     // ── Authentication ────────────────────────────────────────────────────────
 
@@ -25,10 +25,10 @@ abstract class Noey_API_Base extends WP_REST_Controller {
      * @return int|WP_Error  User ID on success.
      */
     protected function authenticate( WP_REST_Request $request ): int|WP_Error {
-        $user_id = Noey_JWT::from_request();
+        $user_id = Knowly_JWT::from_request();
 
         if ( is_wp_error( $user_id ) ) {
-            Noey_Debug::log( 'api.auth', 'JWT auth failed', [
+            Knowly_Debug::log( 'api.auth', 'JWT auth failed', [
                 'code'    => $user_id->get_error_code(),
                 'message' => $user_id->get_error_message(),
                 'route'   => $request->get_route(),
@@ -36,7 +36,7 @@ abstract class Noey_API_Base extends WP_REST_Controller {
             return $user_id;
         }
 
-        Noey_Debug::log( 'api.auth', 'JWT auth OK', [
+        Knowly_Debug::log( 'api.auth', 'JWT auth OK', [
             'user_id' => $user_id,
             'route'   => $request->get_route(),
         ], $user_id, 'debug' );
@@ -45,7 +45,7 @@ abstract class Noey_API_Base extends WP_REST_Controller {
     }
 
     /**
-     * Authenticate and require the user to be a noey_parent.
+     * Authenticate and require the user to be a knowly_parent.
      *
      * @return int|WP_Error  Parent user ID on success.
      */
@@ -56,11 +56,11 @@ abstract class Noey_API_Base extends WP_REST_Controller {
         }
 
         if ( ! $this->is_parent( $user_id ) ) {
-            Noey_Debug::log( 'api.auth', 'Parent role required but user is not a parent', [
+            Knowly_Debug::log( 'api.auth', 'Parent role required but user is not a parent', [
                 'user_id' => $user_id,
                 'roles'   => $this->get_user_roles( $user_id ),
             ], $user_id, 'warning' );
-            return new WP_Error( 'noey_forbidden', 'Parent account required.', [ 'status' => 403 ] );
+            return new WP_Error( 'knowly_forbidden', 'Parent account required.', [ 'status' => 403 ] );
         }
 
         return $user_id;
@@ -83,19 +83,19 @@ abstract class Noey_API_Base extends WP_REST_Controller {
         }
 
         if ( $this->is_parent( $user_id ) ) {
-            $child_id = (int) get_user_meta( $user_id, 'noey_active_child_id', true );
+            $child_id = (int) get_user_meta( $user_id, 'knowly_active_child_id', true );
             if ( ! $child_id ) {
-                return new WP_Error( 'noey_no_active_child', 'No active student profile selected.', [ 'status' => 422 ] );
+                return new WP_Error( 'knowly_no_active_child', 'No active student profile selected.', [ 'status' => 422 ] );
             }
             return [ 'parent_id' => $user_id, 'child_id' => $child_id ];
         }
 
         if ( $this->is_child( $user_id ) ) {
-            $parent_id = (int) get_user_meta( $user_id, 'noey_parent_id', true );
+            $parent_id = (int) get_user_meta( $user_id, 'knowly_parent_id', true );
             return [ 'parent_id' => $parent_id, 'child_id' => $user_id ];
         }
 
-        return new WP_Error( 'noey_forbidden', 'Valid parent or student account required.', [ 'status' => 403 ] );
+        return new WP_Error( 'knowly_forbidden', 'Valid parent or student account required.', [ 'status' => 403 ] );
     }
 
     // ── Response Helpers ──────────────────────────────────────────────────────
@@ -119,12 +119,12 @@ abstract class Noey_API_Base extends WP_REST_Controller {
 
     protected function is_parent( int $user_id ): bool {
         $user = get_userdata( $user_id );
-        return $user && in_array( 'noey_parent', (array) $user->roles, true );
+        return $user && in_array( 'knowly_parent', (array) $user->roles, true );
     }
 
     protected function is_child( int $user_id ): bool {
         $user = get_userdata( $user_id );
-        return $user && in_array( 'noey_child', (array) $user->roles, true );
+        return $user && in_array( 'knowly_child', (array) $user->roles, true );
     }
 
     protected function get_user_roles( int $user_id ): array {
@@ -151,11 +151,11 @@ abstract class Noey_API_Base extends WP_REST_Controller {
             if ( is_wp_error( $user_id ) ) return $user_id;
 
             if ( ! $this->is_parent( $user_id ) ) {
-                return new WP_Error( 'noey_forbidden', 'child_id override is only available to parent accounts.', [ 'status' => 403 ] );
+                return new WP_Error( 'knowly_forbidden', 'child_id override is only available to parent accounts.', [ 'status' => 403 ] );
             }
 
-            if ( ! Noey_Children_Service::owns_child( $user_id, $override ) ) {
-                return new WP_Error( 'noey_forbidden', 'You do not have access to that student profile.', [ 'status' => 403 ] );
+            if ( ! Knowly_Children_Service::owns_child( $user_id, $override ) ) {
+                return new WP_Error( 'knowly_forbidden', 'You do not have access to that student profile.', [ 'status' => 403 ] );
             }
 
             return $override;

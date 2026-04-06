@@ -1,6 +1,6 @@
 <?php
 /**
- * Noey_Admin_Pool — Exam Pool Manager admin page.
+ * Knowly_Admin_Pool — Exam Pool Manager admin page.
  *
  * Features:
  *  - Pool overview stats (total packages, by standard / subject / difficulty)
@@ -11,20 +11,20 @@
  *  - Manual JSON Upload — paste a raw package JSON to add it to the local pool
  *  - Live Railway Catalogue — shows Railway's live availability counts
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Admin_Pool {
+class Knowly_Admin_Pool {
 
     // ── Boot ──────────────────────────────────────────────────────────────────
 
     public static function boot(): void {
-        add_action( 'admin_post_noey_pool_sync',      [ __CLASS__, 'handle_sync' ] );
-        add_action( 'admin_post_noey_pool_generate',  [ __CLASS__, 'handle_generate' ] );
-        add_action( 'admin_post_noey_pool_upload',    [ __CLASS__, 'handle_upload' ] );
-        add_action( 'admin_post_noey_pool_delete',    [ __CLASS__, 'handle_delete' ] );
+        add_action( 'admin_post_knowly_pool_sync',      [ __CLASS__, 'handle_sync' ] );
+        add_action( 'admin_post_knowly_pool_generate',  [ __CLASS__, 'handle_generate' ] );
+        add_action( 'admin_post_knowly_pool_upload',    [ __CLASS__, 'handle_upload' ] );
+        add_action( 'admin_post_knowly_pool_delete',    [ __CLASS__, 'handle_delete' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -34,9 +34,9 @@ class Noey_Admin_Pool {
 
         global $wpdb;
 
-        $railway_ok   = ! empty( get_option( 'noey_railway_endpoint' ) );
-        $server_key   = get_option( 'noey_railway_server_key', '' );
-        $pool_table   = $wpdb->prefix . 'noey_exam_pool';
+        $railway_ok   = ! empty( get_option( 'knowly_railway_endpoint' ) );
+        $server_key   = get_option( 'knowly_railway_server_key', '' );
+        $pool_table   = $wpdb->prefix . 'knowly_exam_pool';
 
         // Stats
         $total_packages = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pool_table}" );
@@ -104,8 +104,8 @@ class Noey_Admin_Pool {
                             <input type="text" id="noey-pool-filter" placeholder="Filter by subject…" class="regular-text" style="height:30px;" />
                             <?php if ( $railway_ok ) : ?>
                             <form method="post" action="<?= esc_url( admin_url( 'admin-post.php' ) ) ?>" style="margin:0;">
-                                <?php wp_nonce_field( 'noey_pool_sync', 'noey_sync_nonce' ); ?>
-                                <input type="hidden" name="action" value="noey_pool_sync" />
+                                <?php wp_nonce_field( 'knowly_pool_sync', 'knowly_sync_nonce' ); ?>
+                                <input type="hidden" name="action" value="knowly_pool_sync" />
                                 <button type="submit" class="button button-primary">↓ Sync from Railway</button>
                             </form>
                             <?php endif; ?>
@@ -131,12 +131,12 @@ class Noey_Admin_Pool {
                         // Index pool data by key
                         $pool_index = [];
                         foreach ( $pool_summary as $row ) {
-                            $key = "{$row['standard']}|{$row['term']}|{$row['subject']}|{$row['difficulty']}";
+                            $key = "{$row['level']}|{$row['period']}|{$row['subject']}|{$row['difficulty']}";
                             $pool_index[ $key ] = $row;
                         }
 
                         foreach ( $all_combinations as $combo ) :
-                            $key       = "{$combo['standard']}|{$combo['term']}|{$combo['subject_display']}|{$combo['difficulty']}";
+                            $key       = "{$combo['level']}|{$combo['period']}|{$combo['subject_display']}|{$combo['difficulty']}";
                             $pool_row  = $pool_index[ $key ] ?? null;
                             $count     = $pool_row ? (int) $pool_row['pool_count'] : 0;
                             $serves    = $pool_row ? (int) $pool_row['total_served'] : 0;
@@ -146,7 +146,7 @@ class Noey_Admin_Pool {
                                 "SELECT COUNT(*) FROM {$pool_table}
                                  WHERE standard=%s AND term=%s AND subject=%s AND difficulty=%s
                                  AND package_json LIKE %s",
-                                $combo['standard'], $combo['term'], $combo['subject_display'], $combo['difficulty'],
+                                $combo['level'], $combo['period'], $combo['subject_display'], $combo['difficulty'],
                                 '%answer_sheet%'
                             ) ) : 0;
 
@@ -155,8 +155,8 @@ class Noey_Admin_Pool {
                         ?>
                         <tr class="noey-pool-row <?= esc_attr( $row_class ) ?>"
                             data-subject="<?= esc_attr( strtolower( $combo['subject'] ) ) ?>">
-                            <td><?= esc_html( strtoupper( $combo['standard'] ) ) ?></td>
-                            <td><?= esc_html( $combo['term'] ? strtoupper( $combo['term'] ) : 'SEA' ) ?></td>
+                            <td><?= esc_html( strtoupper( $combo['level'] ) ) ?></td>
+                            <td><?= esc_html( $combo['period'] ? strtoupper( $combo['period'] ) : 'SEA' ) ?></td>
                             <td><strong><?= esc_html( $combo['subject_display'] ) ?></strong></td>
                             <td><?= esc_html( ucfirst( $combo['difficulty'] ) ) ?></td>
                             <td style="text-align:center;font-weight:600;"><?= esc_html( $count ) ?></td>
@@ -173,10 +173,10 @@ class Noey_Admin_Pool {
                                 <div style="display:flex;gap:4px;flex-wrap:wrap;">
                                     <?php if ( $railway_ok ) : ?>
                                     <form method="post" action="<?= esc_url( admin_url( 'admin-post.php' ) ) ?>" style="margin:0;">
-                                        <?php wp_nonce_field( 'noey_pool_generate', 'noey_gen_nonce' ); ?>
-                                        <input type="hidden" name="action"     value="noey_pool_generate" />
-                                        <input type="hidden" name="standard"   value="<?= esc_attr( $combo['standard'] ) ?>" />
-                                        <input type="hidden" name="term"       value="<?= esc_attr( $combo['term'] ) ?>" />
+                                        <?php wp_nonce_field( 'knowly_pool_generate', 'knowly_gen_nonce' ); ?>
+                                        <input type="hidden" name="action"     value="knowly_pool_generate" />
+                                        <input type="hidden" name="level"   value="<?= esc_attr( $combo['level'] ) ?>" />
+                                        <input type="hidden" name="period"       value="<?= esc_attr( $combo['period'] ) ?>" />
                                         <input type="hidden" name="subject"    value="<?= esc_attr( $combo['subject_display'] ) ?>" />
                                         <input type="hidden" name="difficulty" value="<?= esc_attr( $combo['difficulty'] ) ?>" />
                                         <button type="submit" class="button button-small">Generate</button>
@@ -210,9 +210,9 @@ class Noey_Admin_Pool {
                             Paste a raw Railway package JSON (with or without <code>answer_sheet</code>).
                         </p>
                         <form method="post" action="<?= esc_url( admin_url( 'admin-post.php' ) ) ?>">
-                            <?php wp_nonce_field( 'noey_pool_upload', 'noey_upload_nonce' ); ?>
-                            <input type="hidden" name="action" value="noey_pool_upload" />
-                            <textarea name="noey_package_json" rows="8" class="large-text"
+                            <?php wp_nonce_field( 'knowly_pool_upload', 'knowly_upload_nonce' ); ?>
+                            <input type="hidden" name="action" value="knowly_pool_upload" />
+                            <textarea name="knowly_package_json" rows="8" class="large-text"
                                 style="font-family:monospace;font-size:11px;"
                                 placeholder='{"package_id":"pkg-...","meta":{...},"questions":[...]}'></textarea>
                             <button type="submit" class="button button-primary" style="margin-top:8px;width:100%;">
@@ -261,7 +261,7 @@ class Noey_Admin_Pool {
                             <tr style="background:#f6f7f7;"><th style="padding:4px 6px;text-align:left;">Standard</th><th style="text-align:right;padding:4px 6px;">Packages</th></tr>
                             <?php foreach ( $by_standard as $s ) : ?>
                             <tr style="border-bottom:1px solid #f0f0f0;">
-                                <td style="padding:4px 6px;"><?= esc_html( strtoupper( $s['standard'] ) ) ?></td>
+                                <td style="padding:4px 6px;"><?= esc_html( strtoupper( $s['level'] ) ) ?></td>
                                 <td style="text-align:right;padding:4px 6px;font-weight:600;"><?= esc_html( $s['cnt'] ) ?></td>
                             </tr>
                             <?php endforeach; ?>
@@ -269,9 +269,9 @@ class Noey_Admin_Pool {
 
                         <hr style="margin:12px 0;" />
                         <p style="font-size:12px;color:#666;margin:0 0 8px;">
-                            Last pool sync: <strong><?= esc_html( get_option( 'noey_last_pool_sync', 'Never' ) ) ?></strong>
+                            Last pool sync: <strong><?= esc_html( get_option( 'knowly_last_pool_sync', 'Never' ) ) ?></strong>
                         </p>
-                        <a href="<?= esc_url( rest_url( NOEY_REST_NAMESPACE . '/exams' ) . '?_wpnonce=' . wp_create_nonce( 'wp_rest' ) ) ?>"
+                        <a href="<?= esc_url( rest_url( KNOWLY_REST_NAMESPACE . '/exams' ) . '?_wpnonce=' . wp_create_nonce( 'wp_rest' ) ) ?>"
                            target="_blank" class="button button-small" style="width:100%;text-align:center;box-sizing:border-box;">
                             Test GET /exams →
                         </a>
@@ -309,8 +309,8 @@ class Noey_Admin_Pool {
                 var $btn = $(this).prop('disabled', true).text('Loading…');
 
                 $.post(ajaxurl, {
-                    action: 'noey_pool_packages',
-                    nonce: '<?= wp_create_nonce( 'noey_admin_nonce' ) ?>',
+                    action: 'knowly_pool_packages',
+                    nonce: '<?= wp_create_nonce( 'knowly_admin_nonce' ) ?>',
                     standard: parts[0],
                     term: parts[1],
                     subject: parts[2],
@@ -341,8 +341,8 @@ class Noey_Admin_Pool {
                 var $result = $('#noey-railway-catalogue-result');
 
                 $.post(ajaxurl, {
-                    action: 'noey_railway_catalogue',
-                    nonce: '<?= wp_create_nonce( 'noey_admin_nonce' ) ?>'
+                    action: 'knowly_railway_catalogue',
+                    nonce: '<?= wp_create_nonce( 'knowly_admin_nonce' ) ?>'
                 }, function(res) {
                     $btn.prop('disabled', false).text('Load Live Catalogue');
                     if (res.success) {
@@ -370,10 +370,10 @@ class Noey_Admin_Pool {
     // ── Action Handlers ───────────────────────────────────────────────────────
 
     public static function handle_sync(): void {
-        check_admin_referer( 'noey_pool_sync', 'noey_sync_nonce' );
+        check_admin_referer( 'knowly_pool_sync', 'knowly_sync_nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden' );
 
-        Noey_Debug::log( 'admin.pool', 'Full sync triggered from admin', [], null, 'info' );
+        Knowly_Debug::log( 'admin.pool', 'Full sync triggered from admin', [], null, 'info' );
 
         $result = self::sync_from_railway();
 
@@ -386,17 +386,17 @@ class Noey_Admin_Pool {
     }
 
     public static function handle_generate(): void {
-        check_admin_referer( 'noey_pool_generate', 'noey_gen_nonce' );
+        check_admin_referer( 'knowly_pool_generate', 'knowly_gen_nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden' );
 
-        $standard   = sanitize_text_field( $_POST['standard']   ?? '' );
-        $term       = sanitize_text_field( $_POST['term']       ?? '' );
+        $level   = sanitize_text_field( $_POST['level']   ?? '' );
+        $period       = sanitize_text_field( $_POST['period']       ?? '' );
         $subject    = sanitize_text_field( $_POST['subject']    ?? '' );
         $difficulty = sanitize_text_field( $_POST['difficulty'] ?? '' );
 
-        Noey_Debug::log( 'admin.pool', 'Generate triggered from admin', [
-            'standard'   => $standard,
-            'term'       => $term,
+        Knowly_Debug::log( 'admin.pool', 'Generate triggered from admin', [
+            'level'     => $level,
+            'period'   => $period,
             'subject'    => $subject,
             'difficulty' => $difficulty,
         ], null, 'info' );
@@ -404,28 +404,28 @@ class Noey_Admin_Pool {
         // Get existing package IDs to exclude from Railway
         global $wpdb;
         $seen = $wpdb->get_col( $wpdb->prepare(
-            "SELECT package_id FROM {$wpdb->prefix}noey_exam_pool
+            "SELECT package_id FROM {$wpdb->prefix}knowly_exam_pool
              WHERE standard=%s AND term=%s AND subject=%s AND difficulty=%s",
-            $standard, $term, $subject, $difficulty
+            $level, $period, $subject, $difficulty
         ) ) ?: [];
 
-        $package = Noey_Exam_Service::fetch_from_railway( $standard, $term, $subject, $difficulty, $seen );
+        $package = Knowly_Exam_Service::fetch_from_railway( $level, $period, $subject, $difficulty, $seen );
 
         if ( is_wp_error( $package ) ) {
             wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&gen_error=' . urlencode( $package->get_error_message() ) ) );
         } else {
             // Store in pool
-            self::store_package( $package, $standard, $term, $subject, $difficulty );
+            self::store_package( $package, $level, $period, $subject, $difficulty );
             wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&generated=' . urlencode( $package['package_id'] ?? 'ok' ) ) );
         }
         exit;
     }
 
     public static function handle_upload(): void {
-        check_admin_referer( 'noey_pool_upload', 'noey_upload_nonce' );
+        check_admin_referer( 'knowly_pool_upload', 'knowly_upload_nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden' );
 
-        $json = wp_unslash( $_POST['noey_package_json'] ?? '' );
+        $json = wp_unslash( $_POST['knowly_package_json'] ?? '' );
         if ( ! trim( $json ) ) {
             wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&upload_error=' . urlencode( 'No JSON provided.' ) ) );
             exit;
@@ -438,19 +438,19 @@ class Noey_Admin_Pool {
         }
 
         $meta     = $pkg['meta'] ?? [];
-        $standard = sanitize_text_field( $meta['standard'] ?? '' );
-        $term     = sanitize_text_field( $meta['term']     ?? '' );
+        $level = sanitize_text_field( $meta['level'] ?? '' );
+        $period     = sanitize_text_field( $meta['period']     ?? '' );
         $subject  = sanitize_text_field( $meta['subject']  ?? '' );
         $diff     = sanitize_text_field( $meta['difficulty'] ?? 'medium' );
 
         // Map Railway subject slug back to display name
         $subject_display = self::subject_to_display( $subject );
 
-        self::store_package( $pkg, $standard, $term, $subject_display, $diff );
+        self::store_package( $pkg, $level, $period, $subject_display, $diff );
 
-        Noey_Debug::log( 'admin.pool', 'Package uploaded via admin', [
+        Knowly_Debug::log( 'admin.pool', 'Package uploaded via admin', [
             'package_id' => $pkg['package_id'],
-            'standard'   => $standard,
+            'level'     => $level,
             'subject'    => $subject_display,
         ], null, 'info' );
 
@@ -459,37 +459,37 @@ class Noey_Admin_Pool {
     }
 
     public static function handle_delete(): void {
-        check_admin_referer( 'noey_pool_delete', 'noey_del_nonce' );
+        check_admin_referer( 'knowly_pool_delete', 'knowly_del_nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden' );
 
         $pool_id = (int) ( $_POST['pool_id'] ?? 0 );
         if ( ! $pool_id ) wp_die( 'Invalid pool_id' );
 
         global $wpdb;
-        $wpdb->delete( $wpdb->prefix . 'noey_exam_pool', [ 'pool_id' => $pool_id ], [ '%d' ] );
+        $wpdb->delete( $wpdb->prefix . 'knowly_exam_pool', [ 'pool_id' => $pool_id ], [ '%d' ] );
 
-        Noey_Debug::log( 'admin.pool', 'Package deleted from pool', [ 'pool_id' => $pool_id ], null, 'info' );
+        Knowly_Debug::log( 'admin.pool', 'Package deleted from pool', [ 'pool_id' => $pool_id ], null, 'info' );
         wp_safe_redirect( admin_url( 'admin.php?page=noey-pool&deleted=1' ) );
         exit;
     }
 
-    // ── AJAX handlers (registered in Noey_Admin) ──────────────────────────────
+    // ── AJAX handlers (registered in Knowly_Admin) ──────────────────────────────
 
     public static function handle_ajax_packages(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         global $wpdb;
-        $standard   = sanitize_text_field( $_POST['standard']   ?? '' );
-        $term       = sanitize_text_field( $_POST['term']       ?? '' );
+        $level   = sanitize_text_field( $_POST['level']   ?? '' );
+        $period       = sanitize_text_field( $_POST['period']       ?? '' );
         $subject    = sanitize_text_field( $_POST['subject']    ?? '' );
         $difficulty = sanitize_text_field( $_POST['difficulty'] ?? '' );
 
         $rows = $wpdb->get_results( $wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}noey_exam_pool
+            "SELECT * FROM {$wpdb->prefix}knowly_exam_pool
              WHERE standard=%s AND term=%s AND subject=%s AND difficulty=%s
              ORDER BY created_at DESC",
-            $standard, $term, $subject, $difficulty
+            $level, $period, $subject, $difficulty
         ), ARRAY_A ) ?: [];
 
         ob_start();
@@ -500,10 +500,10 @@ class Noey_Admin_Pool {
     }
 
     public static function handle_ajax_railway_catalogue(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        $endpoint = rtrim( get_option( 'noey_railway_endpoint', '' ), '/' );
+        $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
         if ( ! $endpoint ) {
             wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] );
         }
@@ -528,12 +528,12 @@ class Noey_Admin_Pool {
     // ── Sync Logic ────────────────────────────────────────────────────────────
 
     private static function sync_from_railway(): array|WP_Error {
-        $endpoint   = rtrim( get_option( 'noey_railway_endpoint', '' ), '/' );
-        $api_key    = get_option( 'noey_railway_api_key', '' );
-        $server_key = get_option( 'noey_railway_server_key', '' );
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $api_key    = get_option( 'knowly_railway_api_key', '' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
 
         if ( ! $endpoint ) {
-            return new WP_Error( 'noey_not_configured', 'Railway endpoint not configured.' );
+            return new WP_Error( 'knowly_not_configured', 'Railway endpoint not configured.' );
         }
 
         $added   = 0;
@@ -543,7 +543,7 @@ class Noey_Admin_Pool {
         $limit   = 50;
 
         do {
-            Noey_Debug::log( 'admin.pool.sync', 'Fetching pool page', [
+            Knowly_Debug::log( 'admin.pool.sync', 'Fetching pool page', [
                 'offset' => $offset,
                 'limit'  => $limit,
             ], null, 'info' );
@@ -575,12 +575,12 @@ class Noey_Admin_Pool {
                 if ( empty( $pkg['package_id'] ) ) continue;
 
                 $meta     = $pkg['meta'] ?? [];
-                $standard = sanitize_text_field( $meta['standard'] ?? '' );
-                $term     = sanitize_text_field( $meta['term']     ?? '' );
+                $level = sanitize_text_field( $meta['level'] ?? '' );
+                $period     = sanitize_text_field( $meta['period']     ?? '' );
                 $subject  = self::subject_to_display( $meta['subject'] ?? '' );
                 $diff     = sanitize_text_field( $meta['difficulty'] ?? 'medium' );
 
-                $inserted = self::store_package( $pkg, $standard, $term, $subject, $diff );
+                $inserted = self::store_package( $pkg, $level, $period, $subject, $diff );
                 if ( $inserted ) {
                     $added++;
                 } else {
@@ -593,9 +593,9 @@ class Noey_Admin_Pool {
 
         } while ( $offset < $total_available );
 
-        update_option( 'noey_last_pool_sync', current_time( 'mysql', true ) );
+        update_option( 'knowly_last_pool_sync', current_time( 'mysql', true ) );
 
-        Noey_Debug::log( 'admin.pool.sync', 'Railway sync complete', [
+        Knowly_Debug::log( 'admin.pool.sync', 'Railway sync complete', [
             'added'   => $added,
             'skipped' => $skipped,
         ], null, 'info' );
@@ -608,7 +608,7 @@ class Noey_Admin_Pool {
 
     // ── Package Storage ───────────────────────────────────────────────────────
 
-    private static function store_package( array $pkg, string $standard, string $term, string $subject, string $difficulty ): bool {
+    private static function store_package( array $pkg, string $level, string $period, string $subject, string $difficulty ): bool {
         global $wpdb;
 
         $package_id = sanitize_text_field( $pkg['package_id'] ?? '' );
@@ -616,17 +616,17 @@ class Noey_Admin_Pool {
 
         // Skip if already exists
         $exists = $wpdb->get_var( $wpdb->prepare(
-            "SELECT pool_id FROM {$wpdb->prefix}noey_exam_pool WHERE package_id = %s",
+            "SELECT pool_id FROM {$wpdb->prefix}knowly_exam_pool WHERE package_id = %s",
             $package_id
         ) );
         if ( $exists ) return false;
 
         $wpdb->insert(
-            $wpdb->prefix . 'noey_exam_pool',
+            $wpdb->prefix . 'knowly_exam_pool',
             [
                 'package_id'   => $package_id,
-                'standard'     => $standard,
-                'term'         => $term,
+                'level'     => $level,
+                'period'   => $period,
                 'subject'      => $subject,
                 'difficulty'   => in_array( $difficulty, [ 'easy', 'medium', 'hard' ], true ) ? $difficulty : 'medium',
                 'package_json' => wp_json_encode( $pkg ),
@@ -690,8 +690,8 @@ class Noey_Admin_Pool {
 
             <!-- Delete button -->
             <form method="post" action="<?= esc_url( admin_url( 'admin-post.php' ) ) ?>" style="margin-top:10px;">
-                <?php wp_nonce_field( 'noey_pool_delete', 'noey_del_nonce' ); ?>
-                <input type="hidden" name="action"  value="noey_pool_delete" />
+                <?php wp_nonce_field( 'knowly_pool_delete', 'knowly_del_nonce' ); ?>
+                <input type="hidden" name="action"  value="knowly_pool_delete" />
                 <input type="hidden" name="pool_id" value="<?= esc_attr( $row['pool_id'] ) ?>" />
                 <button type="submit" class="button button-small"
                     onclick="return confirm('Delete this package from the pool?')"
@@ -746,12 +746,12 @@ class Noey_Admin_Pool {
         $difficulties = [ 'easy', 'medium', 'hard' ];
 
         // Std 4 — term-scoped
-        foreach ( [ 'term_1', 'term_2', 'term_3' ] as $term ) {
+        foreach ( [ 'term_1', 'term_2', 'term_3' ] as $period ) {
             foreach ( $subjects as $slug => $display ) {
                 foreach ( $difficulties as $diff ) {
                     $combinations[] = [
-                        'standard'        => 'std_4',
-                        'term'            => $term,
+                        'level'     => 'std_4',
+                        'period'   => $period,
                         'subject'         => $slug,
                         'subject_display' => $display,
                         'difficulty'      => $diff,
@@ -764,8 +764,8 @@ class Noey_Admin_Pool {
         foreach ( $subjects as $slug => $display ) {
             foreach ( $difficulties as $diff ) {
                 $combinations[] = [
-                    'standard'        => 'std_5',
-                    'term'            => '',
+                    'level'     => 'std_5',
+                    'period'   => '',
                     'subject'         => $slug,
                     'subject_display' => $display,
                     'difficulty'      => $diff,

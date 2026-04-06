@@ -1,8 +1,17 @@
-# NoeyAPI — React / Next.js Integration Guide
+# KnowlyAPI — React / Next.js Integration Guide
 
-> **Version:** 1.0.0
-> **Base namespace:** `noey/v1`
-> **Full REST base:** `{WORDPRESS_URL}/wp-json/noey/v1`
+> **Version:** 1.1.0
+> **Base namespace:** `knowly/v1`
+> **Full REST base:** `{WORDPRESS_URL}/wp-json/knowly/v1`
+
+> **Trial question counts by difficulty:**
+> | Difficulty | Questions | Time per question |
+> |---|---|---|
+> | Easy | 10 | 90s |
+> | Medium | 15 | 90s |
+> | Hard | 20 | 90s |
+
+> **Token storage:** JWT must be stored in an HttpOnly, Secure, SameSite=Strict cookie. `localStorage` must not be used for token storage anywhere in the codebase.
 
 ---
 
@@ -31,7 +40,7 @@
 ### Next.js `.env.local`
 
 ```env
-NEXT_PUBLIC_API_BASE=https://your-wordpress-site.com/wp-json/noey/v1
+NEXT_PUBLIC_API_BASE=https://your-wordpress-site.com/wp-json/knowly/v1
 ```
 
 > **Never** put the JWT secret or any admin credentials in client-side env vars. All auth is token-based from the login response.
@@ -42,7 +51,7 @@ NEXT_PUBLIC_API_BASE=https://your-wordpress-site.com/wp-json/noey/v1
 
 ### How it works
 
-NoeyAPI uses **JWT Bearer tokens** (7-day expiry). The flow is:
+KnowlyAPI uses **JWT Bearer tokens** (7-day expiry). The flow is:
 
 ```
 POST /auth/login  →  receive { token }
@@ -51,17 +60,17 @@ All subsequent requests  →  Authorization: Bearer {token}
 
 ### Token storage
 
-Store the JWT in `localStorage` (or a secure cookie for SSR apps):
+Store the JWT in an HttpOnly, Secure, SameSite=Strict cookie. Never use localStorage for token storage.:
 
 ```ts
 // store
-localStorage.setItem('noey_token', data.token)
+localStorage.setItem('knowly_token', data.token)
 
 // retrieve
-const token = localStorage.getItem('noey_token')
+const token = localStorage.getItem('knowly_token')
 
 // clear on logout
-localStorage.removeItem('noey_token')
+localStorage.removeItem('knowly_token')
 ```
 
 ### Parent vs. Child context
@@ -85,7 +94,7 @@ const api = axios.create({
 
 // Attach JWT from storage on every request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('noey_token')
+  const token = localStorage.getItem('knowly_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -97,7 +106,7 @@ api.interceptors.response.use(
     const status = err.response?.status
     if (status === 401) {
       // Token expired — redirect to login
-      localStorage.removeItem('noey_token')
+      localStorage.removeItem('knowly_token')
       window.location.href = '/login'
     }
     return Promise.reject(err)
@@ -114,7 +123,7 @@ export default api
 const BASE = process.env.NEXT_PUBLIC_API_BASE
 
 function getToken() {
-  return typeof window !== 'undefined' ? localStorage.getItem('noey_token') : null
+  return typeof window !== 'undefined' ? localStorage.getItem('knowly_token') : null
 }
 
 export async function apiFetch<T>(
@@ -393,7 +402,7 @@ const res = await api.get('/ping')
 ```ts
 async function login(username: string, password: string) {
   const { data } = await api.post('/auth/login', { username, password })
-  localStorage.setItem('noey_token', data.data.token)
+  localStorage.setItem('knowly_token', data.data.token)
   return data.data
 }
 ```
@@ -418,8 +427,8 @@ async function login(username: string, password: string) {
       {
         "child_id": 7,
         "display_name": "Alex",
-        "standard": "std_4",
-        "term": "term_1",
+        "level": "std_4",
+        "period": "term_1",
         "age": 9,
         "avatar_index": 2,
         "created_at": "2026-03-01T10:00:00Z"
@@ -566,8 +575,8 @@ await api.patch('/auth/profile', {
   "display_name": "Alex",
   "username": "alex_smith",
   "password": "childpass123",
-  "standard": "std_4",
-  "term": "term_1",
+  "level": "std_4",
+  "period": "term_1",
   "age": 9,
   "avatar_index": 2
 }
@@ -578,8 +587,8 @@ await api.patch('/auth/profile', {
 | `display_name` | string | ✓ | Shown in UI |
 | `username` | string | ✓ | Must be globally unique |
 | `password` | string | ✓ | Child account password |
-| `standard` | string | — | `std_4` or `std_5` |
-| `term` | string | — | `term_1`, `term_2`, `term_3` (std_4 only) |
+| `level` | string | — | `std_4` or `std_5` |
+| `period` | string | — | `term_1`, `term_2`, `term_3` (std_4 only) |
 | `age` | integer | — | |
 | `avatar_index` | integer | — | 1–5, default 1 |
 
@@ -605,8 +614,8 @@ const { data } = await api.get(`/children/${childId}`)
 ```json
 {
   "display_name": "Alexander",
-  "standard": "std_5",
-  "term": "",
+  "level": "std_5",
+  "period": "",
   "age": 10,
   "avatar_index": 3
 }
@@ -720,14 +729,14 @@ Returns available subject/standard/difficulty combinations based on pool invento
 
 | Param | Values |
 |---|---|
-| `standard` | `std_4`, `std_5` |
-| `term` | `term_1`, `term_2`, `term_3` |
+| `level` | `std_4`, `std_5` |
+| `period` | `term_1`, `term_2`, `term_3` |
 | `subject` | `Mathematics`, `English Language Arts`, `Science`, `Social Studies` |
 | `difficulty` | `easy`, `medium`, `hard` |
 
 ```ts
 const { data } = await api.get('/exams', {
-  params: { standard: 'std_4', term: 'term_1' }
+  params: { level: 'std_4', period: 'term_1' }
 })
 // { catalogue: [ { standard, term, subject, difficulty, pool_count }, ... ] }
 ```
@@ -742,8 +751,8 @@ Serves an exam package from the pool and **deducts 1 token**.
 **Request body:**
 ```json
 {
-  "standard": "std_4",
-  "term": "term_1",
+  "level": "std_4",
+  "period": "term_1",
   "subject": "Mathematics",
   "difficulty": "medium"
 }
@@ -760,8 +769,8 @@ Serves an exam package from the pool and **deducts 1 token**.
     "package": {
       "package_id": "pkg-std_4-term_1-math-medium-1234",
       "meta": {
-        "standard": "std_4",
-        "term": "term_1",
+        "level": "std_4",
+        "period": "term_1",
         "subject": "Mathematics",
         "difficulty": "medium",
         "topics_covered": ["Fractions", "Decimals"]
@@ -811,8 +820,8 @@ const { data } = await api.get('/exams/active')
       "session_id": 101,
       "external_session_id": "ses_abc123",
       "subject": "Mathematics",
-      "standard": "std_4",
-      "term": "term_1",
+      "level": "std_4",
+      "period": "term_1",
       "difficulty": "medium",
       "started_at": "2026-03-23T14:00:00Z",
       "checkpoint": {
@@ -1170,7 +1179,7 @@ All errors follow this shape:
 | Code | HTTP | Meaning |
 |---|---|---|
 | `noey_invalid_credentials` | 401 | Wrong username or password |
-| `noey_token_invalid` | 401 | JWT missing, expired, or malformed |
+| `knowly_token_invalid` | 401 | JWT missing, expired, or malformed |
 | `noey_forbidden` | 403 | Wrong role for this endpoint |
 | `noey_not_found` | 404 | Resource not found |
 | `noey_insufficient_tokens` | 402 | Balance is 0 — prompt to purchase |
@@ -1228,7 +1237,7 @@ import api from '@/lib/api'
 
 // 1. Login
 const { data: auth } = await api.post('/auth/login', { username, password })
-localStorage.setItem('noey_token', auth.data.token)
+localStorage.setItem('knowly_token', auth.data.token)
 
 // 2. Load profile (includes children list and token balance)
 const { data: profile } = await api.get('/auth/me')
@@ -1240,13 +1249,13 @@ await api.post(`/children/${profile.data.children[0].child_id}/switch`)
 
 // 4. Browse catalogue
 const { data: catalogue } = await api.get('/exams', {
-  params: { standard: 'std_4', term: 'term_1' }
+  params: { level: 'std_4', period: 'term_1' }
 })
 
 // 5. Start exam (deducts 1 token)
 const { data: session } = await api.post('/exams/start', {
-  standard: 'std_4',
-  term: 'term_1',
+  level: 'std_4',
+  period: 'term_1',
   subject: 'Mathematics',
   difficulty: 'medium',
 })
@@ -1461,8 +1470,8 @@ Returns today's top 10 for the given subject board. The current child is flagged
 
 | Segment | Format | Example | Notes |
 |---|---|---|---|
-| `standard` | slug | `std_4` | |
-| `term` | slug | `term_1` | Pass `none` for std_5 boards |
+| `level` | slug | `std_4` | |
+| `period` | slug | `term_1` | Pass `none` for std_5 boards |
 | `subject` | slug | `math` | Use Railway slugs, not display names |
 
 **Subject slugs:**
@@ -1486,8 +1495,8 @@ const { data } = await api.get('/leaderboard/std_4/term_1/math')
   "success": true,
   "data": {
     "board_key": "std_4:term_1:math",
-    "standard": "std_4",
-    "term": "term_1",
+    "level": "std_4",
+    "period": "term_1",
     "subject": "math",
     "date": "2026-04-02",
     "total_participants": 24,
@@ -1537,8 +1546,8 @@ const { data } = await api.get('/leaderboard/me')
     "boards": [
       {
         "board_key": "std_4:term_1:math",
-        "standard": "std_4",
-        "term": "term_1",
+        "level": "std_4",
+        "period": "term_1",
         "subject": "math",
         "date": "2026-04-02",
         "total_participants": 24,
@@ -1579,8 +1588,8 @@ Every child has a **Caribbean-themed nickname** used on the leaderboard instead 
 - Stored in WordPress user meta as `noey_nickname`
 - Sent to Railway with every upsert
 - Visible in board `entries[].nickname`
-- Admins can regenerate nicknames (e.g. for inappropriate content) from **WP Admin → NoeyAI → Leaderboards → Nickname Management**
+- Admins can regenerate nicknames (e.g. for inappropriate content) from **WP Admin → Knowly → Leaderboards → Nickname Management**
 
 ---
 
-*Generated for NoeyAPI v1.0.0 — updated 2026-04-02*
+*Generated for KnowlyAPI v1.0.0 — updated 2026-04-02*

@@ -1,6 +1,6 @@
 <?php
 /**
- * Noey_Admin_Members — Member & Auth management admin page.
+ * Knowly_Admin_Members — Member & Auth management admin page.
  *
  * Features:
  *  - View all parent accounts with token balance, PIN status, child count
@@ -12,24 +12,24 @@
  *  - View a child's exam history (sessions + scores)
  *  - Credit tokens to a parent account
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Admin_Members {
+class Knowly_Admin_Members {
 
     // ── Boot ──────────────────────────────────────────────────────────────────
 
     public static function boot(): void {
-        add_action( 'wp_ajax_noey_members_create_parent',  [ __CLASS__, 'ajax_create_parent' ] );
-        add_action( 'wp_ajax_noey_members_add_child',      [ __CLASS__, 'ajax_add_child' ] );
-        add_action( 'wp_ajax_noey_members_remove_child',   [ __CLASS__, 'ajax_remove_child' ] );
-        add_action( 'wp_ajax_noey_members_reset_pin',      [ __CLASS__, 'ajax_reset_pin' ] );
-        add_action( 'wp_ajax_noey_members_send_recovery',  [ __CLASS__, 'ajax_send_recovery' ] );
-        add_action( 'wp_ajax_noey_members_child_exams',    [ __CLASS__, 'ajax_child_exams' ] );
-        add_action( 'wp_ajax_noey_members_credit_tokens',  [ __CLASS__, 'ajax_credit_tokens' ] );
-        add_action( 'wp_ajax_noey_members_load_children',  [ __CLASS__, 'ajax_load_children' ] );
+        add_action( 'wp_ajax_knowly_members_create_parent',  [ __CLASS__, 'ajax_create_parent' ] );
+        add_action( 'wp_ajax_knowly_members_add_child',      [ __CLASS__, 'ajax_add_child' ] );
+        add_action( 'wp_ajax_knowly_members_remove_child',   [ __CLASS__, 'ajax_remove_child' ] );
+        add_action( 'wp_ajax_knowly_members_reset_pin',      [ __CLASS__, 'ajax_reset_pin' ] );
+        add_action( 'wp_ajax_knowly_members_send_recovery',  [ __CLASS__, 'ajax_send_recovery' ] );
+        add_action( 'wp_ajax_knowly_members_child_exams',    [ __CLASS__, 'ajax_child_exams' ] );
+        add_action( 'wp_ajax_knowly_members_credit_tokens',  [ __CLASS__, 'ajax_credit_tokens' ] );
+        add_action( 'wp_ajax_knowly_members_load_children',  [ __CLASS__, 'ajax_load_children' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -37,9 +37,9 @@ class Noey_Admin_Members {
     public static function render(): void {
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Insufficient permissions.' );
 
-        $parents = get_users( [ 'role' => 'noey_parent', 'orderby' => 'registered', 'order' => 'DESC' ] );
+        $parents = get_users( [ 'role' => 'knowly_parent', 'orderby' => 'registered', 'order' => 'DESC' ] );
         $total_parents  = count( $parents );
-        $total_children = (int) ( new WP_User_Query( [ 'role' => 'noey_child', 'count_total' => true, 'number' => 0 ] ) )->get_total();
+        $total_children = (int) ( new WP_User_Query( [ 'role' => 'knowly_child', 'count_total' => true, 'number' => 0 ] ) )->get_total();
         ?>
         <div class="wrap noey-wrap">
             <h1>NoeyAPI — Members</h1>
@@ -85,11 +85,11 @@ class Noey_Admin_Members {
                     </thead>
                     <tbody>
                     <?php foreach ( $parents as $parent ) :
-                        $balance      = (int) get_user_meta( $parent->ID, 'noey_token_balance', true );
-                        $pin_hash     = get_user_meta( $parent->ID, 'noey_pin_hash', true );
-                        $pin_locked   = (int) get_user_meta( $parent->ID, 'noey_pin_locked_until', true );
+                        $balance      = (int) get_user_meta( $parent->ID, 'knowly_token_balance', true );
+                        $pin_hash     = get_user_meta( $parent->ID, 'knowly_pin_hash', true );
+                        $pin_locked   = (int) get_user_meta( $parent->ID, 'knowly_pin_locked_until', true );
                         $is_locked    = $pin_locked && time() < $pin_locked;
-                        $child_count  = Noey_Children_Service::child_count( $parent->ID );
+                        $child_count  = Knowly_Children_Service::child_count( $parent->ID );
                         $pin_label    = $is_locked ? 'Locked' : ( $pin_hash ? 'Set' : 'None' );
                         $pin_color    = $is_locked ? '#dc2626' : ( $pin_hash ? '#16a34a' : '#9ca3af' );
                     ?>
@@ -144,7 +144,7 @@ class Noey_Admin_Members {
                                     <button class="button button-small noey-add-child-btn"
                                         data-parent-id="<?= esc_attr( $parent->ID ) ?>"
                                         data-parent-name="<?= esc_attr( $parent->display_name ) ?>"
-                                        <?= $child_count >= NOEY_MAX_CHILDREN ? 'disabled title="Max ' . NOEY_MAX_CHILDREN . ' children reached"' : '' ?>>
+                                        <?= $child_count >= KNOWLY_MAX_CHILDREN ? 'disabled title="Max ' . KNOWLY_MAX_CHILDREN . ' children reached"' : '' ?>>
                                         + Add Child
                                     </button>
                                 </div>
@@ -342,7 +342,7 @@ class Noey_Admin_Members {
 
         <script>
         (function($) {
-            var nonce = '<?= wp_create_nonce( 'noey_admin_nonce' ) ?>';
+            var nonce = '<?= wp_create_nonce( 'knowly_admin_nonce' ) ?>';
 
             // ── Search / filter ───────────────────────────────────────────────
             $('#noey-member-search').on('input', function() {
@@ -377,7 +377,7 @@ class Noey_Admin_Members {
             });
 
             function loadChildren(parentId, $panel) {
-                $.post(ajaxurl, { action: 'noey_members_load_children', nonce: nonce, parent_id: parentId },
+                $.post(ajaxurl, { action: 'knowly_members_load_children', nonce: nonce, parent_id: parentId },
                     function(res) {
                         if (res.success) {
                             $panel.html(res.data.html);
@@ -410,7 +410,7 @@ class Noey_Admin_Members {
                 $('#cp-error').hide();
 
                 $.post(ajaxurl, {
-                    action:       'noey_members_create_parent',
+                    action:       'knowly_members_create_parent',
                     nonce:        nonce,
                     display_name: $('#cp-display-name').val(),
                     username:     $('#cp-username').val(),
@@ -452,7 +452,7 @@ class Noey_Admin_Members {
                 var std  = $('#ac-standard').val();
 
                 $.post(ajaxurl, {
-                    action:       'noey_members_add_child',
+                    action:       'knowly_members_add_child',
                     nonce:        nonce,
                     parent_id:    $('#ac-parent-id').val(),
                     display_name: $('#ac-display-name').val(),
@@ -475,10 +475,10 @@ class Noey_Admin_Members {
                         var cnt  = parseInt($row.find('td:eq(4)').text()) + 1;
                         $row.find('td:eq(4)').text(cnt);
                         // Disable add button if at max
-                        if (cnt >= <?= NOEY_MAX_CHILDREN ?>) {
+                        if (cnt >= <?= KNOWLY_MAX_CHILDREN ?>) {
                             $row.next('.noey-children-row').find('.noey-add-child-btn')
                                 .prop('disabled', true)
-                                .attr('title', 'Max <?= NOEY_MAX_CHILDREN ?> children reached');
+                                .attr('title', 'Max <?= KNOWLY_MAX_CHILDREN ?> children reached');
                         }
                     } else {
                         $('#ac-error').text(res.data.message).show();
@@ -497,7 +497,7 @@ class Noey_Admin_Members {
 
                 $btn.prop('disabled', true).text('Removing…');
                 $.post(ajaxurl, {
-                    action:    'noey_members_remove_child',
+                    action:    'knowly_members_remove_child',
                     nonce:     nonce,
                     parent_id: parentId,
                     child_id:  childId
@@ -528,7 +528,7 @@ class Noey_Admin_Members {
 
                 $btn.prop('disabled', true).text('Resetting…');
                 $.post(ajaxurl, {
-                    action:    'noey_members_reset_pin',
+                    action:    'knowly_members_reset_pin',
                     nonce:     nonce,
                     parent_id: pid
                 }, function(res) {
@@ -554,7 +554,7 @@ class Noey_Admin_Members {
 
                 $btn.prop('disabled', true).text('Sending…');
                 $.post(ajaxurl, {
-                    action:    'noey_members_send_recovery',
+                    action:    'knowly_members_send_recovery',
                     nonce:     nonce,
                     parent_id: pid
                 }, function(res) {
@@ -585,7 +585,7 @@ class Noey_Admin_Members {
                 $('#ct-error').hide();
 
                 $.post(ajaxurl, {
-                    action:    'noey_members_credit_tokens',
+                    action:    'knowly_members_credit_tokens',
                     nonce:     nonce,
                     parent_id: $('#ct-parent-id').val(),
                     amount:    $('#ct-amount').val()
@@ -617,7 +617,7 @@ class Noey_Admin_Members {
                 openModal('noey-exams-modal');
 
                 $.post(ajaxurl, {
-                    action:   'noey_members_child_exams',
+                    action:   'knowly_members_child_exams',
                     nonce:    nonce,
                     child_id: cid
                 }, function(res) {
@@ -638,13 +638,13 @@ class Noey_Admin_Members {
     // ── AJAX: Load children panel ─────────────────────────────────────────────
 
     public static function ajax_load_children(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
         if ( ! $parent_id ) wp_send_json_error( [ 'message' => 'Invalid parent.' ] );
 
-        $children = Noey_Children_Service::list_children( $parent_id );
+        $children = Knowly_Children_Service::list_children( $parent_id );
 
         ob_start();
         if ( empty( $children ) ) {
@@ -653,7 +653,7 @@ class Noey_Admin_Members {
             foreach ( $children as $child ) :
                 $user     = get_userdata( $child['child_id'] );
                 $exams    = self::get_child_session_count( $child['child_id'] );
-                $nickname = get_user_meta( $child['child_id'], 'noey_nickname', true );
+                $nickname = get_user_meta( $child['child_id'], 'knowly_nickname', true );
             ?>
             <div class="noey-child-card">
                 <div class="noey-child-info">
@@ -666,8 +666,8 @@ class Noey_Admin_Members {
                     <div class="noey-child-meta">
                         ID: <?= esc_html( $child['child_id'] ) ?>
                         <?= $user ? ' · @' . esc_html( $user->user_login ) : '' ?>
-                        · <?= esc_html( strtoupper( $child['standard'] ) ) ?>
-                        <?= $child['term'] ? ' · ' . esc_html( strtoupper( str_replace( '_', ' ', $child['term'] ) ) ) : ' · SEA' ?>
+                        · <?= esc_html( strtoupper( $child['level'] ) ) ?>
+                        <?= $child['period'] ? ' · ' . esc_html( strtoupper( str_replace( '_', ' ', $child['period'] ) ) ) : ' · SEA' ?>
                         <?= $child['age'] ? ' · Age ' . esc_html( $child['age'] ) : '' ?>
                         · <strong><?= esc_html( $exams ) ?> exam<?= $exams !== 1 ? 's' : '' ?></strong>
                     </div>
@@ -697,7 +697,7 @@ class Noey_Admin_Members {
     // ── AJAX: Create parent ───────────────────────────────────────────────────
 
     public static function ajax_create_parent(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $username     = sanitize_user( $_POST['username'] ?? '' );
@@ -725,16 +725,16 @@ class Noey_Admin_Members {
         }
 
         $user = new WP_User( $user_id );
-        $user->set_role( 'noey_parent' );
+        $user->set_role( 'knowly_parent' );
         wp_update_user( [ 'ID' => $user_id, 'display_name' => $display_name ] );
 
         if ( $tokens > 0 ) {
-            Noey_Token_Service::credit( $user_id, $tokens, 'admin_credit', '', 'Initial token grant' );
+            Knowly_Token_Service::credit( $user_id, $tokens, 'admin_credit', '', 'Initial token grant' );
         } else {
-            update_user_meta( $user_id, 'noey_token_balance', 0 );
+            update_user_meta( $user_id, 'knowly_token_balance', 0 );
         }
 
-        Noey_Debug::log( 'admin.members', 'Parent account created via admin', [
+        Knowly_Debug::log( 'admin.members', 'Parent account created via admin', [
             'user_id'  => $user_id,
             'username' => $username,
             'tokens'   => $tokens,
@@ -746,7 +746,7 @@ class Noey_Admin_Members {
     // ── AJAX: Add child ───────────────────────────────────────────────────────
 
     public static function ajax_add_child(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
@@ -758,19 +758,19 @@ class Noey_Admin_Members {
             'username'     => sanitize_user( $_POST['username']     ?? '' ),
             'display_name' => sanitize_text_field( $_POST['display_name'] ?? '' ),
             'password'     => $_POST['password'] ?? '',
-            'standard'     => sanitize_text_field( $_POST['standard']     ?? 'std_4' ),
-            'term'         => sanitize_text_field( $_POST['term']         ?? '' ),
+            'level'     => sanitize_text_field( $_POST['level']     ?? 'std_4' ),
+            'period'   => sanitize_text_field( $_POST['period']         ?? '' ),
         ];
         if ( ! empty( $_POST['age'] ) ) {
             $data['age'] = (int) $_POST['age'];
         }
 
-        $result = Noey_Children_Service::create_child( $parent_id, $data );
+        $result = Knowly_Children_Service::create_child( $parent_id, $data );
         if ( is_wp_error( $result ) ) {
             wp_send_json_error( [ 'message' => $result->get_error_message() ] );
         }
 
-        Noey_Debug::log( 'admin.members', 'Child added via admin', [
+        Knowly_Debug::log( 'admin.members', 'Child added via admin', [
             'parent_id' => $parent_id,
             'child_id'  => $result['child_id'],
         ], null, 'info' );
@@ -781,7 +781,7 @@ class Noey_Admin_Members {
     // ── AJAX: Remove child ────────────────────────────────────────────────────
 
     public static function ajax_remove_child(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
@@ -791,12 +791,12 @@ class Noey_Admin_Members {
             wp_send_json_error( [ 'message' => 'Invalid IDs.' ] );
         }
 
-        $result = Noey_Children_Service::remove_child( $parent_id, $child_id );
+        $result = Knowly_Children_Service::remove_child( $parent_id, $child_id );
         if ( is_wp_error( $result ) ) {
             wp_send_json_error( [ 'message' => $result->get_error_message() ] );
         }
 
-        Noey_Debug::log( 'admin.members', 'Child removed via admin', [
+        Knowly_Debug::log( 'admin.members', 'Child removed via admin', [
             'parent_id' => $parent_id,
             'child_id'  => $child_id,
         ], null, 'info' );
@@ -807,17 +807,17 @@ class Noey_Admin_Members {
     // ── AJAX: Reset PIN ───────────────────────────────────────────────────────
 
     public static function ajax_reset_pin(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
         if ( ! $parent_id ) wp_send_json_error( [ 'message' => 'Invalid parent.' ] );
 
-        delete_user_meta( $parent_id, 'noey_pin_hash' );
-        delete_user_meta( $parent_id, 'noey_pin_attempts' );
-        delete_user_meta( $parent_id, 'noey_pin_locked_until' );
+        delete_user_meta( $parent_id, 'knowly_pin_hash' );
+        delete_user_meta( $parent_id, 'knowly_pin_attempts' );
+        delete_user_meta( $parent_id, 'knowly_pin_locked_until' );
 
-        Noey_Debug::log( 'admin.members', 'PIN reset via admin', [ 'parent_id' => $parent_id ], null, 'info' );
+        Knowly_Debug::log( 'admin.members', 'PIN reset via admin', [ 'parent_id' => $parent_id ], null, 'info' );
 
         wp_send_json_success( [] );
     }
@@ -825,7 +825,7 @@ class Noey_Admin_Members {
     // ── AJAX: Send recovery email ─────────────────────────────────────────────
 
     public static function ajax_send_recovery(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
@@ -839,7 +839,7 @@ class Noey_Admin_Members {
             wp_send_json_error( [ 'message' => $result->get_error_message() ] );
         }
 
-        Noey_Debug::log( 'admin.members', 'Password recovery email sent via admin', [
+        Knowly_Debug::log( 'admin.members', 'Password recovery email sent via admin', [
             'parent_id' => $parent_id,
             'email'     => $user->user_email,
         ], null, 'info' );
@@ -850,7 +850,7 @@ class Noey_Admin_Members {
     // ── AJAX: Credit tokens ───────────────────────────────────────────────────
 
     public static function ajax_credit_tokens(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
@@ -859,12 +859,12 @@ class Noey_Admin_Members {
         if ( ! $parent_id ) wp_send_json_error( [ 'message' => 'Invalid parent.' ] );
         if ( $amount <= 0 ) wp_send_json_error( [ 'message' => 'Amount must be greater than zero.' ] );
 
-        $result = Noey_Token_Service::credit( $parent_id, $amount, 'admin_credit', '', 'Admin credit' );
+        $result = Knowly_Token_Service::credit( $parent_id, $amount, 'admin_credit', '', 'Admin credit' );
         if ( is_wp_error( $result ) ) {
             wp_send_json_error( [ 'message' => $result->get_error_message() ] );
         }
 
-        Noey_Debug::log( 'admin.members', 'Tokens credited via admin', [
+        Knowly_Debug::log( 'admin.members', 'Tokens credited via admin', [
             'parent_id' => $parent_id,
             'amount'    => $amount,
             'balance'   => $result['balance_after'],
@@ -876,7 +876,7 @@ class Noey_Admin_Members {
     // ── AJAX: Child exam history ──────────────────────────────────────────────
 
     public static function ajax_child_exams(): void {
-        check_ajax_referer( 'noey_admin_nonce', 'nonce' );
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         $child_id = (int) ( $_POST['child_id'] ?? 0 );
@@ -886,7 +886,7 @@ class Noey_Admin_Members {
         $sessions = $wpdb->get_results( $wpdb->prepare(
             "SELECT session_id, external_session_id, subject, standard, term, difficulty,
                     score, total, percentage, time_taken_seconds, state, started_at, completed_at
-             FROM {$wpdb->prefix}noey_exam_sessions
+             FROM {$wpdb->prefix}knowly_exam_sessions
              WHERE child_id = %d
              ORDER BY started_at DESC
              LIMIT 100",
@@ -937,7 +937,7 @@ class Noey_Admin_Members {
                 ?>
                 <tr>
                     <td><strong><?= esc_html( $s['subject'] ) ?></strong></td>
-                    <td><?= esc_html( strtoupper( $s['standard'] ) ) ?> <?= $s['term'] ? esc_html( strtoupper( str_replace( '_', ' ', $s['term'] ) ) ) : 'SEA' ?></td>
+                    <td><?= esc_html( strtoupper( $s['level'] ) ) ?> <?= $s['period'] ? esc_html( strtoupper( str_replace( '_', ' ', $s['period'] ) ) ) : 'SEA' ?></td>
                     <td><?= esc_html( ucfirst( $s['difficulty'] ) ) ?></td>
                     <td style="text-align:center;"><?= $s['state'] === 'completed' ? esc_html( $s['score'] . '/' . $s['total'] ) : '—' ?></td>
                     <td style="text-align:center;font-weight:700;color:<?= $s['state'] === 'completed' ? $pct_color : '#9ca3af' ?>;">
@@ -970,7 +970,7 @@ class Noey_Admin_Members {
     private static function get_child_session_count( int $child_id ): int {
         global $wpdb;
         return (int) $wpdb->get_var( $wpdb->prepare(
-            "SELECT COUNT(*) FROM {$wpdb->prefix}noey_exam_sessions WHERE child_id = %d AND state = 'completed'",
+            "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_sessions WHERE child_id = %d AND state = 'completed'",
             $child_id
         ) );
     }

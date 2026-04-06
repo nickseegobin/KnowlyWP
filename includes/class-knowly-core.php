@@ -1,19 +1,19 @@
 <?php
 /**
- * Noey_Core — Plugin bootstrap.
+ * Knowly_Core — Plugin bootstrap.
  *
  * Boots all subsystems: CORS, REST API routes, cron hooks, admin.
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Core {
+class Knowly_Core {
 
     public static function boot(): void {
         // Safety net DB upgrade
-        Noey_Activator::maybe_upgrade();
+        Knowly_Activator::maybe_upgrade();
 
         // CORS preflight must be handled before WP sends anything
         self::handle_cors_preflight();
@@ -31,34 +31,34 @@ class Noey_Core {
         add_filter( 'rest_pre_dispatch', [ __CLASS__, 'bypass_third_party_jwt' ], 11, 3 );
 
         // WooCommerce integration
-        Noey_WooCommerce::boot();
+        Knowly_WooCommerce::boot();
 
         // Cron hooks
-        Noey_Cron::register_hooks();
+        Knowly_Cron::register_hooks();
 
         // Admin
         if ( is_admin() ) {
-            Noey_Admin::boot();
+            Knowly_Admin::boot();
         }
 
-        Noey_Debug::log( 'core.boot', 'NoeyAPI booted', [
-            'version'    => NOEY_VERSION,
-            'debug_mode' => Noey_Debug::is_enabled(),
+        Knowly_Debug::log( 'core.boot', 'NoeyAPI booted', [
+            'version'    => KNOWLY_VERSION,
+            'debug_mode' => Knowly_Debug::is_enabled(),
         ], null, 'debug' );
     }
 
     // ── REST Routes ───────────────────────────────────────────────────────────
 
     public static function register_routes(): void {
-        ( new Noey_Auth_API() )->register_routes();
-        ( new Noey_Children_API() )->register_routes();
-        ( new Noey_Tokens_API() )->register_routes();
-        ( new Noey_Exams_API() )->register_routes();
-        ( new Noey_Results_API() )->register_routes();
-        ( new Noey_Insights_API() )->register_routes();
-        ( new Noey_Leaderboard_API() )->register_routes();
+        ( new Knowly_Auth_API() )->register_routes();
+        ( new Knowly_Children_API() )->register_routes();
+        ( new Knowly_Tokens_API() )->register_routes();
+        ( new Knowly_Exams_API() )->register_routes();
+        ( new Knowly_Results_API() )->register_routes();
+        ( new Knowly_Insights_API() )->register_routes();
+        ( new Knowly_Leaderboard_API() )->register_routes();
 
-        Noey_Debug::log( 'core.routes', 'All REST routes registered', [], null, 'debug' );
+        Knowly_Debug::log( 'core.routes', 'All REST routes registered', [], null, 'debug' );
     }
 
     // ── CORS ──────────────────────────────────────────────────────────────────
@@ -103,10 +103,10 @@ class Noey_Core {
             header( 'Vary: Origin' );
         }
 
-        // All noey/v1 responses must never be cached — responses are always
+        // All knowly/v1 responses must never be cached — responses are always
         // user-specific and state changes (switch child, token deduction) must
         // be reflected immediately on the next request.
-        if ( strpos( $request->get_route(), '/noey/v1' ) === 0 ) {
+        if ( strpos( $request->get_route(), '/knowly/v1' ) === 0 ) {
             header( 'Cache-Control: no-store, no-cache, must-revalidate' );
             header( 'Pragma: no-cache' );
         }
@@ -117,7 +117,7 @@ class Noey_Core {
     // ── Third-party JWT bypass ────────────────────────────────────────────────
 
     /**
-     * For all noey/v1 routes, clear any WP_Error injected into rest_pre_dispatch
+     * For all knowly/v1 routes, clear any WP_Error injected into rest_pre_dispatch
      * by the jwt-authentication-for-wp-rest-api plugin (priority 10).
      *
      * That plugin stores a jwt_error on determine_current_user and returns it
@@ -137,8 +137,8 @@ class Noey_Core {
 
         $route = $request->get_route();
 
-        if ( strpos( $route, '/noey/v1' ) === 0 ) {
-            Noey_Debug::log( 'core.jwt_bypass', 'Third-party JWT error cleared for noey route', [
+        if ( strpos( $route, '/knowly/v1' ) === 0 ) {
+            Knowly_Debug::log( 'core.jwt_bypass', 'Third-party JWT error cleared for noey route', [
                 'route'      => $route,
                 'error_code' => $result->get_error_code(),
             ], null, 'debug' );
@@ -157,7 +157,7 @@ class Noey_Core {
      * Configured in Admin › NoeyAPI › Settings › Allowed Origins (comma-separated).
      */
     public static function is_allowed_origin( string $origin ): bool {
-        $raw      = get_option( 'noey_allowed_origins', '' );
+        $raw      = get_option( 'knowly_allowed_origins', '' );
         $allowed  = array_filter( array_map( 'trim', explode( ',', $raw ) ) );
 
         // Always allow same site

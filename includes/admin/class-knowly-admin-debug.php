@@ -1,6 +1,6 @@
 <?php
 /**
- * Noey_Admin_Debug — Debug log viewer.
+ * Knowly_Admin_Debug — Debug log viewer.
  *
  * Features:
  *  - Filter by level, context, user_id, search term
@@ -8,12 +8,12 @@
  *  - AJAX "Clear all logs" button
  *  - Auto-refresh toggle (every 10s)
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Admin_Debug {
+class Knowly_Admin_Debug {
 
     const LOGS_PER_PAGE = 50;
 
@@ -36,8 +36,8 @@ class Noey_Admin_Debug {
             'user_id' => $user_id ?: null,
         ] );
 
-        $logs  = Noey_Debug::get_logs( array_merge( $filters, [ 'limit' => self::LOGS_PER_PAGE, 'offset' => $offset ] ) );
-        $total = Noey_Debug::get_count( $filters );
+        $logs  = Knowly_Debug::get_logs( array_merge( $filters, [ 'limit' => self::LOGS_PER_PAGE, 'offset' => $offset ] ) );
+        $total = Knowly_Debug::get_count( $filters );
         $pages = (int) ceil( $total / self::LOGS_PER_PAGE );
         ?>
         <div class="wrap noey-wrap">
@@ -45,7 +45,7 @@ class Noey_Admin_Debug {
                 <span class="noey-log-count"><?= esc_html( $total ) ?> entries</span>
             </h1>
 
-            <?php if ( ! Noey_Debug::is_enabled() ) : ?>
+            <?php if ( ! Knowly_Debug::is_enabled() ) : ?>
                 <div class="notice notice-warning">
                     <p>Debug mode is <strong>OFF</strong>. Enable it in <a href="<?= esc_url( admin_url( 'admin.php?page=noey-settings' ) ) ?>">Settings</a> to start capturing logs.</p>
                 </div>
@@ -56,7 +56,7 @@ class Noey_Admin_Debug {
                 <input type="hidden" name="page" value="noey-debug" />
                 <select name="level">
                     <option value="">All Levels</option>
-                    <?php foreach ( Noey_Debug::LEVELS as $l ) : ?>
+                    <?php foreach ( Knowly_Debug::LEVELS as $l ) : ?>
                         <option value="<?= esc_attr( $l ) ?>" <?= selected( $level, $l, false ) ?>><?= esc_html( ucfirst( $l ) ) ?></option>
                     <?php endforeach; ?>
                 </select>
@@ -69,7 +69,7 @@ class Noey_Admin_Debug {
 
             <!-- Actions -->
             <div class="noey-debug-actions">
-                <button id="noey-clear-logs" class="button button-link-delete" data-nonce="<?= esc_attr( wp_create_nonce( 'noey_admin_nonce' ) ) ?>">
+                <button id="noey-clear-logs" class="button button-link-delete" data-nonce="<?= esc_attr( wp_create_nonce( 'knowly_admin_nonce' ) ) ?>">
                     Clear All Logs
                 </button>
                 <label class="noey-autorefresh">
@@ -94,7 +94,7 @@ class Noey_Admin_Debug {
                     </thead>
                     <tbody>
                         <?php foreach ( $logs as $log ) :
-                            $colour = Noey_Debug::level_colour( $log['level'] );
+                            $colour = Knowly_Debug::level_colour( $log['level'] );
                             $has_data = ! empty( $log['data'] );
                             $row_id   = 'log-' . (int) $log['log_id'];
                         ?>

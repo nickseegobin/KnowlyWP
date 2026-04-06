@@ -1,19 +1,19 @@
 <?php
 /**
- * Noey_Leaderboard_API — Leaderboard REST endpoints.
+ * Knowly_Leaderboard_API — Leaderboard REST endpoints.
  *
  * v2.0: Board key is standard + term + subject only. Difficulty removed.
  *
  * Routes:
- *   GET  /noey/v1/leaderboard/me                              JWT  Personal board summary
- *   GET  /noey/v1/leaderboard/:standard/:term/:subject        JWT  Top 10 for a subject board
+ *   GET  /knowly/v1/leaderboard/me                              JWT  Personal board summary
+ *   GET  /knowly/v1/leaderboard/:standard/:term/:subject        JWT  Top 10 for a subject board
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Leaderboard_API extends Noey_API_Base {
+class Knowly_Leaderboard_API extends Knowly_API_Base {
 
     public function register_routes(): void {
         $ns = $this->namespace;
@@ -31,12 +31,12 @@ class Noey_Leaderboard_API extends Noey_API_Base {
             'callback'            => [ $this, 'board' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'standard' => [
+                'level'     => [
                     'required'          => true,
                     'type'              => 'string',
                     'sanitize_callback' => 'sanitize_text_field',
                 ],
-                'term'     => [
+                'period'   => [
                     'required'          => true,
                     'type'              => 'string',
                     'sanitize_callback' => 'sanitize_text_field',
@@ -54,7 +54,7 @@ class Noey_Leaderboard_API extends Noey_API_Base {
     // ── Handlers ──────────────────────────────────────────────────────────────
 
     /**
-     * GET /noey/v1/leaderboard/:standard/:term/:subject
+     * GET /knowly/v1/leaderboard/:standard/:term/:subject
      *
      * Returns today's top 10 for the subject board.
      * Points are the accumulated daily total across all difficulties.
@@ -63,9 +63,9 @@ class Noey_Leaderboard_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Noey_Leaderboard_Service::get_board(
-            $request->get_param( 'standard' ),
-            $request->get_param( 'term' ),
+        $result = Knowly_Leaderboard_Service::get_board(
+            $request->get_param( 'level' ),
+            $request->get_param( 'period' ),
             $request->get_param( 'subject' ),
             $ctx['child_id']
         );
@@ -74,7 +74,7 @@ class Noey_Leaderboard_API extends Noey_API_Base {
     }
 
     /**
-     * GET /noey/v1/leaderboard/me
+     * GET /knowly/v1/leaderboard/me
      *
      * Returns all subject boards the current child appears on today.
      * Scoped to their enrolled standard + term.
@@ -83,7 +83,7 @@ class Noey_Leaderboard_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Noey_Leaderboard_Service::get_my_boards( $ctx['child_id'] );
+        $result = Knowly_Leaderboard_Service::get_my_boards( $ctx['child_id'] );
 
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }

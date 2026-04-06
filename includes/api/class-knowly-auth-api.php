@@ -1,6 +1,6 @@
 <?php
 /**
- * Noey_Auth_API — Authentication endpoints.
+ * Knowly_Auth_API — Authentication endpoints.
  *
  * v2.1 changes:
  *  - /auth/register args updated — first_name, last_name, phone replace
@@ -8,21 +8,21 @@
  *  - /auth/profile PATCH args updated — first_name, last_name accepted.
  *
  * Routes:
- *   POST  /noey/v1/auth/register       Open       Register a new parent account → JWT
- *   POST  /noey/v1/auth/login          Open       Login → JWT
- *   GET   /noey/v1/auth/me             JWT        Current user profile
- *   PATCH /noey/v1/auth/profile        JWT parent Update name and/or avatar_index
- *   POST  /noey/v1/auth/pin/set        JWT parent Set / update PIN
- *   POST  /noey/v1/auth/pin/verify     JWT        Verify parent PIN
- *   GET   /noey/v1/auth/pin/status     JWT parent PIN status
- *   GET   /noey/v1/ping                Open       Health check
+ *   POST  /knowly/v1/auth/register       Open       Register a new parent account → JWT
+ *   POST  /knowly/v1/auth/login          Open       Login → JWT
+ *   GET   /knowly/v1/auth/me             JWT        Current user profile
+ *   PATCH /knowly/v1/auth/profile        JWT parent Update name and/or avatar_index
+ *   POST  /knowly/v1/auth/pin/set        JWT parent Set / update PIN
+ *   POST  /knowly/v1/auth/pin/verify     JWT        Verify parent PIN
+ *   GET   /knowly/v1/auth/pin/status     JWT parent PIN status
+ *   GET   /knowly/v1/ping                Open       Health check
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Auth_API extends Noey_API_Base {
+class Knowly_Auth_API extends Knowly_API_Base {
 
     public function register_routes(): void {
         $ns = $this->namespace;
@@ -103,7 +103,7 @@ class Noey_Auth_API extends Noey_API_Base {
     // ── Handlers ──────────────────────────────────────────────────────────────
 
     public function register( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-        $result = Noey_Auth_Service::register( [
+        $result = Knowly_Auth_Service::register( [
             'first_name'   => $request->get_param( 'first_name' ),
             'last_name'    => $request->get_param( 'last_name' ),
             'email'        => $request->get_param( 'email' ),
@@ -115,7 +115,7 @@ class Noey_Auth_API extends Noey_API_Base {
     }
 
     public function login( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-        $result = Noey_Auth_Service::login(
+        $result = Knowly_Auth_Service::login(
             $request->get_param( 'username' ),
             $request->get_param( 'password' )
         );
@@ -126,7 +126,7 @@ class Noey_Auth_API extends Noey_API_Base {
         $user_id = $this->authenticate( $request );
         if ( is_wp_error( $user_id ) ) return $user_id;
 
-        $profile = Noey_Auth_Service::get_profile( $user_id );
+        $profile = Knowly_Auth_Service::get_profile( $user_id );
         return is_wp_error( $profile ) ? $profile : $this->success( $profile );
     }
 
@@ -134,7 +134,7 @@ class Noey_Auth_API extends Noey_API_Base {
         $parent_id = $this->require_parent( $request );
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
-        $result = Noey_Auth_Service::update_profile( $parent_id, [
+        $result = Knowly_Auth_Service::update_profile( $parent_id, [
             'first_name'   => $request->get_param( 'first_name' ),
             'last_name'    => $request->get_param( 'last_name' ),
             'display_name' => $request->get_param( 'display_name' ),
@@ -147,7 +147,7 @@ class Noey_Auth_API extends Noey_API_Base {
         $parent_id = $this->require_parent( $request );
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
-        $result = Noey_Auth_Service::set_pin( $parent_id, $request->get_param( 'pin' ) );
+        $result = Knowly_Auth_Service::set_pin( $parent_id, $request->get_param( 'pin' ) );
         return is_wp_error( $result ) ? $result : $this->success( [ 'pin_set' => true ] );
     }
 
@@ -155,7 +155,7 @@ class Noey_Auth_API extends Noey_API_Base {
         $parent_id = $this->require_parent( $request );
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
-        $result = Noey_Auth_Service::verify_pin( $parent_id, $request->get_param( 'pin' ) );
+        $result = Knowly_Auth_Service::verify_pin( $parent_id, $request->get_param( 'pin' ) );
         return is_wp_error( $result ) ? $result : $this->success( [ 'verified' => true ] );
     }
 
@@ -163,13 +163,13 @@ class Noey_Auth_API extends Noey_API_Base {
         $parent_id = $this->require_parent( $request );
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
-        return $this->success( Noey_Auth_Service::get_pin_status( $parent_id ) );
+        return $this->success( Knowly_Auth_Service::get_pin_status( $parent_id ) );
     }
 
     public function ping(): WP_REST_Response {
         return $this->success( [
             'status'  => 'ok',
-            'version' => NOEY_VERSION,
+            'version' => KNOWLY_VERSION,
             'time'    => current_time( 'mysql', true ),
         ] );
     }

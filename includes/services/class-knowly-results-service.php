@@ -1,32 +1,32 @@
 <?php
 /**
- * Noey_Results_Service — Exam results persistence and analytics.
+ * Knowly_Results_Service — Exam results persistence and analytics.
  *
  * Handles:
  *  - Saving session + answers + topic breakdown
  *  - Updating child summary meta
  *  - Querying history, single session, and aggregate stats
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Results_Service {
+class Knowly_Results_Service {
 
     // ── Save ──────────────────────────────────────────────────────────────────
 
     /**
      * Persist a completed exam submission.
      *
-     * @param  array $session  Raw session row from wp_noey_exam_sessions.
+     * @param  array $session  Raw session row from wp_knowly_exam_sessions.
      * @param  array $answers  Array of answer objects from client.
      * @return array|WP_Error  Session summary.
      */
     public static function save_submission( array $session, array $answers ): array|WP_Error {
         global $wpdb;
 
-        Noey_Debug::log( 'results.save', 'Saving exam submission', [
+        Knowly_Debug::log( 'results.save', 'Saving exam submission', [
             'session_id' => $session['session_id'],
             'child_id'   => $session['child_id'],
             'answers'    => count( $answers ),
@@ -48,7 +48,7 @@ class Noey_Results_Service {
 
         // ── Update session state ──────────────────────────────────────────────
         $wpdb->update(
-            $wpdb->prefix . 'noey_exam_sessions',
+            $wpdb->prefix . 'knowly_exam_sessions',
             [
                 'state'              => 'completed',
                 'score'              => $correct,
@@ -66,7 +66,7 @@ class Noey_Results_Service {
         foreach ( $answers as $ans ) {
             $cognitive = self::normalise_cognitive( $ans['cognitive_level'] ?? '' );
             $wpdb->insert(
-                $wpdb->prefix . 'noey_exam_answers',
+                $wpdb->prefix . 'knowly_exam_answers',
                 [
                     'session_id'         => $session['session_id'],
                     'child_id'           => $session['child_id'],
@@ -90,7 +90,7 @@ class Noey_Results_Service {
         // ── Update child summary meta ─────────────────────────────────────────
         self::update_child_summary( (int) $session['child_id'] );
 
-        Noey_Debug::log( 'results.save', 'Results saved successfully', [
+        Knowly_Debug::log( 'results.save', 'Results saved successfully', [
             'session_id' => $session['session_id'],
             'score'      => "{$correct}/{$total}",
             'percentage' => $percentage,
@@ -123,7 +123,7 @@ class Noey_Results_Service {
             $wpdb->prepare(
                 "SELECT session_id, external_session_id, subject, standard, term, difficulty,
                         score, total, percentage, time_taken_seconds, started_at, completed_at
-                 FROM {$wpdb->prefix}noey_exam_sessions
+                 FROM {$wpdb->prefix}knowly_exam_sessions
                  WHERE child_id = %d AND state = 'completed'
                  ORDER BY completed_at DESC
                  LIMIT %d OFFSET %d",
@@ -136,12 +136,12 @@ class Noey_Results_Service {
 
         $total = (int) $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT COUNT(*) FROM {$wpdb->prefix}noey_exam_sessions WHERE child_id = %d AND state = 'completed'",
+                "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_sessions WHERE child_id = %d AND state = 'completed'",
                 $child_id
             )
         );
 
-        Noey_Debug::log( 'results.sessions', 'Session history fetched', [
+        Knowly_Debug::log( 'results.sessions', 'Session history fetched', [
             'child_id' => $child_id,
             'page'     => $page,
             'total'    => $total,
@@ -164,7 +164,7 @@ class Noey_Results_Service {
 
         $session = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}noey_exam_sessions WHERE session_id = %d AND child_id = %d",
+                "SELECT * FROM {$wpdb->prefix}knowly_exam_sessions WHERE session_id = %d AND child_id = %d",
                 $session_id,
                 $child_id
             ),
@@ -172,12 +172,12 @@ class Noey_Results_Service {
         );
 
         if ( ! $session ) {
-            return new WP_Error( 'noey_not_found', 'Session not found.', [ 'status' => 404 ] );
+            return new WP_Error( 'knowly_not_found', 'Session not found.', [ 'status' => 404 ] );
         }
 
         $answers = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}noey_exam_answers WHERE session_id = %d ORDER BY answer_id ASC",
+                "SELECT * FROM {$wpdb->prefix}knowly_exam_answers WHERE session_id = %d ORDER BY answer_id ASC",
                 $session_id
             ),
             ARRAY_A
@@ -185,13 +185,13 @@ class Noey_Results_Service {
 
         $breakdown = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}noey_topic_breakdown WHERE session_id = %d ORDER BY pct DESC",
+                "SELECT * FROM {$wpdb->prefix}knowly_topic_breakdown WHERE session_id = %d ORDER BY pct DESC",
                 $session_id
             ),
             ARRAY_A
         ) ?: [];
 
-        Noey_Debug::log( 'results.detail', 'Session detail fetched', [
+        Knowly_Debug::log( 'results.detail', 'Session detail fetched', [
             'session_id' => $session_id,
             'child_id'   => $child_id,
         ], $child_id, 'debug' );
@@ -214,7 +214,7 @@ class Noey_Results_Service {
                 "SELECT COUNT(*) as exams_completed,
                         AVG(percentage) as average_pct,
                         SUM(time_taken_seconds) as total_time_seconds
-                 FROM {$wpdb->prefix}noey_exam_sessions
+                 FROM {$wpdb->prefix}knowly_exam_sessions
                  WHERE child_id = %d AND state = 'completed'",
                 $child_id
             ),
@@ -228,7 +228,7 @@ class Noey_Results_Service {
                         SUM(correct) as total_correct,
                         SUM(total)   as total_questions,
                         ROUND((SUM(correct) / SUM(total)) * 100, 1) as overall_pct
-                 FROM {$wpdb->prefix}noey_topic_breakdown
+                 FROM {$wpdb->prefix}knowly_topic_breakdown
                  WHERE child_id = %d
                  GROUP BY topic
                  ORDER BY overall_pct DESC",
@@ -240,7 +240,7 @@ class Noey_Results_Service {
         $strongest = ! empty( $topics ) ? $topics[0]['topic'] : null;
         $weakest   = ! empty( $topics ) ? $topics[ count( $topics ) - 1 ]['topic'] : null;
 
-        Noey_Debug::log( 'results.stats', 'Stats fetched', [
+        Knowly_Debug::log( 'results.stats', 'Stats fetched', [
             'child_id'         => $child_id,
             'exams_completed'  => $totals['exams_completed'] ?? 0,
         ], $child_id, 'debug' );
@@ -290,7 +290,7 @@ class Noey_Results_Service {
 
         foreach ( $breakdown as $item ) {
             $wpdb->insert(
-                $wpdb->prefix . 'noey_topic_breakdown',
+                $wpdb->prefix . 'knowly_topic_breakdown',
                 [
                     'session_id' => $session_id,
                     'child_id'   => $child_id,
@@ -312,16 +312,16 @@ class Noey_Results_Service {
                 "SELECT COUNT(*) as total,
                         AVG(percentage) as avg_pct,
                         MAX(completed_at) as last_at
-                 FROM {$wpdb->prefix}noey_exam_sessions
+                 FROM {$wpdb->prefix}knowly_exam_sessions
                  WHERE child_id = %d AND state = 'completed'",
                 $child_id
             ),
             ARRAY_A
         );
 
-        update_user_meta( $child_id, 'noey_total_exams', (int) $stats['total'] );
-        update_user_meta( $child_id, 'noey_average_score_pct', round( (float) $stats['avg_pct'], 1 ) );
-        update_user_meta( $child_id, 'noey_last_exam_at', $stats['last_at'] );
+        update_user_meta( $child_id, 'knowly_total_exams', (int) $stats['total'] );
+        update_user_meta( $child_id, 'knowly_average_score_pct', round( (float) $stats['avg_pct'], 1 ) );
+        update_user_meta( $child_id, 'knowly_last_exam_at', $stats['last_at'] );
     }
 
     private static function normalise_cognitive( string $level ): string {
@@ -339,8 +339,8 @@ class Noey_Results_Service {
             'session_id'          => (int) $row['session_id'],
             'external_session_id' => $row['external_session_id'],
             'subject'             => $row['subject'],
-            'standard'            => $row['standard'],
-            'term'                => $row['term'],
+            'level'     => $row['level'],
+            'period'   => $row['period'],
             'difficulty'          => $row['difficulty'],
             'score'               => (int) $row['score'],
             'total'               => (int) $row['total'],

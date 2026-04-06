@@ -1,6 +1,6 @@
 <?php
 /**
- * Noey_Children_API — Child account endpoints.
+ * Knowly_Children_API — Child account endpoints.
  *
  * v2.1 changes:
  *  - /children (POST) args updated — first_name, last_name, nickname replace
@@ -8,20 +8,20 @@
  *  - /children/:id (PATCH) args updated — first_name, last_name accepted.
  *
  * Routes:
- *   GET    /noey/v1/children                 JWT parent  List all children
- *   POST   /noey/v1/children                 JWT parent  Create a child account
- *   GET    /noey/v1/children/:id             JWT         Get a single child profile
- *   PATCH  /noey/v1/children/:id             JWT parent  Update a child profile
- *   DELETE /noey/v1/children/:id             JWT parent  Remove a child profile
- *   POST   /noey/v1/children/:id/switch      JWT parent  Set active child
- *   POST   /noey/v1/children/switch-parent   JWT parent  Return to parent context
+ *   GET    /knowly/v1/children                 JWT parent  List all children
+ *   POST   /knowly/v1/children                 JWT parent  Create a child account
+ *   GET    /knowly/v1/children/:id             JWT         Get a single child profile
+ *   PATCH  /knowly/v1/children/:id             JWT parent  Update a child profile
+ *   DELETE /knowly/v1/children/:id             JWT parent  Remove a child profile
+ *   POST   /knowly/v1/children/:id/switch      JWT parent  Set active child
+ *   POST   /knowly/v1/children/switch-parent   JWT parent  Return to parent context
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Children_API extends Noey_API_Base {
+class Knowly_Children_API extends Knowly_API_Base {
 
     public function register_routes(): void {
         $ns = $this->namespace;
@@ -41,8 +41,8 @@ class Noey_Children_API extends Noey_API_Base {
                     'last_name'    => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
                     'nickname'     => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
                     'password'     => [ 'required' => true,  'type' => 'string' ],
-                    'standard'     => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
-                    'term'         => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                    'level'     => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                    'period'   => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
                     'age'          => [ 'required' => false, 'type' => 'integer' ],
                     'avatar_index' => [ 'required' => false, 'type' => 'integer' ],
                 ],
@@ -62,8 +62,8 @@ class Noey_Children_API extends Noey_API_Base {
                 'args'                => [
                     'first_name'   => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
                     'last_name'    => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
-                    'standard'     => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
-                    'term'         => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                    'level'     => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                    'period'   => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
                     'age'          => [ 'required' => false, 'type' => 'integer' ],
                     'avatar_index' => [ 'required' => false, 'type' => 'integer' ],
                 ],
@@ -108,7 +108,7 @@ class Noey_Children_API extends Noey_API_Base {
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
         return $this->success( [
-            'children' => Noey_Children_Service::list_children( $parent_id ),
+            'children' => Knowly_Children_Service::list_children( $parent_id ),
         ] );
     }
 
@@ -116,13 +116,13 @@ class Noey_Children_API extends Noey_API_Base {
         $parent_id = $this->require_parent( $request );
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
-        $result = Noey_Children_Service::create_child( $parent_id, [
+        $result = Knowly_Children_Service::create_child( $parent_id, [
             'first_name'   => $request->get_param( 'first_name' ),
             'last_name'    => $request->get_param( 'last_name' ),
             'nickname'     => $request->get_param( 'nickname' ),
             'password'     => $request->get_param( 'password' ),
-            'standard'     => $request->get_param( 'standard' ),
-            'term'         => $request->get_param( 'term' ),
+            'level'     => $request->get_param( 'level' ),
+            'period'   => $request->get_param( 'period' ),
             'age'          => $request->get_param( 'age' ),
             'avatar_index' => $request->get_param( 'avatar_index' ),
         ] );
@@ -134,7 +134,7 @@ class Noey_Children_API extends Noey_API_Base {
         $child_id = $this->resolve_child_id( $request );
         if ( is_wp_error( $child_id ) ) return $child_id;
 
-        $result = Noey_Children_Service::get_child( $child_id );
+        $result = Knowly_Children_Service::get_child( $child_id );
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }
 
@@ -142,11 +142,11 @@ class Noey_Children_API extends Noey_API_Base {
         $parent_id = $this->require_parent( $request );
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
-        $result = Noey_Children_Service::update_child( $parent_id, (int) $request['id'], [
+        $result = Knowly_Children_Service::update_child( $parent_id, (int) $request['id'], [
             'first_name'   => $request->get_param( 'first_name' ),
             'last_name'    => $request->get_param( 'last_name' ),
-            'standard'     => $request->get_param( 'standard' ),
-            'term'         => $request->get_param( 'term' ),
+            'level'     => $request->get_param( 'level' ),
+            'period'   => $request->get_param( 'period' ),
             'age'          => $request->get_param( 'age' ),
             'avatar_index' => $request->get_param( 'avatar_index' ),
         ] );
@@ -158,7 +158,7 @@ class Noey_Children_API extends Noey_API_Base {
         $parent_id = $this->require_parent( $request );
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
-        $result = Noey_Children_Service::remove_child( $parent_id, (int) $request['id'] );
+        $result = Knowly_Children_Service::remove_child( $parent_id, (int) $request['id'] );
         return is_wp_error( $result ) ? $result : $this->success( [ 'removed' => true ] );
     }
 
@@ -166,7 +166,7 @@ class Noey_Children_API extends Noey_API_Base {
         $parent_id = $this->require_parent( $request );
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
-        $result = Noey_Children_Service::switch_to_child( $parent_id, (int) $request['id'] );
+        $result = Knowly_Children_Service::switch_to_child( $parent_id, (int) $request['id'] );
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }
 
@@ -174,7 +174,7 @@ class Noey_Children_API extends Noey_API_Base {
         $parent_id = $this->require_parent( $request );
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
-        return $this->success( Noey_Children_Service::switch_to_parent( $parent_id ) );
+        return $this->success( Knowly_Children_Service::switch_to_parent( $parent_id ) );
     }
 
     

@@ -1,21 +1,21 @@
 <?php
 /**
- * Noey_Debug — Global debug logging system.
+ * Knowly_Debug — Global debug logging system.
  *
  * Toggle via Admin › NoeyAPI › Settings › Enable Debug Mode.
- * Logs are written to wp_noey_debug_log and visible in Admin › NoeyAPI › Debug Log.
+ * Logs are written to wp_knowly_debug_log and visible in Admin › NoeyAPI › Debug Log.
  *
  * Usage anywhere in the codebase:
- *   Noey_Debug::log( 'auth.login', 'Login attempt', [ 'username' => $u ], null, 'info' );
- *   Noey_Debug::log( 'token.deduct', 'Insufficient balance', [ 'balance' => 0 ], $uid, 'warning' );
- *   Noey_Debug::log( 'exam.serve', 'Railway call failed', [ 'error' => $msg ], $uid, 'error' );
+ *   Knowly_Debug::log( 'auth.login', 'Login attempt', [ 'username' => $u ], null, 'info' );
+ *   Knowly_Debug::log( 'token.deduct', 'Insufficient balance', [ 'balance' => 0 ], $uid, 'warning' );
+ *   Knowly_Debug::log( 'exam.serve', 'Railway call failed', [ 'error' => $msg ], $uid, 'error' );
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Debug {
+class Knowly_Debug {
 
     const LEVELS = [ 'debug', 'info', 'warning', 'error' ];
 
@@ -48,7 +48,7 @@ class Noey_Debug {
         global $wpdb;
 
         $wpdb->insert(
-            $wpdb->prefix . 'noey_debug_log',
+            $wpdb->prefix . 'knowly_debug_log',
             [
                 'level'      => $level,
                 'context'    => substr( $context, 0, 100 ),
@@ -73,7 +73,7 @@ class Noey_Debug {
      * Whether debug mode is currently active.
      */
     public static function is_enabled(): bool {
-        return (bool) get_option( 'noey_debug_enabled', false );
+        return (bool) get_option( 'knowly_debug_enabled', false );
     }
 
     // ── Query API (used by Admin Debug page) ──────────────────────────────────
@@ -93,7 +93,7 @@ class Noey_Debug {
     public static function get_logs( array $filters = [] ): array {
         global $wpdb;
 
-        $table  = $wpdb->prefix . 'noey_debug_log';
+        $table  = $wpdb->prefix . 'knowly_debug_log';
         $where  = [ '1=1' ];
         $values = [];
 
@@ -135,7 +135,7 @@ class Noey_Debug {
     public static function get_count( array $filters = [] ): int {
         global $wpdb;
 
-        $table  = $wpdb->prefix . 'noey_debug_log';
+        $table  = $wpdb->prefix . 'knowly_debug_log';
         $where  = [ '1=1' ];
         $values = [];
 
@@ -160,7 +160,7 @@ class Noey_Debug {
      */
     public static function clear_logs(): void {
         global $wpdb;
-        $wpdb->query( 'TRUNCATE TABLE ' . $wpdb->prefix . 'noey_debug_log' );
+        $wpdb->query( 'TRUNCATE TABLE ' . $wpdb->prefix . 'knowly_debug_log' );
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -192,14 +192,14 @@ class Noey_Debug {
 
     private static function maybe_prune(): void {
         global $wpdb;
-        $table = $wpdb->prefix . 'noey_debug_log';
+        $table = $wpdb->prefix . 'knowly_debug_log';
         $count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
 
-        if ( $count > NOEY_DEBUG_MAX_LOGS ) {
+        if ( $count > KNOWLY_DEBUG_MAX_LOGS ) {
             $cutoff = $wpdb->get_var(
                 $wpdb->prepare(
                     "SELECT log_id FROM {$table} ORDER BY log_id DESC LIMIT 1 OFFSET %d",
-                    NOEY_DEBUG_MAX_LOGS - 1
+                    KNOWLY_DEBUG_MAX_LOGS - 1
                 )
             );
             if ( $cutoff ) {

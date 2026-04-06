@@ -1,16 +1,16 @@
 <?php
 /**
- * Noey_JWT — Lightweight HS256 JSON Web Token handler.
+ * Knowly_JWT — Lightweight HS256 JSON Web Token handler.
  *
- * No external library required. Uses NOEY_JWT_SECRET constant (define in wp-config.php),
+ * No external library required. Uses KNOWLY_JWT_SECRET constant (define in wp-config.php),
  * falling back to JWT_AUTH_SECRET_KEY if present.
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_JWT {
+class Knowly_JWT {
 
     // ── Encode ────────────────────────────────────────────────────────────────
 
@@ -26,14 +26,14 @@ class Noey_JWT {
         $payload = self::b64u( wp_json_encode( [
             'iss'     => get_site_url(),
             'iat'     => $now,
-            'exp'     => $now + NOEY_JWT_EXPIRY,
+            'exp'     => $now + KNOWLY_JWT_EXPIRY,
             'user_id' => $user_id,
         ] ) );
         $sig     = self::b64u( self::hmac( "{$header}.{$payload}" ) );
 
-        Noey_Debug::log( 'jwt.encode', 'Token issued', [
+        Knowly_Debug::log( 'jwt.encode', 'Token issued', [
             'user_id' => $user_id,
-            'exp'     => $now + NOEY_JWT_EXPIRY,
+            'exp'     => $now + KNOWLY_JWT_EXPIRY,
         ], $user_id, 'debug' );
 
         return "{$header}.{$payload}.{$sig}";
@@ -51,7 +51,7 @@ class Noey_JWT {
         $parts = explode( '.', $token );
 
         if ( count( $parts ) !== 3 ) {
-            Noey_Debug::log( 'jwt.decode', 'Malformed token — wrong segment count', [], null, 'warning' );
+            Knowly_Debug::log( 'jwt.decode', 'Malformed token — wrong segment count', [], null, 'warning' );
             return new WP_Error( 'jwt_invalid', 'Malformed token.', [ 'status' => 401 ] );
         }
 
@@ -60,7 +60,7 @@ class Noey_JWT {
         // Verify signature
         $expected = self::b64u( self::hmac( "{$header_b64}.{$payload_b64}" ) );
         if ( ! hash_equals( $expected, $sig_b64 ) ) {
-            Noey_Debug::log( 'jwt.decode', 'Invalid token signature', [], null, 'warning' );
+            Knowly_Debug::log( 'jwt.decode', 'Invalid token signature', [], null, 'warning' );
             return new WP_Error( 'jwt_invalid', 'Invalid token signature.', [ 'status' => 401 ] );
         }
 
@@ -71,13 +71,13 @@ class Noey_JWT {
         );
 
         if ( ! is_array( $payload ) || empty( $payload['user_id'] ) || ! isset( $payload['exp'] ) ) {
-            Noey_Debug::log( 'jwt.decode', 'Invalid payload structure', [], null, 'warning' );
+            Knowly_Debug::log( 'jwt.decode', 'Invalid payload structure', [], null, 'warning' );
             return new WP_Error( 'jwt_invalid', 'Invalid token payload.', [ 'status' => 401 ] );
         }
 
         // Check expiry
         if ( $payload['exp'] < time() ) {
-            Noey_Debug::log( 'jwt.decode', 'Token expired', [
+            Knowly_Debug::log( 'jwt.decode', 'Token expired', [
                 'user_id' => $payload['user_id'],
                 'exp'     => $payload['exp'],
             ], (int) $payload['user_id'], 'info' );
@@ -87,7 +87,7 @@ class Noey_JWT {
         // Verify user still exists
         $user = get_user_by( 'id', (int) $payload['user_id'] );
         if ( ! $user ) {
-            Noey_Debug::log( 'jwt.decode', 'Token user not found in WP', [
+            Knowly_Debug::log( 'jwt.decode', 'Token user not found in WP', [
                 'user_id' => $payload['user_id'],
             ], null, 'warning' );
             return new WP_Error( 'jwt_invalid', 'Token user no longer exists.', [ 'status' => 401 ] );
@@ -136,8 +136,8 @@ class Noey_JWT {
     }
 
     private static function secret(): string {
-        if ( defined( 'NOEY_JWT_SECRET' ) && NOEY_JWT_SECRET ) {
-            return NOEY_JWT_SECRET;
+        if ( defined( 'KNOWLY_JWT_SECRET' ) && KNOWLY_JWT_SECRET ) {
+            return KNOWLY_JWT_SECRET;
         }
         if ( defined( 'JWT_AUTH_SECRET_KEY' ) && JWT_AUTH_SECRET_KEY ) {
             return JWT_AUTH_SECRET_KEY;

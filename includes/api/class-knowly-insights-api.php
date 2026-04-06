@@ -1,19 +1,19 @@
 <?php
 /**
- * Noey_Insights_API — AI insight endpoints.
+ * Knowly_Insights_API — AI insight endpoints.
  *
  * Routes:
- *   POST /noey/v1/insights/exam/{session_id}       JWT  Generate (or return cached) per-exam insight
- *   GET  /noey/v1/insights/exam/{session_id}       JWT  Retrieve stored per-exam insight
- *   GET  /noey/v1/insights/weekly/{iso_week}       JWT  Retrieve weekly digest (e.g. 2026-W12)
- *   POST /noey/v1/insights/weekly/{iso_week}       JWT  Manually trigger weekly digest for active child
+ *   POST /knowly/v1/insights/exam/{session_id}       JWT  Generate (or return cached) per-exam insight
+ *   GET  /knowly/v1/insights/exam/{session_id}       JWT  Retrieve stored per-exam insight
+ *   GET  /knowly/v1/insights/weekly/{iso_week}       JWT  Retrieve weekly digest (e.g. 2026-W12)
+ *   POST /knowly/v1/insights/weekly/{iso_week}       JWT  Manually trigger weekly digest for active child
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Insights_API extends Noey_API_Base {
+class Knowly_Insights_API extends Knowly_API_Base {
 
     public function register_routes(): void {
         $ns = $this->namespace;
@@ -51,7 +51,7 @@ class Noey_Insights_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Noey_Insight_Service::get_or_generate_exam_insight(
+        $result = Knowly_Insight_Service::get_or_generate_exam_insight(
             (int) $request['session_id'],
             $ctx['child_id']
         );
@@ -66,7 +66,7 @@ class Noey_Insights_API extends Noey_API_Base {
         global $wpdb;
         $row = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT * FROM {$wpdb->prefix}noey_exam_insights WHERE session_id = %d AND child_id = %d",
+                "SELECT * FROM {$wpdb->prefix}knowly_exam_insights WHERE session_id = %d AND child_id = %d",
                 (int) $request['session_id'],
                 $ctx['child_id']
             ),
@@ -74,7 +74,7 @@ class Noey_Insights_API extends Noey_API_Base {
         );
 
         if ( ! $row ) {
-            return new WP_Error( 'noey_not_found', 'No insight found for this exam. Generate one first via POST.', [ 'status' => 404 ] );
+            return new WP_Error( 'knowly_not_found', 'No insight found for this exam. Generate one first via POST.', [ 'status' => 404 ] );
         }
 
         return $this->success( [
@@ -90,7 +90,7 @@ class Noey_Insights_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Noey_Insight_Service::get_weekly_digest( $ctx['child_id'], $request['iso_week'] );
+        $result = Knowly_Insight_Service::get_weekly_digest( $ctx['child_id'], $request['iso_week'] );
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }
 
@@ -98,7 +98,7 @@ class Noey_Insights_API extends Noey_API_Base {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Noey_Insight_Service::generate_weekly_digest( $ctx['child_id'], $request['iso_week'] );
+        $result = Knowly_Insight_Service::generate_weekly_digest( $ctx['child_id'], $request['iso_week'] );
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }
 }

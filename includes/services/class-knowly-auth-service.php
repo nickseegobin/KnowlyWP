@@ -1,19 +1,19 @@
 <?php
 /**
- * Noey_Auth_Service — Authentication business logic.
+ * Knowly_Auth_Service — Authentication business logic.
  *
  * v2.1 changes:
  *  - register()     — parent: email as user_login, first_name/last_name/phone stored,
  *                     display_name = first_name, WP nickname = first_name
  *  - login()        — tries email lookup first, falls back to user_login
- *  - get_profile()  — each child in response includes noey_nickname from user meta
+ *  - get_profile()  — each child in response includes knowly_nickname from user meta
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Auth_Service {
+class Knowly_Auth_Service {
 
     // ── Register ──────────────────────────────────────────────────────────────
 
@@ -37,33 +37,33 @@ class Noey_Auth_Service {
         // Validate required fields
         if ( ! $first_name || ! $last_name || ! $email || ! $password ) {
             return new WP_Error(
-                'noey_missing_fields',
+                'knowly_missing_fields',
                 'first_name, last_name, email and password are all required.',
                 [ 'status' => 422 ]
             );
         }
 
         if ( ! is_email( $email ) ) {
-            return new WP_Error( 'noey_invalid_email', 'Please provide a valid email address.', [ 'status' => 422 ] );
+            return new WP_Error( 'knowly_invalid_email', 'Please provide a valid email address.', [ 'status' => 422 ] );
         }
 
         if ( email_exists( $email ) ) {
-            return new WP_Error( 'noey_email_taken', 'An account with that email already exists.', [ 'status' => 409 ] );
+            return new WP_Error( 'knowly_email_taken', 'An account with that email already exists.', [ 'status' => 409 ] );
         }
 
         // Create WP user — email is the login identifier for parents
         $user_id = wp_create_user( $email, $password, $email );
         if ( is_wp_error( $user_id ) ) {
-            Noey_Debug::log( 'auth.register', 'wp_create_user failed', [
+            Knowly_Debug::log( 'auth.register', 'wp_create_user failed', [
                 'email' => $email,
                 'error' => $user_id->get_error_message(),
             ], null, 'error' );
-            return new WP_Error( 'noey_registration_failed', 'Account creation failed. Please try again.', [ 'status' => 500 ] );
+            return new WP_Error( 'knowly_registration_failed', 'Account creation failed. Please try again.', [ 'status' => 500 ] );
         }
 
         // Set role and all name fields
         $user = new WP_User( $user_id );
-        $user->set_role( 'noey_parent' );
+        $user->set_role( 'knowly_parent' );
 
         wp_update_user( [
             'ID'           => $user_id,
@@ -74,15 +74,15 @@ class Noey_Auth_Service {
         ] );
 
         // Store additional meta
-        update_user_meta( $user_id, 'noey_phone',        $phone );
-        update_user_meta( $user_id, 'noey_avatar_index', $avatar_index );
+        update_user_meta( $user_id, 'knowly_phone',        $phone );
+        update_user_meta( $user_id, 'knowly_avatar_index', $avatar_index );
 
         // Grant welcome tokens
-        Noey_Token_Service::grant_on_registration( $user_id );
+        Knowly_Token_Service::grant_on_registration( $user_id );
 
-        $token = Noey_JWT::encode( $user_id );
+        $token = Knowly_JWT::encode( $user_id );
 
-        Noey_Debug::log( 'auth.register', 'Parent account registered', [
+        Knowly_Debug::log( 'auth.register', 'Parent account registered', [
             'user_id'    => $user_id,
             'email'      => $email,
             'first_name' => $first_name,
@@ -90,7 +90,7 @@ class Noey_Auth_Service {
 
         return [
             'token'           => $token,
-            'expires_in'      => NOEY_JWT_EXPIRY,
+            'expires_in'      => KNOWLY_JWT_EXPIRY,
             'user_id'         => $user_id,
             'display_name'    => $first_name,
             'email'           => $email,
@@ -113,7 +113,7 @@ class Noey_Auth_Service {
      * @return array|WP_Error
      */
     public static function login( string $username, string $password ): array|WP_Error {
-        Noey_Debug::log( 'auth.login', 'Login attempt', [
+        Knowly_Debug::log( 'auth.login', 'Login attempt', [
             'identifier' => $username,
             'ip'         => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
         ], null, 'info' );
@@ -135,32 +135,32 @@ class Noey_Auth_Service {
         }
 
         if ( is_wp_error( $authenticated ) ) {
-            Noey_Debug::log( 'auth.login', 'Login failed — bad credentials', [
+            Knowly_Debug::log( 'auth.login', 'Login failed — bad credentials', [
                 'identifier' => $username,
                 'code'       => $authenticated->get_error_code(),
             ], null, 'warning' );
-            return new WP_Error( 'noey_invalid_credentials', 'Invalid email or password.', [ 'status' => 401 ] );
+            return new WP_Error( 'knowly_invalid_credentials', 'Invalid email or password.', [ 'status' => 401 ] );
         }
 
         $roles   = (array) $authenticated->roles;
-        $allowed = [ 'noey_parent', 'noey_child', 'administrator' ];
+        $allowed = [ 'knowly_parent', 'knowly_child', 'administrator' ];
 
         if ( empty( array_intersect( $roles, $allowed ) ) ) {
-            Noey_Debug::log( 'auth.login', 'Login denied — role not allowed', [
+            Knowly_Debug::log( 'auth.login', 'Login denied — role not allowed', [
                 'user_id' => $authenticated->ID,
                 'roles'   => $roles,
             ], $authenticated->ID, 'warning' );
-            return new WP_Error( 'noey_forbidden', 'Your account type cannot access this platform.', [ 'status' => 403 ] );
+            return new WP_Error( 'knowly_forbidden', 'Your account type cannot access this platform.', [ 'status' => 403 ] );
         }
 
-        $token        = Noey_JWT::encode( $authenticated->ID );
-        $role         = in_array( 'noey_parent', $roles, true ) ? 'parent'
-                      : ( in_array( 'noey_child', $roles, true ) ? 'child' : 'admin' );
+        $token        = Knowly_JWT::encode( $authenticated->ID );
+        $role         = in_array( 'knowly_parent', $roles, true ) ? 'parent'
+                      : ( in_array( 'knowly_child', $roles, true ) ? 'child' : 'admin' );
         $active_child = $role === 'parent'
-                      ? (int) get_user_meta( $authenticated->ID, 'noey_active_child_id', true ) ?: null
+                      ? (int) get_user_meta( $authenticated->ID, 'knowly_active_child_id', true ) ?: null
                       : null;
 
-        Noey_Debug::log( 'auth.login', 'Login successful', [
+        Knowly_Debug::log( 'auth.login', 'Login successful', [
             'user_id'         => $authenticated->ID,
             'role'            => $role,
             'active_child_id' => $active_child,
@@ -168,7 +168,7 @@ class Noey_Auth_Service {
 
         return [
             'token'           => $token,
-            'expires_in'      => NOEY_JWT_EXPIRY,
+            'expires_in'      => KNOWLY_JWT_EXPIRY,
             'user_id'         => $authenticated->ID,
             'display_name'    => $authenticated->display_name,
             'email'           => $authenticated->user_email,
@@ -182,21 +182,21 @@ class Noey_Auth_Service {
     /**
      * Return the authenticated user's profile, token balance, and children.
      *
-     * v2.1: Each child in the children array now includes noey_nickname
+     * v2.1: Each child in the children array now includes knowly_nickname
      * from user meta so React can display the Caribbean leaderboard name.
      */
     public static function get_profile( int $user_id ): array|WP_Error {
         $user = get_userdata( $user_id );
         if ( ! $user ) {
-            return new WP_Error( 'noey_not_found', 'User not found.', [ 'status' => 404 ] );
+            return new WP_Error( 'knowly_not_found', 'User not found.', [ 'status' => 404 ] );
         }
 
         $roles        = (array) $user->roles;
-        $is_parent    = in_array( 'noey_parent', $roles, true );
+        $is_parent    = in_array( 'knowly_parent', $roles, true );
         $active_child = $is_parent
-                      ? (int) get_user_meta( $user_id, 'noey_active_child_id', true ) ?: null
+                      ? (int) get_user_meta( $user_id, 'knowly_active_child_id', true ) ?: null
                       : null;
-        $balance      = $is_parent ? Noey_Token_Service::get_balance( $user_id ) : null;
+        $balance      = $is_parent ? Knowly_Token_Service::get_balance( $user_id ) : null;
 
         $profile = [
             'user_id'         => $user_id,
@@ -207,15 +207,15 @@ class Noey_Auth_Service {
             'role'            => $is_parent ? 'parent' : 'child',
             'active_child_id' => $active_child,
             'token_balance'   => $balance,
-            'avatar_index'    => (int) get_user_meta( $user_id, 'noey_avatar_index', true ) ?: 1,
+            'avatar_index'    => (int) get_user_meta( $user_id, 'knowly_avatar_index', true ) ?: 1,
         ];
 
         if ( $is_parent ) {
-            $children        = Noey_Children_Service::list_children( $user_id );
+            $children        = Knowly_Children_Service::list_children( $user_id );
             $profile['children'] = $children; // nickname included via format_child_row()
         }
 
-        Noey_Debug::log( 'auth.profile', 'Profile fetched', [
+        Knowly_Debug::log( 'auth.profile', 'Profile fetched', [
             'user_id'    => $user_id,
             'has_active' => (bool) $active_child,
         ], $user_id, 'debug' );
@@ -240,7 +240,7 @@ class Noey_Auth_Service {
 
         if ( $first_name === null && $last_name === null && $display_name === null && $avatar_index === null ) {
             return new WP_Error(
-                'noey_missing_fields',
+                'knowly_missing_fields',
                 'Provide at least one field to update.',
                 [ 'status' => 422 ]
             );
@@ -250,7 +250,7 @@ class Noey_Auth_Service {
 
         if ( $first_name !== null ) {
             if ( strlen( $first_name ) < 2 ) {
-                return new WP_Error( 'noey_invalid_first_name', 'First name must be at least 2 characters.', [ 'status' => 422 ] );
+                return new WP_Error( 'knowly_invalid_first_name', 'First name must be at least 2 characters.', [ 'status' => 422 ] );
             }
             $update['first_name']   = $first_name;
             $update['display_name'] = $first_name; // keep display_name in sync with first_name
@@ -269,15 +269,15 @@ class Noey_Auth_Service {
         wp_update_user( $update );
 
         if ( $avatar_index !== null ) {
-            update_user_meta( $parent_id, 'noey_avatar_index', max( 1, min( 10, $avatar_index ) ) );
+            update_user_meta( $parent_id, 'knowly_avatar_index', max( 1, min( 10, $avatar_index ) ) );
         }
 
         clean_user_cache( $parent_id );
 
         $user         = get_userdata( $parent_id );
-        $avatar_saved = (int) get_user_meta( $parent_id, 'noey_avatar_index', true ) ?: 1;
+        $avatar_saved = (int) get_user_meta( $parent_id, 'knowly_avatar_index', true ) ?: 1;
 
-        Noey_Debug::log( 'auth.update_profile', 'Profile updated', [
+        Knowly_Debug::log( 'auth.update_profile', 'Profile updated', [
             'user_id'    => $parent_id,
             'fields'     => array_keys( $data ),
         ], $parent_id, 'info' );
@@ -298,15 +298,15 @@ class Noey_Auth_Service {
      */
     public static function set_pin( int $parent_id, string $pin ): true|WP_Error {
         if ( ! preg_match( '/^\d{4}$/', $pin ) ) {
-            return new WP_Error( 'noey_invalid_pin', 'PIN must be exactly 4 digits.', [ 'status' => 422 ] );
+            return new WP_Error( 'knowly_invalid_pin', 'PIN must be exactly 4 digits.', [ 'status' => 422 ] );
         }
 
         $hash = password_hash( $pin, PASSWORD_DEFAULT );
-        update_user_meta( $parent_id, 'noey_pin_hash', $hash );
-        delete_user_meta( $parent_id, 'noey_pin_attempts' );
-        delete_user_meta( $parent_id, 'noey_pin_locked_until' );
+        update_user_meta( $parent_id, 'knowly_pin_hash', $hash );
+        delete_user_meta( $parent_id, 'knowly_pin_attempts' );
+        delete_user_meta( $parent_id, 'knowly_pin_locked_until' );
 
-        Noey_Debug::log( 'auth.pin', 'PIN set/updated', [ 'parent_id' => $parent_id ], $parent_id, 'info' );
+        Knowly_Debug::log( 'auth.pin', 'PIN set/updated', [ 'parent_id' => $parent_id ], $parent_id, 'info' );
 
         return true;
     }
@@ -315,54 +315,54 @@ class Noey_Auth_Service {
      * Verify the parent's PIN with rate limiting.
      */
     public static function verify_pin( int $parent_id, string $pin ): true|WP_Error {
-        Noey_Debug::log( 'auth.pin', 'PIN verification attempt', [ 'parent_id' => $parent_id ], $parent_id, 'debug' );
+        Knowly_Debug::log( 'auth.pin', 'PIN verification attempt', [ 'parent_id' => $parent_id ], $parent_id, 'debug' );
 
-        $locked_until = (int) get_user_meta( $parent_id, 'noey_pin_locked_until', true );
+        $locked_until = (int) get_user_meta( $parent_id, 'knowly_pin_locked_until', true );
         if ( $locked_until && time() < $locked_until ) {
             $remaining = $locked_until - time();
-            Noey_Debug::log( 'auth.pin', 'PIN locked', [
+            Knowly_Debug::log( 'auth.pin', 'PIN locked', [
                 'parent_id'         => $parent_id,
                 'seconds_remaining' => $remaining,
             ], $parent_id, 'warning' );
-            return new WP_Error( 'noey_pin_locked', "Too many attempts. Try again in {$remaining} seconds.", [ 'status' => 429 ] );
+            return new WP_Error( 'knowly_pin_locked', "Too many attempts. Try again in {$remaining} seconds.", [ 'status' => 429 ] );
         }
 
-        $hash = get_user_meta( $parent_id, 'noey_pin_hash', true );
+        $hash = get_user_meta( $parent_id, 'knowly_pin_hash', true );
         if ( ! $hash ) {
-            return new WP_Error( 'noey_pin_not_set', 'No PIN has been configured.', [ 'status' => 422 ] );
+            return new WP_Error( 'knowly_pin_not_set', 'No PIN has been configured.', [ 'status' => 422 ] );
         }
 
         if ( ! password_verify( $pin, $hash ) ) {
-            $attempts = (int) get_user_meta( $parent_id, 'noey_pin_attempts', true ) + 1;
-            update_user_meta( $parent_id, 'noey_pin_attempts', $attempts );
+            $attempts = (int) get_user_meta( $parent_id, 'knowly_pin_attempts', true ) + 1;
+            update_user_meta( $parent_id, 'knowly_pin_attempts', $attempts );
 
-            if ( $attempts >= NOEY_PIN_MAX_ATTEMPTS ) {
-                update_user_meta( $parent_id, 'noey_pin_locked_until', time() + NOEY_PIN_LOCKOUT );
-                delete_user_meta( $parent_id, 'noey_pin_attempts' );
-                Noey_Debug::log( 'auth.pin', 'PIN locked after max attempts', [
+            if ( $attempts >= KNOWLY_PIN_MAX_ATTEMPTS ) {
+                update_user_meta( $parent_id, 'knowly_pin_locked_until', time() + KNOWLY_PIN_LOCKOUT );
+                delete_user_meta( $parent_id, 'knowly_pin_attempts' );
+                Knowly_Debug::log( 'auth.pin', 'PIN locked after max attempts', [
                     'parent_id' => $parent_id,
                     'attempts'  => $attempts,
                 ], $parent_id, 'warning' );
-                return new WP_Error( 'noey_pin_locked', 'Too many failed attempts. Account locked for 15 minutes.', [ 'status' => 429 ] );
+                return new WP_Error( 'knowly_pin_locked', 'Too many failed attempts. Account locked for 15 minutes.', [ 'status' => 429 ] );
             }
 
-            Noey_Debug::log( 'auth.pin', 'PIN incorrect', [
+            Knowly_Debug::log( 'auth.pin', 'PIN incorrect', [
                 'parent_id' => $parent_id,
                 'attempts'  => $attempts,
-                'remaining' => NOEY_PIN_MAX_ATTEMPTS - $attempts,
+                'remaining' => KNOWLY_PIN_MAX_ATTEMPTS - $attempts,
             ], $parent_id, 'warning' );
 
             return new WP_Error(
-                'noey_pin_invalid',
-                'Incorrect PIN. ' . ( NOEY_PIN_MAX_ATTEMPTS - $attempts ) . ' attempt(s) remaining.',
+                'knowly_pin_invalid',
+                'Incorrect PIN. ' . ( KNOWLY_PIN_MAX_ATTEMPTS - $attempts ) . ' attempt(s) remaining.',
                 [ 'status' => 401 ]
             );
         }
 
-        delete_user_meta( $parent_id, 'noey_pin_attempts' );
-        delete_user_meta( $parent_id, 'noey_pin_locked_until' );
+        delete_user_meta( $parent_id, 'knowly_pin_attempts' );
+        delete_user_meta( $parent_id, 'knowly_pin_locked_until' );
 
-        Noey_Debug::log( 'auth.pin', 'PIN verified successfully', [ 'parent_id' => $parent_id ], $parent_id, 'info' );
+        Knowly_Debug::log( 'auth.pin', 'PIN verified successfully', [ 'parent_id' => $parent_id ], $parent_id, 'info' );
 
         return true;
     }
@@ -371,8 +371,8 @@ class Noey_Auth_Service {
      * Return PIN status for a parent.
      */
     public static function get_pin_status( int $parent_id ): array {
-        $hash         = get_user_meta( $parent_id, 'noey_pin_hash', true );
-        $locked_until = (int) get_user_meta( $parent_id, 'noey_pin_locked_until', true );
+        $hash         = get_user_meta( $parent_id, 'knowly_pin_hash', true );
+        $locked_until = (int) get_user_meta( $parent_id, 'knowly_pin_locked_until', true );
         $is_locked    = $locked_until && time() < $locked_until;
 
         return [

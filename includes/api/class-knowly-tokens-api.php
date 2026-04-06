@@ -1,20 +1,20 @@
 <?php
 /**
- * Noey_Tokens_API — Token wallet endpoints.
+ * Knowly_Tokens_API — Token wallet endpoints.
  *
  * Routes:
- *   GET  /noey/v1/tokens/balance          JWT  Current balance
- *   GET  /noey/v1/tokens/ledger           JWT  Transaction history
- *   POST /noey/v1/tokens/admin/credit     Admin Credit tokens to any parent
- *   POST /noey/v1/tokens/admin/deduct     Admin Deduct tokens from any parent
- *   POST /noey/v1/tokens/admin/refresh    Admin Manually trigger monthly refresh
+ *   GET  /knowly/v1/tokens/balance          JWT  Current balance
+ *   GET  /knowly/v1/tokens/ledger           JWT  Transaction history
+ *   POST /knowly/v1/tokens/admin/credit     Admin Credit tokens to any parent
+ *   POST /knowly/v1/tokens/admin/deduct     Admin Deduct tokens from any parent
+ *   POST /knowly/v1/tokens/admin/refresh    Admin Manually trigger monthly refresh
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Tokens_API extends Noey_API_Base {
+class Knowly_Tokens_API extends Knowly_API_Base {
 
     public function register_routes(): void {
         $ns = $this->namespace;
@@ -70,11 +70,11 @@ class Noey_Tokens_API extends Noey_API_Base {
         $user_id = $this->authenticate( $request );
         if ( is_wp_error( $user_id ) ) return $user_id;
 
-        $parent_id = Noey_Token_Service::resolve_to_parent( $user_id );
+        $parent_id = Knowly_Token_Service::resolve_to_parent( $user_id );
 
         return $this->success( [
-            'balance'        => Noey_Token_Service::get_balance( $parent_id ),
-            'tokens_lifetime' => (int) get_user_meta( $parent_id, 'noey_tokens_lifetime', true ),
+            'balance'        => Knowly_Token_Service::get_balance( $parent_id ),
+            'tokens_lifetime' => (int) get_user_meta( $parent_id, 'knowly_tokens_lifetime', true ),
         ] );
     }
 
@@ -82,7 +82,7 @@ class Noey_Tokens_API extends Noey_API_Base {
         $user_id = $this->authenticate( $request );
         if ( is_wp_error( $user_id ) ) return $user_id;
 
-        $rows = Noey_Token_Service::get_ledger(
+        $rows = Knowly_Token_Service::get_ledger(
             $user_id,
             (int) $request->get_param( 'limit' ),
             (int) $request->get_param( 'offset' )
@@ -92,7 +92,7 @@ class Noey_Tokens_API extends Noey_API_Base {
     }
 
     public function admin_credit( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-        $result = Noey_Token_Service::credit(
+        $result = Knowly_Token_Service::credit(
             (int) $request->get_param( 'user_id' ),
             (int) $request->get_param( 'amount' ),
             'admin_credit',
@@ -103,7 +103,7 @@ class Noey_Tokens_API extends Noey_API_Base {
     }
 
     public function admin_deduct( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-        $result = Noey_Token_Service::deduct(
+        $result = Knowly_Token_Service::deduct(
             (int) $request->get_param( 'user_id' ),
             (int) $request->get_param( 'amount' ),
             '',
@@ -113,14 +113,14 @@ class Noey_Tokens_API extends Noey_API_Base {
     }
 
     public function admin_refresh(): WP_REST_Response {
-        $count = Noey_Token_Service::run_monthly_refresh();
+        $count = Knowly_Token_Service::run_monthly_refresh();
         return $this->success( [ 'accounts_refreshed' => $count ] );
     }
 
     // ── Permission ────────────────────────────────────────────────────────────
 
     public function admin_permission(): bool {
-        $user_id = Noey_JWT::from_request();
+        $user_id = Knowly_JWT::from_request();
         if ( is_wp_error( $user_id ) ) return false;
         return user_can( $user_id, 'manage_options' );
     }

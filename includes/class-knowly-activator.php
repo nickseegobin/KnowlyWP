@@ -1,16 +1,16 @@
 <?php
 /**
- * Noey_Activator — Plugin activation, database setup, role registration.
+ * Knowly_Activator — Plugin activation, database setup, role registration.
  *
  * Creates all NoeyAPI database tables, registers WP roles, sets default options,
  * and schedules cron jobs.
  *
- * @package NoeyAPI
+ * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Noey_Activator {
+class Knowly_Activator {
 
     // ── Activation ────────────────────────────────────────────────────────────
 
@@ -20,24 +20,24 @@ class Noey_Activator {
         self::set_defaults();
         self::schedule_crons();
 
-        update_option( 'noey_db_version', NOEY_DB_VERSION );
+        update_option( 'knowly_db_version', KNOWLY_DB_VERSION );
         flush_rewrite_rules();
     }
 
     // ── Deactivation ─────────────────────────────────────────────────────────
 
     public static function deactivate(): void {
-        wp_clear_scheduled_hook( 'noey_monthly_token_refresh' );
-        wp_clear_scheduled_hook( 'noey_weekly_digest' );
+        wp_clear_scheduled_hook( 'knowly_monthly_token_refresh' );
+        wp_clear_scheduled_hook( 'knowly_weekly_digest' );
         flush_rewrite_rules();
     }
 
     // ── Safety net (called on every boot if DB version mismatch) ─────────────
 
     public static function maybe_upgrade(): void {
-        if ( get_option( 'noey_db_version' ) !== NOEY_DB_VERSION ) {
+        if ( get_option( 'knowly_db_version' ) !== KNOWLY_DB_VERSION ) {
             self::create_tables();
-            update_option( 'noey_db_version', NOEY_DB_VERSION );
+            update_option( 'knowly_db_version', KNOWLY_DB_VERSION );
         }
     }
 
@@ -50,13 +50,13 @@ class Noey_Activator {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
         // ── 1. Children (parent ↔ child relationships) ───────────────────────
-        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}noey_children (
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_children (
             child_row_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             parent_id     BIGINT UNSIGNED NOT NULL,
             child_id      BIGINT UNSIGNED NOT NULL,
             display_name  VARCHAR(100)    NOT NULL DEFAULT '',
-            standard      VARCHAR(20)     NOT NULL DEFAULT '',
-            term          VARCHAR(20)     NOT NULL DEFAULT '',
+            level         VARCHAR(20)     NOT NULL DEFAULT '',
+            period        VARCHAR(20)     NOT NULL DEFAULT '',
             age           TINYINT UNSIGNED         DEFAULT NULL,
             avatar_index  TINYINT UNSIGNED NOT NULL DEFAULT 1,
             created_at    DATETIME        NOT NULL,
@@ -66,7 +66,7 @@ class Noey_Activator {
         ) {$charset};" );
 
         // ── 2. Token Ledger (append-only audit trail) ─────────────────────────
-        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}noey_token_ledger (
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_token_ledger (
             ledger_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             user_id       BIGINT UNSIGNED NOT NULL,
             amount        INT             NOT NULL,
@@ -81,11 +81,11 @@ class Noey_Activator {
         ) {$charset};" );
 
         // ── 3. Exam Pool ──────────────────────────────────────────────────────
-        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}noey_exam_pool (
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_exam_pool (
             pool_id        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             package_id     VARCHAR(100)    NOT NULL,
-            standard       VARCHAR(20)     NOT NULL DEFAULT '',
-            term           VARCHAR(20)     NOT NULL DEFAULT '',
+            level          VARCHAR(20)     NOT NULL DEFAULT '',
+            period         VARCHAR(20)     NOT NULL DEFAULT '',
             subject        VARCHAR(100)    NOT NULL DEFAULT '',
             difficulty     ENUM('easy','medium','hard') NOT NULL DEFAULT 'medium',
             package_json   LONGTEXT        NOT NULL,
@@ -94,19 +94,19 @@ class Noey_Activator {
             created_at     DATETIME        NOT NULL,
             PRIMARY KEY    (pool_id),
             UNIQUE KEY     uq_package (package_id),
-            KEY            idx_filter (standard, term, subject, difficulty)
+            KEY            idx_filter (level, period, subject, difficulty)
         ) {$charset};" );
 
         // ── 4. Exam Sessions ──────────────────────────────────────────────────
-        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}noey_exam_sessions (
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_exam_sessions (
             session_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             external_session_id VARCHAR(100)    NOT NULL,
             child_id            BIGINT UNSIGNED NOT NULL,
             parent_id           BIGINT UNSIGNED NOT NULL,
             package_id          VARCHAR(100)    NOT NULL DEFAULT '',
             subject             VARCHAR(100)    NOT NULL DEFAULT '',
-            standard            VARCHAR(20)     NOT NULL DEFAULT '',
-            term                VARCHAR(20)     NOT NULL DEFAULT '',
+            level               VARCHAR(20)     NOT NULL DEFAULT '',
+            period              VARCHAR(20)     NOT NULL DEFAULT '',
             difficulty          ENUM('easy','medium','hard') NOT NULL DEFAULT 'medium',
             state               ENUM('active','completed','cancelled') NOT NULL DEFAULT 'active',
             score               INT UNSIGNED             DEFAULT NULL,
@@ -124,7 +124,7 @@ class Noey_Activator {
         ) {$charset};" );
 
         // ── 5. Exam Answers ───────────────────────────────────────────────────
-        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}noey_exam_answers (
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_exam_answers (
             answer_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             session_id         BIGINT UNSIGNED NOT NULL,
             child_id           BIGINT UNSIGNED NOT NULL,
@@ -142,7 +142,7 @@ class Noey_Activator {
         ) {$charset};" );
 
         // ── 6. Topic Breakdown (per-session aggregate) ────────────────────────
-        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}noey_topic_breakdown (
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_topic_breakdown (
             breakdown_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             session_id   BIGINT UNSIGNED NOT NULL,
             child_id     BIGINT UNSIGNED NOT NULL,
@@ -156,7 +156,7 @@ class Noey_Activator {
         ) {$charset};" );
 
         // ── 7. Exam Insights (per-exam AI insight, cached) ────────────────────
-        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}noey_exam_insights (
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_exam_insights (
             insight_id   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             session_id   BIGINT UNSIGNED NOT NULL,
             child_id     BIGINT UNSIGNED NOT NULL,
@@ -169,7 +169,7 @@ class Noey_Activator {
         ) {$charset};" );
 
         // ── 8. Weekly Digest Insights ─────────────────────────────────────────
-        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}noey_weekly_insights (
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_weekly_insights (
             digest_id    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             child_id     BIGINT UNSIGNED NOT NULL,
             iso_week     VARCHAR(10)     NOT NULL,
@@ -182,7 +182,7 @@ class Noey_Activator {
         ) {$charset};" );
 
         // ── 9. Debug Log ──────────────────────────────────────────────────────
-        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}noey_debug_log (
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_debug_log (
             log_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             level      ENUM('debug','info','warning','error') NOT NULL DEFAULT 'info',
             context    VARCHAR(100)    NOT NULL DEFAULT '',
@@ -202,16 +202,16 @@ class Noey_Activator {
 
     private static function register_roles(): void {
         // Parent — account holder, billing user
-        if ( ! get_role( 'noey_parent' ) ) {
-            add_role( 'noey_parent', 'Noey Parent', [
+        if ( ! get_role( 'knowly_parent' ) ) {
+            add_role( 'knowly_parent', 'Knowly Parent', [
                 'read'      => true,
                 'edit_posts' => false,
             ] );
         }
 
         // Child — learner profile, no admin access
-        if ( ! get_role( 'noey_child' ) ) {
-            add_role( 'noey_child', 'Noey Student', [
+        if ( ! get_role( 'knowly_child' ) ) {
+            add_role( 'knowly_child', 'Knowly Student', [
                 'read' => true,
             ] );
         }
@@ -221,14 +221,14 @@ class Noey_Activator {
 
     private static function set_defaults(): void {
         $defaults = [
-            'noey_debug_enabled'       => false,
-            'noey_railway_endpoint'    => '',
-            'noey_railway_api_key'     => '',
-            'noey_railway_server_key'  => '',
-            'noey_allowed_origins'     => '',
-            'noey_content_source'      => 'pool_only', // pool_only | railway | both
-            'noey_dev_bypass_tokens'   => false,
-            'noey_pool_default_target' => 10,
+            'knowly_debug_enabled'       => false,
+            'knowly_railway_endpoint'    => '',
+            'knowly_railway_api_key'     => '',
+            'knowly_railway_server_key'  => '',
+            'knowly_allowed_origins'     => '',
+            'knowly_content_source'      => 'pool_only', // pool_only | railway | both
+            'knowly_dev_bypass_tokens'   => false,
+            'knowly_pool_default_target' => 10,
         ];
 
         foreach ( $defaults as $key => $value ) {
@@ -242,18 +242,18 @@ class Noey_Activator {
 
     private static function schedule_crons(): void {
         // Monthly token refresh — 1st of month at 00:05 UTC
-        if ( ! wp_next_scheduled( 'noey_monthly_token_refresh' ) ) {
+        if ( ! wp_next_scheduled( 'knowly_monthly_token_refresh' ) ) {
             $first_of_month = mktime( 0, 5, 0, (int) date( 'n' ) + 1, 1, (int) date( 'Y' ) );
-            wp_schedule_event( $first_of_month, 'monthly', 'noey_monthly_token_refresh' );
+            wp_schedule_event( $first_of_month, 'monthly', 'knowly_monthly_token_refresh' );
         }
 
         // Weekly digest — every Monday at 06:00 UTC
-        if ( ! wp_next_scheduled( 'noey_weekly_digest' ) ) {
+        if ( ! wp_next_scheduled( 'knowly_weekly_digest' ) ) {
             // Find next Monday
             $now        = time();
             $days_until = ( 1 - (int) date( 'N', $now ) + 7 ) % 7;
             $next_mon   = strtotime( "+{$days_until} days", mktime( 6, 0, 0, (int) date( 'n', $now ), (int) date( 'j', $now ), (int) date( 'Y', $now ) ) );
-            wp_schedule_event( $next_mon, 'weekly', 'noey_weekly_digest' );
+            wp_schedule_event( $next_mon, 'weekly', 'knowly_weekly_digest' );
         }
     }
 }
