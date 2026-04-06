@@ -67,10 +67,10 @@ class Knowly_Children_Service {
         $nickname     = sanitize_text_field( $data['nickname']   ?? '' );  // Caribbean name = user_login
         $password     = $data['password'] ?? '';
 
-        if ( ! $first_name || ! $last_name || ! $nickname || ! $password ) {
+        if ( ! $first_name || ! $nickname || ! $password ) {
             return new WP_Error(
                 'knowly_missing_fields',
-                'first_name, last_name, nickname, and password are required.',
+                'first_name, nickname, and password are required.',
                 [ 'status' => 422 ]
             );
         }
