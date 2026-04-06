@@ -36,15 +36,25 @@ class Knowly_Admin_Testing {
                 Run individual tests or click <strong>Run All</strong>.
             </p>
 
-                <details class="knowly-test-data-panel" style="margin-bottom:16px;background:#fff;border:1px solid #ddd;border-radius:4px;padding:12px 16px;">
+                <details class="knowly-test-data-panel" open style="margin-bottom:16px;background:#fff;border:1px solid #ddd;border-radius:4px;padding:12px 16px;">
                 <summary style="cursor:pointer;font-weight:600;font-size:13px;">🔑 Test Data (credentials for auth tests)</summary>
                 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px;">
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Username<input type="text" id="td-username" class="regular-text" placeholder="parent username" autocomplete="off" /></label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Password<input type="password" id="td-password" class="regular-text" placeholder="parent password" autocomplete="off" /></label>
-                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">JWT Token (auto-filled after login)<input type="text" id="td-token" class="regular-text" placeholder="auto-filled after login" /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">
+                        JWT Token
+                        <div style="display:flex;gap:6px;align-items:center;">
+                            <input type="text" id="td-token" class="regular-text" placeholder="paste token or use buttons below" style="flex:1;min-width:0;" />
+                        </div>
+                    </label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Child ID<input type="number" id="td-child-id" class="regular-text" placeholder="child WP user ID" /></label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">User ID (for admin token tests)<input type="number" id="td-user-id" class="regular-text" placeholder="WP user ID" /></label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">PIN (4 digits)<input type="text" id="td-pin" class="regular-text" placeholder="e.g. 1234" maxlength="4" /></label>
+                </div>
+                <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <button type="button" id="knowly-gen-admin-token" class="button">⚡ Generate Admin Token</button>
+                    <button type="button" id="knowly-gen-user-token" class="button">🔑 Generate Token for User ID</button>
+                    <span id="knowly-token-status" style="font-size:12px;color:#666;"></span>
                 </div>
             </details>
 

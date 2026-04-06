@@ -18,8 +18,9 @@ class Knowly_Admin {
     public static function boot(): void {
         add_action( 'admin_menu',            [ __CLASS__, 'register_menus' ] );
         add_action( 'admin_enqueue_scripts', [ __CLASS__, 'enqueue_assets' ] );
-        add_action( 'wp_ajax_knowly_test',     [ __CLASS__, 'handle_test_ajax' ] );
+        add_action( 'wp_ajax_knowly_test',       [ __CLASS__, 'handle_test_ajax' ] );
         add_action( 'wp_ajax_knowly_clear_logs', [ __CLASS__, 'handle_clear_logs' ] );
+        add_action( 'wp_ajax_knowly_gen_token',  [ __CLASS__, 'handle_gen_token' ] );
         add_action( 'wp_ajax_knowly_pool_packages',      [ 'Knowly_Admin_Pool', 'handle_ajax_packages' ] );
         add_action( 'wp_ajax_knowly_railway_catalogue',  [ 'Knowly_Admin_Pool', 'handle_ajax_railway_catalogue' ] );
         Knowly_Admin_Pool::boot();
@@ -172,6 +173,28 @@ class Knowly_Admin {
 
         $result = Knowly_Admin_Testing::run_test( $test, $data );
         wp_send_json( $result );
+    }
+
+    public static function handle_gen_token(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $user_id = (int) ( $_POST['user_id'] ?? 0 );
+        if ( ! $user_id ) {
+            // Default: current admin user
+            $user_id = get_current_user_id();
+        }
+
+        if ( ! get_userdata( $user_id ) ) {
+            wp_send_json_error( [ 'message' => "User ID {$user_id} not found." ] );
+            return;
+        }
+
+        $token = Knowly_JWT::encode( $user_id );
+        wp_send_json_success( [
+            'token'   => $token,
+            'user_id' => $user_id,
+        ] );
     }
 
     public static function handle_clear_logs(): void {

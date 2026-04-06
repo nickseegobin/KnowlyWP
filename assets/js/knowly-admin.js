@@ -48,6 +48,59 @@
 
     const testData = {};   // Shared data across tests (e.g. token from login)
 
+    // Generate admin token (current admin user)
+    $( '#knowly-gen-admin-token' ).on( 'click', function () {
+        const $btn = $( this ).prop( 'disabled', true ).text( '…' );
+        const $status = $( '#knowly-token-status' );
+        $.post( KnowlyAdmin.ajaxUrl, {
+            action  : 'knowly_gen_token',
+            nonce   : KnowlyAdmin.nonce,
+        }, function ( res ) {
+            if ( res.success ) {
+                $( '#td-token' ).val( res.data.token );
+                $( '#td-user-id' ).val( res.data.user_id );
+                testData.token   = res.data.token;
+                testData.user_id = res.data.user_id;
+                $status.text( '✓ Token generated for user #' + res.data.user_id ).css( 'color', '#16a34a' );
+            } else {
+                $status.text( '✗ ' + ( res.data && res.data.message || 'Failed' ) ).css( 'color', '#dc2626' );
+            }
+        } ).fail( () => {
+            $status.text( '✗ AJAX request failed.' ).css( 'color', '#dc2626' );
+        } ).always( () => {
+            $btn.prop( 'disabled', false ).text( '⚡ Generate Admin Token' );
+        } );
+    } );
+
+    // Generate token for a specific user ID
+    $( '#knowly-gen-user-token' ).on( 'click', function () {
+        const userId = parseInt( $( '#td-user-id' ).val(), 10 );
+        if ( ! userId ) {
+            $( '#knowly-token-status' ).text( 'Enter a User ID first.' ).css( 'color', '#d97706' );
+            return;
+        }
+        const $btn = $( this ).prop( 'disabled', true ).text( '…' );
+        const $status = $( '#knowly-token-status' );
+        $.post( KnowlyAdmin.ajaxUrl, {
+            action  : 'knowly_gen_token',
+            nonce   : KnowlyAdmin.nonce,
+            user_id : userId,
+        }, function ( res ) {
+            if ( res.success ) {
+                $( '#td-token' ).val( res.data.token );
+                testData.token   = res.data.token;
+                testData.user_id = res.data.user_id;
+                $status.text( '✓ Token generated for user #' + res.data.user_id ).css( 'color', '#16a34a' );
+            } else {
+                $status.text( '✗ ' + ( res.data && res.data.message || 'Failed' ) ).css( 'color', '#dc2626' );
+            }
+        } ).fail( () => {
+            $status.text( '✗ AJAX request failed.' ).css( 'color', '#dc2626' );
+        } ).always( () => {
+            $btn.prop( 'disabled', false ).text( '🔑 Generate Token for User ID' );
+        } );
+    } );
+
     // Read test data panel inputs into testData before each run
     function syncTestDataFromInputs() {
         const username  = $( '#td-username' ).val().trim();
