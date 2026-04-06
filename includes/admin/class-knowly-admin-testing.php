@@ -39,7 +39,7 @@ class Knowly_Admin_Testing {
                 <details class="knowly-test-data-panel" open style="margin-bottom:16px;background:#fff;border:1px solid #ddd;border-radius:4px;padding:12px 16px;">
                 <summary style="cursor:pointer;font-weight:600;font-size:13px;">🔑 Test Data (credentials for auth tests)</summary>
                 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px;">
-                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Username<input type="text" id="td-username" class="regular-text" placeholder="parent username" autocomplete="off" /></label>
+                    <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Email (parent login)<input type="text" id="td-username" class="regular-text" placeholder="parent@email.com" autocomplete="off" /></label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Password<input type="password" id="td-password" class="regular-text" placeholder="parent password" autocomplete="off" /></label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">
                         JWT Token
