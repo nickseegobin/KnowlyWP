@@ -29,6 +29,8 @@ class Knowly_Activator {
     public static function deactivate(): void {
         wp_clear_scheduled_hook( 'knowly_monthly_token_refresh' );
         wp_clear_scheduled_hook( 'knowly_weekly_digest' );
+        wp_clear_scheduled_hook( 'knowly_monthly_gem_refresh' );
+        wp_clear_scheduled_hook( 'knowly_monthly_red_gem_stipend' );
         flush_rewrite_rules();
     }
 
@@ -211,7 +213,50 @@ class Knowly_Activator {
             KEY idx_status (status)
         ) {$charset};" );
 
-        // ── 12. Debug Log ─────────────────────────────────────────────────────
+        // ── 11. Gem Transactions (blue gem audit trail) ───────────────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_gem_transactions (
+            id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id      BIGINT UNSIGNED NOT NULL,
+            child_id     BIGINT UNSIGNED          DEFAULT NULL,
+            type         ENUM('purchase','parent_allocation','monthly_refresh','spent','admin_credit','admin_deduct') NOT NULL,
+            amount       INT             NOT NULL,
+            balance_after INT            NOT NULL,
+            curriculum   VARCHAR(50)              DEFAULT NULL,
+            reference_id VARCHAR(100)             DEFAULT NULL,
+            note         TEXT                     DEFAULT NULL,
+            created_at   DATETIME        NOT NULL,
+            PRIMARY KEY  (id),
+            KEY          idx_user (user_id),
+            KEY          idx_child (child_id),
+            KEY          idx_created (created_at)
+        ) {$charset};" );
+
+        // ── 12. Red Gem Transactions (teacher red gem audit trail) ────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_red_gem_transactions (
+            id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            teacher_user_id  BIGINT UNSIGNED NOT NULL,
+            type             ENUM('stipend_reset','assignment_spent','admin_credit','admin_deduct') NOT NULL,
+            amount           INT             NOT NULL,
+            balance_after    INT             NOT NULL,
+            reference_id     VARCHAR(100)             DEFAULT NULL,
+            note             TEXT                     DEFAULT NULL,
+            created_at       DATETIME        NOT NULL,
+            PRIMARY KEY      (id),
+            KEY              idx_teacher (teacher_user_id),
+            KEY              idx_created (created_at)
+        ) {$charset};" );
+
+        // ── 13. Processed Webhooks (Fygaro idempotency guard) ─────────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_processed_webhooks (
+            id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            transaction_id VARCHAR(100)    NOT NULL,
+            gateway        VARCHAR(50)     NOT NULL DEFAULT 'fygaro',
+            processed_at   DATETIME        NOT NULL,
+            PRIMARY KEY    (id),
+            UNIQUE KEY     uq_transaction (transaction_id)
+        ) {$charset};" );
+
+        // ── 14. Debug Log ─────────────────────────────────────────────────────
         dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_debug_log (
             log_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             level      ENUM('debug','info','warning','error') NOT NULL DEFAULT 'info',
@@ -271,6 +316,10 @@ class Knowly_Activator {
             'knowly_email_verification'    => false,
             'knowly_red_gem_stipend'       => 20,
             'knowly_um_migration_status'   => 'pending', // pending | complete
+            // Block 3 — Fygaro gateway
+            'knowly_fygaro_merchant_id'    => '',
+            'knowly_fygaro_api_key'        => '',
+            'knowly_fygaro_webhook_secret' => '',
         ];
 
         foreach ( $defaults as $key => $value ) {
@@ -296,6 +345,18 @@ class Knowly_Activator {
             $days_until = ( 1 - (int) date( 'N', $now ) + 7 ) % 7;
             $next_mon   = strtotime( "+{$days_until} days", mktime( 6, 0, 0, (int) date( 'n', $now ), (int) date( 'j', $now ), (int) date( 'Y', $now ) ) );
             wp_schedule_event( $next_mon, 'weekly', 'knowly_weekly_digest' );
+        }
+
+        // Monthly blue gem refresh — 1st of month at 00:10 UTC (after token refresh)
+        if ( ! wp_next_scheduled( 'knowly_monthly_gem_refresh' ) ) {
+            $first_of_month = mktime( 0, 10, 0, (int) date( 'n' ) + 1, 1, (int) date( 'Y' ) );
+            wp_schedule_event( $first_of_month, 'monthly', 'knowly_monthly_gem_refresh' );
+        }
+
+        // Monthly red gem stipend reset — 1st of month at 00:15 UTC
+        if ( ! wp_next_scheduled( 'knowly_monthly_red_gem_stipend' ) ) {
+            $first_of_month = mktime( 0, 15, 0, (int) date( 'n' ) + 1, 1, (int) date( 'Y' ) );
+            wp_schedule_event( $first_of_month, 'monthly', 'knowly_monthly_red_gem_stipend' );
         }
     }
 }

@@ -54,14 +54,19 @@ class Knowly_Exam_Service {
         ], $parent_id, 'info' );
 
         // ── 1. Pre-check gem balance ──────────────────────────────────────────
-        if ( ! Knowly_Token_Service::has_enough( $parent_id ) ) {
+        $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
+        $gem_cost   = Knowly_Gem_Service::get_exam_cost( $curriculum, $difficulty );
+
+        if ( ! Knowly_Gem_Service::has_enough( $child_id, $gem_cost ) ) {
             Knowly_Debug::log( 'exam.start', 'Gem pre-check failed', [
-                'parent_id' => $parent_id,
-                'balance'   => Knowly_Token_Service::get_balance( $parent_id ),
+                'child_id'  => $child_id,
+                'required'  => $gem_cost,
+                'balance'   => Knowly_Gem_Service::get_balance( $child_id ),
             ], $parent_id, 'warning' );
-            return new WP_Error( 'knowly_insufficient_gems', 'Not enough Blue Gems. Please purchase more to continue.', [
-                'status'  => 402,
-                'balance' => Knowly_Token_Service::get_balance( $parent_id ),
+            return new WP_Error( 'knowly_insufficient_gems', 'Not enough Blue Gems. Ask your parent to allocate more gems.', [
+                'status'   => 402,
+                'balance'  => Knowly_Gem_Service::get_balance( $child_id ),
+                'required' => $gem_cost,
             ] );
         }
 
@@ -75,8 +80,15 @@ class Knowly_Exam_Service {
         // ── 3. Generate session ID ────────────────────────────────────────────
         $external_session_id = self::generate_session_id();
 
-        // ── 4. Deduct gem ─────────────────────────────────────────────────────
-        $deduction = Knowly_Token_Service::deduct( $parent_id, 1, $external_session_id, "Trial started: {$subject}" );
+        // ── 4. Deduct gem from child wallet ───────────────────────────────────
+        $deduction = Knowly_Gem_Service::deduct(
+            $child_id,
+            $gem_cost,
+            'spent',
+            $curriculum,
+            $external_session_id,
+            "Trial started: {$subject} ({$difficulty})"
+        );
         if ( is_wp_error( $deduction ) ) {
             return $deduction;
         }

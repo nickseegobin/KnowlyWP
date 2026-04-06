@@ -21,6 +21,7 @@ class Knowly_Admin {
         add_action( 'wp_ajax_knowly_test',       [ __CLASS__, 'handle_test_ajax' ] );
         add_action( 'wp_ajax_knowly_clear_logs', [ __CLASS__, 'handle_clear_logs' ] );
         add_action( 'wp_ajax_knowly_gen_token',  [ __CLASS__, 'handle_gen_token' ] );
+        add_action( 'wp_ajax_knowly_gems_test',          [ 'Knowly_Admin_Gems', 'handle_test_ajax' ] );
         add_action( 'wp_ajax_knowly_pool_packages',      [ 'Knowly_Admin_Pool', 'handle_ajax_packages' ] );
         add_action( 'wp_ajax_knowly_railway_catalogue',  [ 'Knowly_Admin_Pool', 'handle_ajax_railway_catalogue' ] );
         Knowly_Admin_Pool::boot();
@@ -30,6 +31,8 @@ class Knowly_Admin {
         // Block 2
         Knowly_Admin_Teachers::boot();
         Knowly_Admin_Migration::boot();
+        // Block 3
+        Knowly_Admin_Gems::boot();
     }
 
     // ── Menu Registration ─────────────────────────────────────────────────────
@@ -50,6 +53,7 @@ class Knowly_Admin {
         add_submenu_page( 'knowly-api', 'Teachers',     'Teachers',     'manage_options', 'knowly-teachers',     [ 'Knowly_Admin_Teachers', 'render' ] );
         add_submenu_page( 'knowly-api', 'Tokens',       'Tokens',       'manage_options', 'knowly-tokens',       [ 'Knowly_Admin_Tokens', 'render' ] );
         add_submenu_page( 'knowly-api', 'Pool Manager', 'Pool Manager', 'manage_options', 'knowly-pool',         [ 'Knowly_Admin_Pool', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Gems',         'Gems',         'manage_options', 'knowly-gems',         [ 'Knowly_Admin_Gems', 'render' ] );
         add_submenu_page( 'knowly-api', 'Settings',     'Settings',     'manage_options', 'knowly-settings',     [ 'Knowly_Admin_Settings', 'render' ] );
         add_submenu_page( 'knowly-api', 'UM Migration', 'UM Migration', 'manage_options', 'knowly-migration',    [ 'Knowly_Admin_Migration', 'render' ] );
         add_submenu_page( 'knowly-api', 'Debug Log',    'Debug Log',    'manage_options', 'knowly-debug',        [ 'Knowly_Admin_Debug', 'render' ] );
@@ -151,6 +155,7 @@ class Knowly_Admin {
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-members' ) ) ?>" class="button button-primary">Members</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-teachers' ) ) ?>" class="button button-primary<?= $pending_teachers > 0 ? ' knowly-alert-btn' : '' ?>">Teachers<?= $pending_teachers > 0 ? " ({$pending_teachers})" : '' ?></a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-tokens' ) ) ?>" class="button button-primary">Tokens</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-gems' ) ) ?>" class="button button-primary">Gems</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-pool' ) ) ?>" class="button button-primary">Pool Manager</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>" class="button">Settings</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-migration' ) ) ?>" class="button">UM Migration</a>
@@ -256,6 +261,13 @@ class Knowly_Admin {
             [ 'GET',    '/insights/exam/{id}',            'JWT',        'Retrieve per-exam insight' ],
             [ 'GET',    '/insights/weekly/{week}',        'JWT',        'Weekly digest insight' ],
             [ 'POST',   '/insights/weekly/{week}',        'JWT',        'Trigger weekly digest' ],
+            // Block 3 — Gems
+            [ 'GET',    '/gems/balance',                  'JWT',        'Blue gem wallet balance' ],
+            [ 'GET',    '/gems/ledger',                   'JWT',        'Gem transaction history' ],
+            [ 'POST',   '/gems/allocate',                 'JWT Parent', 'Allocate gems parent → child' ],
+            [ 'GET',    '/gems/products',                 'Open',       'List purchasable gem packages' ],
+            [ 'POST',   '/gems/checkout',                 'JWT Parent', 'Initiate Fygaro checkout' ],
+            [ 'POST',   '/gems/fygaro-webhook',           'HMAC',       'Receive Fygaro payment webhook' ],
         ];
     }
 }

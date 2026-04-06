@@ -6,6 +6,12 @@
  *  knowly_monthly_token_refresh  — 1st of each month at 00:05 UTC
  *                                 Resets free-tier token balances to KNOWLY_FREE_TOKEN_MONTHLY.
  *
+ *  knowly_monthly_gem_refresh    — 1st of each month at 00:10 UTC
+ *                                 Resets free-tier parent gem balances (reads knowly_gem_free_monthly_{curriculum}).
+ *
+ *  knowly_monthly_red_gem_stipend — 1st of each month at 00:15 UTC
+ *                                 Resets approved teacher red gem balances to their stipend amount.
+ *
  *  knowly_weekly_digest          — Every Monday at 06:00 UTC
  *                                 Generates AI weekly digest insights for all children
  *                                 who completed ≥1 exam in the past 7 days.
@@ -23,8 +29,10 @@ class Knowly_Cron {
      * Called from Knowly_Core::boot().
      */
     public static function register_hooks(): void {
-        add_action( 'knowly_monthly_token_refresh', [ __CLASS__, 'run_monthly_token_refresh' ] );
-        add_action( 'knowly_weekly_digest',         [ __CLASS__, 'run_weekly_digest' ] );
+        add_action( 'knowly_monthly_token_refresh',   [ __CLASS__, 'run_monthly_token_refresh' ] );
+        add_action( 'knowly_monthly_gem_refresh',     [ __CLASS__, 'run_monthly_gem_refresh' ] );
+        add_action( 'knowly_monthly_red_gem_stipend', [ __CLASS__, 'run_monthly_red_gem_stipend' ] );
+        add_action( 'knowly_weekly_digest',           [ __CLASS__, 'run_weekly_digest' ] );
 
         // Add 'monthly' to WP cron schedules if not present
         add_filter( 'cron_schedules', [ __CLASS__, 'add_cron_schedules' ] );
@@ -39,6 +47,30 @@ class Knowly_Cron {
 
         Knowly_Debug::log( 'cron.token_refresh', 'Monthly token refresh cron completed', [
             'accounts_refreshed' => $count,
+        ], null, 'info' );
+    }
+
+    // ── Monthly Gem Refresh ───────────────────────────────────────────────────
+
+    public static function run_monthly_gem_refresh(): void {
+        Knowly_Debug::log( 'cron.gem_refresh', 'Monthly gem refresh cron started', [], null, 'info' );
+
+        $count = Knowly_Gem_Service::run_monthly_refresh();
+
+        Knowly_Debug::log( 'cron.gem_refresh', 'Monthly gem refresh cron completed', [
+            'accounts_refreshed' => $count,
+        ], null, 'info' );
+    }
+
+    // ── Monthly Red Gem Stipend ───────────────────────────────────────────────
+
+    public static function run_monthly_red_gem_stipend(): void {
+        Knowly_Debug::log( 'cron.red_gem_stipend', 'Monthly red gem stipend cron started', [], null, 'info' );
+
+        $count = Knowly_Red_Gem_Service::run_monthly_stipend_reset();
+
+        Knowly_Debug::log( 'cron.red_gem_stipend', 'Monthly red gem stipend cron completed', [
+            'teachers_reset' => $count,
         ], null, 'info' );
     }
 

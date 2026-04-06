@@ -1,5 +1,61 @@
 # KnowlyAPI Plugin — Changelog
 
+## [1.3.0] — 2026-04-06 — Block 3: Gem Economy
+
+### New Database Tables
+- `knowly_gem_transactions` — blue gem audit trail (user_id, child_id, type, amount, balance_after, curriculum, reference_id)
+- `knowly_red_gem_transactions` — teacher red gem audit trail (teacher_user_id, type, amount, balance_after)
+- `knowly_processed_webhooks` — Fygaro idempotency guard (unique transaction_id, gateway)
+
+### New Services
+- `Knowly_Gem_Service` — blue gem wallet: credit, deduct, allocate (parent→child), get_balance, has_enough, grant_on_registration, run_monthly_refresh, get_ledger
+  - Gem costs read from WP options at deduction time: `knowly_gem_cost_{curriculum}_{difficulty}`
+  - Monthly free tier: `knowly_gem_free_monthly_{curriculum}`
+  - Dev bypass: `knowly_dev_bypass_gems` option
+- `Knowly_Red_Gem_Service` — teacher red gem wallet: credit, deduct, get_balance, has_enough, run_monthly_stipend_reset, get_ledger
+  - Monthly stipend reset: hard overwrites balance to per-teacher (or global default) stipend
+
+### New API Endpoints
+- `GET  /gems/balance` — JWT — blue gem wallet balance for the authenticated user
+- `GET  /gems/ledger` — JWT — gem transaction history (paginated)
+- `POST /gems/allocate` — JWT Parent — transfer gems from parent wallet to a child wallet
+- `GET  /gems/products` — Open — list purchasable gem packages (from WP options)
+- `POST /gems/checkout` — JWT Parent — initiate Fygaro payment checkout; returns payment_url
+- `POST /gems/fygaro-webhook` — HMAC-SHA256 — receive Fygaro payment event, validate signature, credit gems (idempotent)
+- `POST /gems/admin/credit` — Admin JWT — credit gems to any user
+- `POST /gems/admin/deduct` — Admin JWT — deduct gems from any user
+- `POST /gems/admin/refresh` — Admin JWT — trigger monthly gem refresh manually
+
+### Exam Deduction Updated
+- `Knowly_Exam_Service::start()` now deducts from the **child's** gem wallet instead of the parent token wallet
+- Deduction cost read from `Knowly_Gem_Service::get_exam_cost($curriculum, $difficulty)` — never hardcoded
+
+### WooCommerce
+- Product field renamed: `_knowly_token_amount` → `_knowly_gem_quantity` (old field kept as fallback for existing products)
+- Order handler credits via `Knowly_Gem_Service::credit()` instead of `Knowly_Token_Service::credit()`
+- Idempotency guard: `_knowly_gems_granted` order meta (was `_knowly_tokens_granted`)
+
+### Cron Jobs Added
+- `knowly_monthly_gem_refresh` — 1st of month 00:10 UTC — resets free-tier parent gem balances
+- `knowly_monthly_red_gem_stipend` — 1st of month 00:15 UTC — resets approved teacher red gem balances to stipend amount
+
+### WP Admin — Gems Page
+- **Settings tab** — default curriculum, gem costs per difficulty, monthly free tier, dev bypass, Fygaro gateway credentials, gem product manager (add/remove rows)
+- **Health tab** — DB table status, Fygaro config check, gem cost display, wallet summary stats
+- **Unit Tests tab** — 12 tests across 3 groups: blue gem service, red gem service, Fygaro/webhook
+
+### WP Admin — Updates
+- **Dashboard** — Gems quick link added
+- **Menu** — Gems submenu added between Tokens and Settings
+- **Admin AJAX** — `knowly_gems_test` action registered
+
+### Default Options Added
+- `knowly_default_curriculum` — `tt_primary`
+- `knowly_fygaro_merchant_id`, `knowly_fygaro_api_key`, `knowly_fygaro_webhook_secret`
+- `knowly_dev_bypass_gems`
+
+---
+
 ## [1.2.0] — 2026-04-06 — Block 2: Identity and Access
 
 ### Roles
