@@ -143,7 +143,7 @@ class Knowly_Auth_Service {
         }
 
         $roles   = (array) $authenticated->roles;
-        $allowed = [ 'knowly_parent', 'knowly_child', 'administrator' ];
+        $allowed = [ 'knowly_parent', 'knowly_child', 'knowly_teacher', 'administrator' ];
 
         if ( empty( array_intersect( $roles, $allowed ) ) ) {
             Knowly_Debug::log( 'auth.login', 'Login denied — role not allowed', [
@@ -153,28 +153,45 @@ class Knowly_Auth_Service {
             return new WP_Error( 'knowly_forbidden', 'Your account type cannot access this platform.', [ 'status' => 403 ] );
         }
 
-        $token        = Knowly_JWT::encode( $authenticated->ID );
-        $role         = in_array( 'knowly_parent', $roles, true ) ? 'parent'
-                      : ( in_array( 'knowly_child', $roles, true ) ? 'child' : 'admin' );
-        $active_child = $role === 'parent'
-                      ? (int) get_user_meta( $authenticated->ID, 'knowly_active_child_id', true ) ?: null
-                      : null;
+        $token = Knowly_JWT::encode( $authenticated->ID );
+
+        if ( in_array( 'knowly_parent', $roles, true ) ) {
+            $role         = 'parent';
+            $active_child = (int) get_user_meta( $authenticated->ID, 'knowly_active_child_id', true ) ?: null;
+        } elseif ( in_array( 'knowly_teacher', $roles, true ) ) {
+            $role         = 'teacher';
+            $active_child = null;
+        } elseif ( in_array( 'knowly_child', $roles, true ) ) {
+            $role         = 'child';
+            $active_child = null;
+        } else {
+            $role         = 'admin';
+            $active_child = null;
+        }
+
+        $response = [
+            'token'        => $token,
+            'expires_in'   => KNOWLY_JWT_EXPIRY,
+            'user_id'      => $authenticated->ID,
+            'display_name' => $authenticated->display_name,
+            'email'        => $authenticated->user_email,
+            'role'         => $role,
+        ];
+
+        if ( $role === 'parent' ) {
+            $response['active_child_id'] = $active_child;
+        }
+
+        if ( $role === 'teacher' ) {
+            $response['approval_status'] = get_user_meta( $authenticated->ID, 'knowly_approval_status', true ) ?: 'pending_approval';
+        }
 
         Knowly_Debug::log( 'auth.login', 'Login successful', [
-            'user_id'         => $authenticated->ID,
-            'role'            => $role,
-            'active_child_id' => $active_child,
+            'user_id' => $authenticated->ID,
+            'role'    => $role,
         ], $authenticated->ID, 'info' );
 
-        return [
-            'token'           => $token,
-            'expires_in'      => KNOWLY_JWT_EXPIRY,
-            'user_id'         => $authenticated->ID,
-            'display_name'    => $authenticated->display_name,
-            'email'           => $authenticated->user_email,
-            'role'            => $role,
-            'active_child_id' => $active_child,
-        ];
+        return $response;
     }
 
     // ── Profile (me) ─────────────────────────────────────────────────────────
@@ -191,8 +208,17 @@ class Knowly_Auth_Service {
             return new WP_Error( 'knowly_not_found', 'User not found.', [ 'status' => 404 ] );
         }
 
-        $roles        = (array) $user->roles;
-        $is_parent    = in_array( 'knowly_parent', $roles, true );
+        $roles      = (array) $user->roles;
+        $is_parent  = in_array( 'knowly_parent', $roles, true );
+        $is_teacher = in_array( 'knowly_teacher', $roles, true );
+
+        // Teacher profile branch
+        if ( $is_teacher ) {
+            $profile = Knowly_Teacher_Service::get_profile( $user_id );
+            Knowly_Debug::log( 'auth.profile', 'Teacher profile fetched', [ 'user_id' => $user_id ], $user_id, 'debug' );
+            return $profile;
+        }
+
         $active_child = $is_parent
                       ? (int) get_user_meta( $user_id, 'knowly_active_child_id', true ) ?: null
                       : null;
@@ -211,8 +237,7 @@ class Knowly_Auth_Service {
         ];
 
         if ( $is_parent ) {
-            $children        = Knowly_Children_Service::list_children( $user_id );
-            $profile['children'] = $children; // nickname included via format_child_row()
+            $profile['children'] = Knowly_Children_Service::list_children( $user_id );
         }
 
         Knowly_Debug::log( 'auth.profile', 'Profile fetched', [

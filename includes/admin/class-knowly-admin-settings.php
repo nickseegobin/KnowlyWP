@@ -20,14 +20,19 @@ class Knowly_Admin_Settings {
             echo '<div class="notice notice-success"><p>Settings saved.</p></div>';
         }
 
-        $railway_endpoint   = get_option( 'knowly_railway_endpoint', '' );
-        $railway_api_key    = get_option( 'knowly_railway_api_key', '' );
-        $railway_server_key = get_option( 'knowly_railway_server_key', '' );
-        $allowed_origins    = get_option( 'knowly_allowed_origins', '' );
-        $content_source     = get_option( 'knowly_content_source', 'pool_only' );
-        $debug_enabled      = get_option( 'knowly_debug_enabled', false );
-        $dev_bypass         = get_option( 'knowly_dev_bypass_tokens', false );
-        $pool_target        = get_option( 'knowly_pool_default_target', 10 );
+        $railway_endpoint    = get_option( 'knowly_railway_endpoint', '' );
+        $railway_api_key     = get_option( 'knowly_railway_api_key', '' );
+        $railway_server_key  = get_option( 'knowly_railway_server_key', '' );
+        $allowed_origins     = get_option( 'knowly_allowed_origins', '' );
+        $content_source      = get_option( 'knowly_content_source', 'pool_only' );
+        $debug_enabled       = get_option( 'knowly_debug_enabled', false );
+        $dev_bypass          = get_option( 'knowly_dev_bypass_tokens', false );
+        $pool_target         = get_option( 'knowly_pool_default_target', 10 );
+        // Block 2
+        $max_children        = get_option( 'knowly_max_children', 3 );
+        $email_verification  = get_option( 'knowly_email_verification', false );
+        $red_gem_stipend     = get_option( 'knowly_red_gem_stipend', 20 );
+        $um_migration_status = get_option( 'knowly_um_migration_status', 'pending' );
         ?>
         <div class="wrap knowly-wrap">
             <h1>KnowlyAPI — Settings</h1>
@@ -131,6 +136,51 @@ class Knowly_Admin_Settings {
                     </table>
                 </div>
 
+                <!-- User Management (Block 2) -->
+                <div class="knowly-settings-section">
+                    <h2>User Management</h2>
+                    <table class="form-table">
+                        <tr>
+                            <th><label for="knowly_max_children">Max Children Per Parent</label></th>
+                            <td>
+                                <input type="number" id="knowly_max_children" name="knowly_max_children"
+                                       value="<?= esc_attr( $max_children ) ?>" class="small-text" min="1" max="10" />
+                                <p class="description">Maximum student profiles a parent can create. Default: 3.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="knowly_email_verification">Email Verification</label></th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" id="knowly_email_verification" name="knowly_email_verification" value="1"
+                                           <?= checked( $email_verification, true, false ) ?> />
+                                    Require email verification on parent and teacher registration
+                                </label>
+                                <p class="description">Uses WordPress core email verification. Leave off during development.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="knowly_red_gem_stipend">Teacher Red Gem Stipend</label></th>
+                            <td>
+                                <input type="number" id="knowly_red_gem_stipend" name="knowly_red_gem_stipend"
+                                       value="<?= esc_attr( $red_gem_stipend ) ?>" class="small-text" min="0" />
+                                <p class="description">Default monthly red gem allocation for new and reset teacher accounts.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>UM Migration Status</th>
+                            <td>
+                                <?php if ( $um_migration_status === 'complete' ) : ?>
+                                <span style="color:#00a32a;font-weight:600;">✓ Complete</span>
+                                <?php else : ?>
+                                <span style="color:#dba617;font-weight:600;">⏳ Pending</span>
+                                — <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-migration' ) ) ?>">Run migration</a>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
                 <?php submit_button( 'Save Settings' ); ?>
             </form>
 
@@ -158,5 +208,9 @@ class Knowly_Admin_Settings {
         update_option( 'knowly_pool_default_target', max( 1, (int) ( $_POST['knowly_pool_default_target'] ?? 10 ) ) );
         update_option( 'knowly_debug_enabled',       ! empty( $_POST['knowly_debug_enabled'] ) );
         update_option( 'knowly_dev_bypass_tokens',   ! empty( $_POST['knowly_dev_bypass_tokens'] ) );
+        // Block 2
+        update_option( 'knowly_max_children',        max( 1, min( 10, (int) ( $_POST['knowly_max_children'] ?? 3 ) ) ) );
+        update_option( 'knowly_email_verification',  ! empty( $_POST['knowly_email_verification'] ) );
+        update_option( 'knowly_red_gem_stipend',     max( 0, (int) ( $_POST['knowly_red_gem_stipend'] ?? 20 ) ) );
     }
 }

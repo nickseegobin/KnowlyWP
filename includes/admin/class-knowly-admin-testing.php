@@ -123,7 +123,20 @@ class Knowly_Admin_Testing {
                 'results_stats'        => self::test_results_stats( $data ),
                 // Insights
                 'insights_weekly_build' => self::test_insights_weekly_build( $data ),
-                default                => [ 'pass' => false, 'message' => "Unknown test: {$test_id}" ],
+                // Block 2 — Teacher
+                'teacher_register'         => self::test_teacher_register(),
+                'teacher_login_pending'    => self::test_teacher_login_pending(),
+                'teacher_approve'          => self::test_teacher_approve(),
+                'teacher_login_approved'   => self::test_teacher_login_approved(),
+                // Block 2 — Auth
+                'auth_register_parent'     => self::test_register_parent(),
+                'auth_password_reset'      => self::test_password_reset( $data ),
+                // Block 2 — Notifications
+                'notifications_create'     => self::test_notification_create(),
+                'notifications_list'       => self::test_notification_list( $data ),
+                // Block 2 — Test Accounts
+                'provision_test_accounts'  => self::test_provision_accounts(),
+                default                    => [ 'pass' => false, 'message' => "Unknown test: {$test_id}" ],
             };
         } catch ( Throwable $e ) {
             $result = [
@@ -154,7 +167,8 @@ class Knowly_Admin_Testing {
         $tables = [
             'knowly_children', 'knowly_token_ledger', 'knowly_exam_pool',
             'knowly_exam_sessions', 'knowly_exam_answers', 'knowly_topic_breakdown',
-            'knowly_exam_insights', 'knowly_weekly_insights', 'knowly_debug_log',
+            'knowly_exam_insights', 'knowly_weekly_insights',
+            'knowly_notifications', 'knowly_migration_log', 'knowly_debug_log',
         ];
 
         $missing = [];
@@ -410,6 +424,248 @@ class Knowly_Admin_Testing {
         ] );
     }
 
+    // ── Block 2 Test Methods ──────────────────────────────────────────────────
+
+    private static function test_teacher_register(): array {
+        $email = 'test_teacher_' . time() . '@knowly.test';
+        $res   = self::api_post( '/auth/register/teacher', [
+            'first_name'  => 'Test',
+            'last_name'   => 'Teacher',
+            'email'       => $email,
+            'password'    => 'TestPass123!',
+            'school_name' => 'Test Academy',
+        ] );
+
+        if ( $res['status'] === 201 ) {
+            $user_id = $res['body']['data']['user_id'] ?? null;
+            $status  = $res['body']['data']['approval_status'] ?? null;
+            // Clean up test account
+            if ( $user_id ) {
+                update_user_meta( $user_id, 'knowly_is_test_account', true );
+            }
+            return $status === 'pending_approval'
+                ? self::pass( 'Teacher registered with pending_approval status.', [ 'user_id' => $user_id, 'approval_status' => $status ] )
+                : self::fail( 'Teacher registered but status is not pending_approval.', $res['body']['data'] ?? [] );
+        }
+        return self::fail( 'Teacher registration failed.', $res );
+    }
+
+    private static function test_teacher_login_pending(): array {
+        // Register a new teacher and try to log in — should succeed but return pending status
+        $email    = 'test_teacher_login_' . time() . '@knowly.test';
+        $password = 'TestPass123!';
+
+        self::api_post( '/auth/register/teacher', [
+            'first_name'  => 'Test',
+            'last_name'   => 'TeacherLogin',
+            'email'       => $email,
+            'password'    => $password,
+            'school_name' => 'Test Academy',
+        ] );
+
+        $res = self::api_post( '/auth/login', [
+            'username' => $email,
+            'password' => $password,
+        ] );
+
+        if ( $res['status'] === 200 && ( $res['body']['data']['approval_status'] ?? '' ) === 'pending_approval' ) {
+            return self::pass( 'Pending teacher can log in and sees pending_approval status.', [
+                'approval_status' => $res['body']['data']['approval_status'],
+            ] );
+        }
+        return self::fail( 'Pending teacher login test failed.', $res );
+    }
+
+    private static function test_teacher_approve(): array {
+        // Find a pending teacher and approve them
+        $pending = Knowly_Teacher_Service::list_teachers( 'pending_approval' );
+        $test_pending = array_filter( $pending, fn( $t ) => get_user_meta( $t['user_id'], 'knowly_is_test_account', true ) );
+
+        if ( empty( $test_pending ) ) {
+            return self::warn( 'No test teacher with pending_approval found. Run the teacher_register test first.' );
+        }
+
+        $teacher = reset( $test_pending );
+        $result  = Knowly_Teacher_Service::approve( $teacher['user_id'] );
+
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'Approve failed: ' . $result->get_error_message() );
+        }
+
+        $status = get_user_meta( $teacher['user_id'], 'knowly_approval_status', true );
+        $gems   = (int) get_user_meta( $teacher['user_id'], 'knowly_red_gem_balance', true );
+
+        return $status === 'approved' && $gems > 0
+            ? self::pass( "Teacher approved. Red gem balance set to {$gems}.", [ 'user_id' => $teacher['user_id'], 'red_gem_balance' => $gems ] )
+            : self::fail( 'Approval set but status or balance incorrect.', [ 'status' => $status, 'gems' => $gems ] );
+    }
+
+    private static function test_teacher_login_approved(): array {
+        $approved = Knowly_Teacher_Service::list_teachers( 'approved' );
+        $test_approved = array_filter( $approved, fn( $t ) => get_user_meta( $t['user_id'], 'knowly_is_test_account', true ) );
+
+        if ( empty( $test_approved ) ) {
+            return self::warn( 'No approved test teacher found. Run teacher_register and teacher_approve first.' );
+        }
+
+        $teacher = reset( $test_approved );
+        $user    = get_userdata( $teacher['user_id'] );
+
+        // Reset password for test login
+        wp_set_password( 'TestPass123!', $teacher['user_id'] );
+
+        $res = self::api_post( '/auth/login', [
+            'username' => $user->user_email,
+            'password' => 'TestPass123!',
+        ] );
+
+        return ( $res['status'] === 200 && ( $res['body']['data']['approval_status'] ?? '' ) === 'approved' )
+            ? self::pass( 'Approved teacher logged in. approval_status: approved.', [ 'role' => $res['body']['data']['role'] ?? null ] )
+            : self::fail( 'Approved teacher login failed.', $res );
+    }
+
+    private static function test_register_parent(): array {
+        $email = 'test_parent_' . time() . '@knowly.test';
+        $res   = self::api_post( '/auth/register/parent', [
+            'first_name' => 'Test',
+            'last_name'  => 'Parent',
+            'email'      => $email,
+            'password'   => 'TestPass123!',
+        ] );
+
+        if ( $res['status'] === 201 && ! empty( $res['body']['data']['token'] ) ) {
+            $user_id = $res['body']['data']['user_id'] ?? null;
+            if ( $user_id ) update_user_meta( $user_id, 'knowly_is_test_account', true );
+            return self::pass( 'Parent registered via /auth/register/parent. JWT received.', [
+                'user_id' => $user_id,
+                'role'    => $res['body']['data']['role'] ?? null,
+            ] );
+        }
+        return self::fail( 'Parent registration via /auth/register/parent failed.', $res );
+    }
+
+    private static function test_password_reset( array $data ): array {
+        if ( empty( $data['username'] ) ) {
+            return self::warn( 'Provide the email address of a real WP user in the username test data field.' );
+        }
+        $res = self::api_post( '/auth/password/reset', [ 'email' => $data['username'] ] );
+        return $res['status'] === 200
+            ? self::pass( 'Password reset endpoint returned 200.', $res['body']['data'] ?? [] )
+            : self::fail( 'Password reset failed.', $res );
+    }
+
+    private static function test_notification_create(): array {
+        $admin_users = get_users( [ 'role' => 'administrator', 'number' => 1 ] );
+        if ( empty( $admin_users ) ) return self::warn( 'No admin user found.' );
+
+        $id = Knowly_Notification_Service::create( [
+            'recipient_user_id' => $admin_users[0]->ID,
+            'type'              => 'simple',
+            'subject'           => 'test_suite',
+            'message'           => 'Test Suite notification — safe to ignore.',
+        ] );
+
+        if ( is_wp_error( $id ) ) {
+            return self::fail( 'Notification create failed: ' . $id->get_error_message() );
+        }
+        return self::pass( "Simple notification created (ID: {$id}).", [ 'notification_id' => $id ] );
+    }
+
+    private static function test_notification_list( array $data ): array {
+        if ( empty( $data['user_id'] ) ) {
+            return self::warn( 'Provide user_id in test data to list notifications for that user.' );
+        }
+        $notes = Knowly_Notification_Service::list_for_user( (int) $data['user_id'], false );
+        return self::pass( 'Notifications fetched.', [ 'count' => count( $notes ), 'notifications' => $notes ] );
+    }
+
+    private static function test_provision_accounts(): array {
+        $report = [];
+
+        // 1. Test parent
+        $parent_email = 'test.parent@knowly.test';
+        if ( ! email_exists( $parent_email ) ) {
+            $parent_id = wp_create_user( $parent_email, 'KnowlyTest2025!', $parent_email );
+            if ( ! is_wp_error( $parent_id ) ) {
+                ( new WP_User( $parent_id ) )->set_role( 'knowly_parent' );
+                wp_update_user( [ 'ID' => $parent_id, 'first_name' => 'Test', 'last_name' => 'Parent', 'display_name' => 'Test' ] );
+                update_user_meta( $parent_id, 'knowly_is_test_account', true );
+                Knowly_Token_Service::grant_on_registration( $parent_id );
+                $report[] = "✓ Parent created (ID: {$parent_id}, email: {$parent_email})";
+            } else {
+                $report[] = '✗ Parent creation failed: ' . $parent_id->get_error_message();
+            }
+        } else {
+            $parent_id = get_user_by( 'email', $parent_email )->ID;
+            $report[]  = "→ Parent already exists (ID: {$parent_id})";
+        }
+
+        // 2. Test teacher (pre-approved)
+        $teacher_email = 'test.teacher@knowly.test';
+        if ( ! email_exists( $teacher_email ) ) {
+            $teacher_id = wp_create_user( $teacher_email, 'KnowlyTest2025!', $teacher_email );
+            if ( ! is_wp_error( $teacher_id ) ) {
+                ( new WP_User( $teacher_id ) )->set_role( 'knowly_teacher' );
+                wp_update_user( [ 'ID' => $teacher_id, 'first_name' => 'Test', 'last_name' => 'Teacher', 'display_name' => 'Test Teacher' ] );
+                update_user_meta( $teacher_id, 'knowly_approval_status',  'approved' );
+                update_user_meta( $teacher_id, 'knowly_school_name',      'Test Academy' );
+                update_user_meta( $teacher_id, 'knowly_red_gem_balance',  20 );
+                update_user_meta( $teacher_id, 'knowly_red_gem_stipend',  20 );
+                update_user_meta( $teacher_id, 'knowly_is_test_account',  true );
+                $report[] = "✓ Teacher created and pre-approved (ID: {$teacher_id}, email: {$teacher_email})";
+            } else {
+                $report[] = '✗ Teacher creation failed: ' . $teacher_id->get_error_message();
+            }
+        } else {
+            $teacher_id = get_user_by( 'email', $teacher_email )->ID;
+            $report[]   = "→ Teacher already exists (ID: {$teacher_id})";
+        }
+
+        // 3. Test child (std_4 / term_1)
+        $child_login = 'test.child';
+        $existing_child = get_user_by( 'login', $child_login );
+        if ( ! $existing_child ) {
+            $child_id = wp_create_user( $child_login, 'KnowlyTest2025!', 'test.child@knowly.test' );
+            if ( ! is_wp_error( $child_id ) ) {
+                ( new WP_User( $child_id ) )->set_role( 'knowly_child' );
+                wp_update_user( [ 'ID' => $child_id, 'first_name' => 'Test', 'display_name' => 'TestKid' ] );
+                update_user_meta( $child_id, 'knowly_level',          'std_4' );
+                update_user_meta( $child_id, 'knowly_period',         'term_1' );
+                update_user_meta( $child_id, 'knowly_nickname',       'TestKid' );
+                update_user_meta( $child_id, 'knowly_avatar_index',   1 );
+                update_user_meta( $child_id, 'knowly_is_test_account', true );
+
+                // Link child to test parent
+                if ( isset( $parent_id ) && ! is_wp_error( $parent_id ) ) {
+                    update_user_meta( $child_id, 'knowly_parent_id', $parent_id );
+                    global $wpdb;
+                    $wpdb->replace( $wpdb->prefix . 'knowly_children', [
+                        'parent_id'    => $parent_id,
+                        'child_id'     => $child_id,
+                        'display_name' => 'TestKid',
+                        'level'        => 'std_4',
+                        'period'       => 'term_1',
+                        'age'          => 10,
+                        'avatar_index' => 1,
+                        'created_at'   => current_time( 'mysql' ),
+                    ] );
+                }
+
+                $report[] = "✓ Child created (ID: {$child_id}, level: std_4, period: term_1, linked to parent)";
+            } else {
+                $report[] = '✗ Child creation failed: ' . $child_id->get_error_message();
+            }
+        } else {
+            $report[] = "→ Child already exists (ID: {$existing_child->ID})";
+        }
+
+        $all_ok = ! in_array( false, array_map( fn( $r ) => strpos( $r, '✗' ) === false, $report ), true );
+
+        return $all_ok
+            ? self::pass( 'Test accounts provisioned.', [ 'report' => implode( "\n", $report ) ] )
+            : self::fail( 'Some accounts failed to provision.', [ 'report' => implode( "\n", $report ) ] );
+    }
+
     // ── Test Definition List ──────────────────────────────────────────────────
 
     private static function test_groups(): array {
@@ -467,6 +723,35 @@ class Knowly_Admin_Testing {
                 'label' => '💡 Insights',
                 'tests' => [
                     'insights_weekly_build' => [ 'label' => 'Build weekly payload', 'method' => 'CHECK', 'route' => '' ],
+                ],
+            ],
+            'block2_setup' => [
+                'label' => '🧪 Block 2 — Test Account Setup',
+                'tests' => [
+                    'provision_test_accounts' => [ 'label' => 'Provision test parent, teacher, and child (std_4/term_1)', 'method' => 'CHECK', 'route' => '' ],
+                ],
+            ],
+            'block2_auth' => [
+                'label' => '🔐 Block 2 — Auth',
+                'tests' => [
+                    'auth_register_parent'  => [ 'label' => 'Register parent via /auth/register/parent',    'method' => 'POST', 'route' => '/auth/register/parent' ],
+                    'auth_password_reset'   => [ 'label' => 'Password reset (uses username field as email)', 'method' => 'POST', 'route' => '/auth/password/reset' ],
+                ],
+            ],
+            'block2_teacher' => [
+                'label' => '👩‍🏫 Block 2 — Teacher',
+                'tests' => [
+                    'teacher_register'       => [ 'label' => 'Register teacher (pending_approval)',          'method' => 'POST',  'route' => '/auth/register/teacher' ],
+                    'teacher_login_pending'  => [ 'label' => 'Pending teacher can log in (sees status)',     'method' => 'POST',  'route' => '/auth/login' ],
+                    'teacher_approve'        => [ 'label' => 'Approve test teacher (admin action)',          'method' => 'CHECK', 'route' => '' ],
+                    'teacher_login_approved' => [ 'label' => 'Approved teacher logs in (approval_status ok)','method' => 'POST',  'route' => '/auth/login' ],
+                ],
+            ],
+            'block2_notifications' => [
+                'label' => '🔔 Block 2 — Notifications',
+                'tests' => [
+                    'notifications_create' => [ 'label' => 'Create simple notification',              'method' => 'CHECK', 'route' => '' ],
+                    'notifications_list'   => [ 'label' => 'List notifications for user (user_id req)', 'method' => 'CHECK', 'route' => '' ],
                 ],
             ],
         ];

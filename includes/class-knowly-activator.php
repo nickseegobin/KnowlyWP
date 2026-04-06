@@ -181,7 +181,37 @@ class Knowly_Activator {
             KEY          idx_child (child_id)
         ) {$charset};" );
 
-        // ── 9. Debug Log ──────────────────────────────────────────────────────
+        // ── 9. Notifications ─────────────────────────────────────────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_notifications (
+            id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            recipient_user_id INT UNSIGNED   NOT NULL,
+            sender_user_id   INT UNSIGNED             DEFAULT NULL,
+            type             ENUM('simple','confirmation') NOT NULL DEFAULT 'simple',
+            subject          VARCHAR(100)    NOT NULL DEFAULT '',
+            message          TEXT            NOT NULL,
+            payload          LONGTEXT                 DEFAULT NULL,
+            response         ENUM('accepted','declined') DEFAULT NULL,
+            is_read          TINYINT(1)      NOT NULL DEFAULT 0,
+            responded_at     DATETIME                 DEFAULT NULL,
+            created_at       DATETIME        NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_recipient (recipient_user_id),
+            KEY idx_read (recipient_user_id, is_read)
+        ) {$charset};" );
+
+        // ── 10. UM Migration Log ──────────────────────────────────────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_migration_log (
+            id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id    BIGINT UNSIGNED NOT NULL,
+            status     ENUM('success','failed') NOT NULL DEFAULT 'success',
+            message    TEXT                     DEFAULT NULL,
+            migrated_at DATETIME               NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_user (user_id),
+            KEY idx_status (status)
+        ) {$charset};" );
+
+        // ── 12. Debug Log ─────────────────────────────────────────────────────
         dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_debug_log (
             log_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             level      ENUM('debug','info','warning','error') NOT NULL DEFAULT 'info',
@@ -215,20 +245,32 @@ class Knowly_Activator {
                 'read' => true,
             ] );
         }
+
+        // Teacher — class management and analytics access, requires admin approval
+        if ( ! get_role( 'knowly_teacher' ) ) {
+            add_role( 'knowly_teacher', 'Knowly Teacher', [
+                'read' => true,
+            ] );
+        }
     }
 
     // ── Default Options ───────────────────────────────────────────────────────
 
     private static function set_defaults(): void {
         $defaults = [
-            'knowly_debug_enabled'       => false,
-            'knowly_railway_endpoint'    => '',
-            'knowly_railway_api_key'     => '',
-            'knowly_railway_server_key'  => '',
-            'knowly_allowed_origins'     => '',
-            'knowly_content_source'      => 'pool_only', // pool_only | railway | both
-            'knowly_dev_bypass_tokens'   => false,
-            'knowly_pool_default_target' => 10,
+            'knowly_debug_enabled'         => false,
+            'knowly_railway_endpoint'      => '',
+            'knowly_railway_api_key'       => '',
+            'knowly_railway_server_key'    => '',
+            'knowly_allowed_origins'       => '',
+            'knowly_content_source'        => 'pool_only', // pool_only | railway | both
+            'knowly_dev_bypass_tokens'     => false,
+            'knowly_pool_default_target'   => 10,
+            // Block 2
+            'knowly_max_children'          => 3,
+            'knowly_email_verification'    => false,
+            'knowly_red_gem_stipend'       => 20,
+            'knowly_um_migration_status'   => 'pending', // pending | complete
         ];
 
         foreach ( $defaults as $key => $value ) {

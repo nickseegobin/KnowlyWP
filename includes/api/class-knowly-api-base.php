@@ -117,6 +117,28 @@ abstract class Knowly_API_Base extends WP_REST_Controller {
 
     // ── Role Helpers ──────────────────────────────────────────────────────────
 
+    /**
+     * Authenticate and require the user to be an approved knowly_teacher.
+     *
+     * @return int|WP_Error  Teacher user ID on success.
+     */
+    protected function require_teacher( WP_REST_Request $request ): int|WP_Error {
+        $user_id = $this->authenticate( $request );
+        if ( is_wp_error( $user_id ) ) {
+            return $user_id;
+        }
+
+        if ( ! $this->is_teacher( $user_id ) ) {
+            return new WP_Error( 'knowly_forbidden', 'Teacher account required.', [ 'status' => 403 ] );
+        }
+
+        if ( ! Knowly_Teacher_Service::is_approved( $user_id ) ) {
+            return new WP_Error( 'knowly_pending_approval', 'Your teacher account is pending admin approval.', [ 'status' => 403 ] );
+        }
+
+        return $user_id;
+    }
+
     protected function is_parent( int $user_id ): bool {
         $user = get_userdata( $user_id );
         return $user && in_array( 'knowly_parent', (array) $user->roles, true );
@@ -125,6 +147,11 @@ abstract class Knowly_API_Base extends WP_REST_Controller {
     protected function is_child( int $user_id ): bool {
         $user = get_userdata( $user_id );
         return $user && in_array( 'knowly_child', (array) $user->roles, true );
+    }
+
+    protected function is_teacher( int $user_id ): bool {
+        $user = get_userdata( $user_id );
+        return $user && in_array( 'knowly_teacher', (array) $user->roles, true );
     }
 
     protected function get_user_roles( int $user_id ): array {

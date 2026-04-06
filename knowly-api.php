@@ -14,8 +14,8 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ────────────────────────────────────────────────────────────────
-define( 'KNOWLY_VERSION',            '1.1.0' );
-define( 'KNOWLY_DB_VERSION',         '1.0' );
+define( 'KNOWLY_VERSION',            '1.2.0' );
+define( 'KNOWLY_DB_VERSION',         '1.2' );
 define( 'KNOWLY_PLUGIN_FILE',        __FILE__ );
 define( 'KNOWLY_PLUGIN_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'KNOWLY_PLUGIN_URL',         plugin_dir_url( __FILE__ ) );
@@ -75,10 +75,15 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Admin_Members'    => 'includes/admin/class-knowly-admin-members.php',
         'Knowly_Admin_Tokens'     => 'includes/admin/class-knowly-admin-tokens.php',
 
-        //Leaderboard
-        'Knowly_Leaderboard_API'     => 'includes/api/class-knowly-leaderboard-api.php',
-        'Knowly_Leaderboard_Service' => 'includes/services/class-knowly-leaderboard-service.php',
-        'Knowly_Admin_Leaderboard'   => 'includes/admin/class-knowly-admin-leaderboard.php',
+        // Leaderboard
+        'Knowly_Leaderboard_API'        => 'includes/api/class-knowly-leaderboard-api.php',
+        'Knowly_Leaderboard_Service'    => 'includes/services/class-knowly-leaderboard-service.php',
+        'Knowly_Admin_Leaderboard'      => 'includes/admin/class-knowly-admin-leaderboard.php',
+        // Block 2 — Teacher + Notifications
+        'Knowly_Teacher_Service'        => 'includes/services/class-knowly-teacher-service.php',
+        'Knowly_Notification_Service'   => 'includes/services/class-knowly-notification-service.php',
+        'Knowly_Admin_Teachers'         => 'includes/admin/class-knowly-admin-teachers.php',
+        'Knowly_Admin_Migration'        => 'includes/admin/class-knowly-admin-migration.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {
