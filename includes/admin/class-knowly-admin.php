@@ -53,9 +53,7 @@ class Knowly_Admin {
     // ── Assets ────────────────────────────────────────────────────────────────
 
     public static function enqueue_assets( string $hook ): void {
-        $knowly_pages = [ 'toplevel_page_knowly-api', 'knowly-api_page_knowly-members', 'knowly-api_page_knowly-tokens', 'knowly-api_page_knowly-pool', 'knowly-api_page_knowly-settings', 'knowly-api_page_knowly-debug', 'knowly-api_page_knowly-test-suite' ];
-
-        if ( ! in_array( $hook, $knowly_pages, true ) ) {
+        if ( strpos( $hook, 'knowly' ) === false ) {
             return;
         }
 
