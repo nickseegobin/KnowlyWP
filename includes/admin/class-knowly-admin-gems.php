@@ -397,6 +397,7 @@ class Knowly_Admin_Gems {
         </div>
         <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Returns a Promise that resolves when the test completes.
             function runGemsTest(testId, row) {
                 var btn = row.querySelector('.run-single-gems-test');
                 var status = row.querySelector('.knowly-test-status');
@@ -410,7 +411,7 @@ class Knowly_Admin_Gems {
                 fd.append('nonce', KnowlyAdmin.nonce);
                 fd.append('test', testId);
 
-                fetch(KnowlyAdmin.ajaxUrl, { method: 'POST', body: fd })
+                return fetch(KnowlyAdmin.ajaxUrl, { method: 'POST', body: fd })
                     .then(r => r.json())
                     .then(function(resp) {
                         var d = resp.data || resp;
@@ -437,12 +438,17 @@ class Knowly_Admin_Gems {
                 });
             });
 
+            // Run group tests sequentially — each waits for the previous to finish
+            // so state-dependent tests (allocate → balance_child → deduct) are reliable.
             document.querySelectorAll('.run-test-group').forEach(function(btn) {
                 btn.addEventListener('click', function() {
                     var group = btn.dataset.group;
-                    document.querySelectorAll('[data-group="' + group + '"] .knowly-test-row').forEach(function(row) {
-                        runGemsTest(row.dataset.test, row);
-                    });
+                    var rows = Array.from(document.querySelectorAll('[data-group="' + group + '"] .knowly-test-row'));
+                    rows.reduce(function(chain, row) {
+                        return chain.then(function() {
+                            return runGemsTest(row.dataset.test, row);
+                        });
+                    }, Promise.resolve());
                 });
             });
         });
