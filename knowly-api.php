@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 define( 'KNOWLY_VERSION',            '1.7.0' );
-define( 'KNOWLY_DB_VERSION',         '1.6' );
+define( 'KNOWLY_DB_VERSION',         '1.7' );
 define( 'KNOWLY_PLUGIN_FILE',        __FILE__ );
 define( 'KNOWLY_PLUGIN_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'KNOWLY_PLUGIN_URL',         plugin_dir_url( __FILE__ ) );
@@ -98,6 +98,10 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Analytics_Service'      => 'includes/services/class-knowly-analytics-service.php',
         'Knowly_Analytics_API'          => 'includes/api/class-knowly-analytics-api.php',
         'Knowly_Admin_Analytics'        => 'includes/admin/class-knowly-admin-analytics.php',
+        // Block 8 — Sign-off / Launch Gate
+        'Knowly_Admin_Signoff'          => 'includes/admin/class-knowly-admin-signoff.php',
+        // Block 10 — Training Material
+        'Knowly_Admin_Training'         => 'includes/admin/class-knowly-admin-training.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {

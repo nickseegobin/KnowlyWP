@@ -292,7 +292,28 @@ class Knowly_Activator {
             KEY idx_status (status)
         ) {$charset};" );
 
-        // ── 17. Debug Log ─────────────────────────────────────────────────────────
+        // ── 17. Training Material (mirrors Pinecone vectors for admin display) ───
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_training_material (
+            id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            vector_id    VARCHAR(200)    NOT NULL,
+            curriculum   VARCHAR(50)     NOT NULL DEFAULT 'tt_primary',
+            level        VARCHAR(20)     NOT NULL DEFAULT '',
+            period       VARCHAR(20)              DEFAULT NULL,
+            subject      VARCHAR(50)     NOT NULL DEFAULT '',
+            topic        VARCHAR(200)    NOT NULL DEFAULT '',
+            subtopic     VARCHAR(200)             DEFAULT NULL,
+            content_text LONGTEXT        NOT NULL,
+            status       ENUM('active','archived') NOT NULL DEFAULT 'active',
+            created_at   DATETIME        NOT NULL,
+            updated_at   DATETIME        NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY   uq_vector (vector_id),
+            KEY          idx_level (level),
+            KEY          idx_subject (subject),
+            KEY          idx_status (status)
+        ) {$charset};" );
+
+        // ── 18. Debug Log ─────────────────────────────────────────────────────────
         dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_debug_log (
             log_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             level      ENUM('debug','info','warning','error') NOT NULL DEFAULT 'info',
@@ -360,6 +381,8 @@ class Knowly_Activator {
             // Block 6 — Quests
             'knowly_gem_cost_quest_first_tt_primary'  => 3,
             'knowly_gem_cost_quest_retake_tt_primary' => 1,
+            // Block 8 — Sign-off gate
+            'knowly_signoff_status'                   => 'blocked',
         ];
 
         foreach ( $defaults as $key => $value ) {

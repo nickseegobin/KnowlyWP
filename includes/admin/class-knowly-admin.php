@@ -36,6 +36,10 @@ class Knowly_Admin {
         Knowly_Admin_Classes::boot();
         // Block 7
         Knowly_Admin_Analytics::boot();
+        // Block 8
+        Knowly_Admin_Signoff::boot();
+        // Block 10
+        Knowly_Admin_Training::boot();
     }
 
     // ── Menu Registration ─────────────────────────────────────────────────────
@@ -58,6 +62,8 @@ class Knowly_Admin {
         add_submenu_page( 'knowly-api', 'Gems',         'Gems',         'manage_options', 'knowly-gems',         [ 'Knowly_Admin_Gems', 'render' ] );
         add_submenu_page( 'knowly-api', 'Classes',      'Classes',      'manage_options', 'knowly-classes',      [ 'Knowly_Admin_Classes', 'render' ] );
         add_submenu_page( 'knowly-api', 'Analytics',    'Analytics',    'manage_options', 'knowly-analytics',    [ 'Knowly_Admin_Analytics', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Training',      'Training',      'manage_options', 'knowly-training',     [ 'Knowly_Admin_Training', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Sign-off',      'Sign-off',      'manage_options', 'knowly-signoff',      [ 'Knowly_Admin_Signoff', 'render' ] );
         add_submenu_page( 'knowly-api', 'Settings',     'Settings',     'manage_options', 'knowly-settings',     [ 'Knowly_Admin_Settings', 'render' ] );
         add_submenu_page( 'knowly-api', 'UM Migration', 'UM Migration', 'manage_options', 'knowly-migration',    [ 'Knowly_Admin_Migration', 'render' ] );
         add_submenu_page( 'knowly-api', 'Debug Log',    'Debug Log',    'manage_options', 'knowly-debug',        [ 'Knowly_Admin_Debug', 'render' ] );
@@ -109,7 +115,7 @@ class Knowly_Admin {
             fn( $id ) => get_user_meta( $id, 'knowly_approval_status', true ) === 'pending_approval'
         ) );
         $class_count         = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_classes" );
-        $pool_count          = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_pool" );
+        $signoff_status      = get_option( 'knowly_signoff_status', 'blocked' );
         $unread_notif_count  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_notifications WHERE is_read = 0" );
         $session_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_sessions WHERE state = 'completed'" );
         $insight_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_insights" );
@@ -143,9 +149,9 @@ class Knowly_Admin {
                     <div class="knowly-stat-number" style="<?= $pending_teachers > 0 ? 'color:#d63638;' : '' ?>"><?= esc_html( $teacher_count ) ?></div>
                     <div class="knowly-stat-label">Teachers<?= $pending_teachers > 0 ? " ({$pending_teachers} pending)" : '' ?></div>
                 </div>
-                <div class="knowly-stat-card">
-                    <div class="knowly-stat-number"><?= esc_html( $pool_count ) ?></div>
-                    <div class="knowly-stat-label">Exam Packages in Pool</div>
+                <div class="knowly-stat-card" style="<?= $signoff_status === 'approved' ? 'border-color:#00a32a;' : 'border-color:#d63638;' ?>">
+                    <div class="knowly-stat-number" style="<?= $signoff_status === 'approved' ? 'color:#00a32a;' : 'color:#d63638;' ?>"><?= $signoff_status === 'approved' ? 'GO' : 'HOLD' ?></div>
+                    <div class="knowly-stat-label">Launch Gate</div>
                 </div>
                 <div class="knowly-stat-card">
                     <div class="knowly-stat-number"><?= esc_html( $session_count ) ?></div>
@@ -172,6 +178,8 @@ class Knowly_Admin {
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-classes' ) ) ?>" class="button button-primary">Classes</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-analytics' ) ) ?>" class="button button-primary">Analytics</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-pool' ) ) ?>" class="button button-primary">Pool Manager</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-training' ) ) ?>" class="button button-primary">Training</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-signoff' ) ) ?>" class="button button-primary">Sign-off</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>" class="button">Settings</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-migration' ) ) ?>" class="button">UM Migration</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-debug' ) ) ?>" class="button">Debug Log</a>
@@ -302,6 +310,9 @@ class Knowly_Admin {
             // Block 7 — Analytics
             [ 'GET',    '/analytics/class/{class_id}',               'JWT Teacher', 'Class aggregate analytics (trials, quests, scores, source)' ],
             [ 'GET',    '/analytics/class/{class_id}/student/{user_id}', 'JWT Teacher', 'Per-student drill-down (subject breakdown, recent sessions)' ],
+            // Block 10 — Training Material (Pinecone vector management)
+            [ 'POST',   '/training/upsert',                          'Server Key',  'Upsert a training vector into Pinecone (embed + index)' ],
+            [ 'DELETE', '/training/delete',                          'Server Key',  'Delete a training vector from Pinecone by vector_id' ],
         ];
     }
 }

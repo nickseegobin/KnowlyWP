@@ -1,15 +1,22 @@
 <?php
 /**
- * Knowly_Admin_Pool — Exam Pool Manager admin page.
+ * Knowly_Admin_Pool — Pool Manager admin page.
  *
- * Features:
- *  - Pool overview stats (total packages, by standard / subject / difficulty)
- *  - Pool Inspector: expandable table of all combinations with pool counts,
- *    status badges, per-package detail (questions, answer sheet presence)
- *  - One-click Generate — calls Railway /generate-exam for a specific slot
- *  - Full Sync — imports all approved packages from Railway /pool endpoint
- *  - Manual JSON Upload — paste a raw package JSON to add it to the local pool
- *  - Live Railway Catalogue — shows Railway's live availability counts
+ * All pool data is sourced from Railway (Supabase) — there is no WP-local pool table.
+ * Data is loaded on-demand via AJAX to avoid slow page loads from Railway calls.
+ *
+ * Tabs:
+ *   Trial Packages  — inventory per slot (level/period/subject/difficulty) from Railway
+ *   Quest Catalogue — approved quests per level/subject from Railway
+ *   Review Queue    — pending_review trial packages awaiting admin approval
+ *
+ * Railway endpoints used:
+ *   GET  /api/v1/pool/summary            (X-AEP-Server-Key)
+ *   GET  /api/v1/pool                    (X-AEP-Server-Key, filtered)
+ *   GET  /api/v1/quest/catalogue         (Bearer JWT)
+ *   POST /api/v1/generate-exam           (X-AEP-Server-Key, force_generate:true)
+ *   POST /api/v1/quest/generate          (X-AEP-Server-Key)
+ *   PATCH /api/v1/pool/approve           (X-AEP-Server-Key)
  *
  * @package KnowlyAPI
  */
@@ -21,504 +28,444 @@ class Knowly_Admin_Pool {
     // ── Boot ──────────────────────────────────────────────────────────────────
 
     public static function boot(): void {
-        // WP-side pool retired in Block 1 — no action handlers registered.
+        add_action( 'wp_ajax_knowly_pool_trial_summary',  [ __CLASS__, 'ajax_trial_summary' ] );
+        add_action( 'wp_ajax_knowly_pool_trial_packages', [ __CLASS__, 'ajax_trial_packages' ] );
+        add_action( 'wp_ajax_knowly_pool_quest_catalogue', [ __CLASS__, 'ajax_quest_catalogue' ] );
+        add_action( 'wp_ajax_knowly_pool_review_queue',   [ __CLASS__, 'ajax_review_queue' ] );
+        add_action( 'wp_ajax_knowly_pool_generate_trial', [ __CLASS__, 'ajax_generate_trial' ] );
+        add_action( 'wp_ajax_knowly_pool_generate_quest', [ __CLASS__, 'ajax_generate_quest' ] );
+        add_action( 'wp_ajax_knowly_pool_approve_package', [ __CLASS__, 'ajax_approve_package' ] );
+
+        // Legacy handlers referenced elsewhere — re-route to new implementations
+        add_action( 'wp_ajax_knowly_pool_packages',      [ __CLASS__, 'ajax_trial_packages' ] );
+        add_action( 'wp_ajax_knowly_railway_catalogue',  [ __CLASS__, 'ajax_trial_summary' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
 
     public static function render(): void {
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Insufficient permissions.' );
-        ?>
-        <div class="wrap">
-            <h1>Exam Pool</h1>
-            <div class="notice notice-info inline" style="margin-top:16px;">
-                <p><strong>The local WordPress exam pool was retired in Block 1.</strong><br>
-                All Trial delivery now goes through Railway's sequential pool. Use
-                <strong>WP Admin → Settings → Railway</strong> to verify the Railway connection,
-                and the <strong>Railway catalogue endpoint</strong> to inspect pool inventory.</p>
-            </div>
-        </div>
-        <?php
-        return; // Nothing further to render.
 
-        global $wpdb;
-
-        $railway_ok   = ! empty( get_option( 'knowly_railway_endpoint' ) );
-        $server_key   = get_option( 'knowly_railway_server_key', '' );
-        $pool_table   = $wpdb->prefix . 'knowly_exam_pool';
-
-        // Stats
-        $total_packages = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pool_table}" );
-        $total_served   = (int) $wpdb->get_var( "SELECT SUM(times_served) FROM {$pool_table}" );
-        $has_answers    = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$pool_table} WHERE package_json LIKE '%answer_sheet%'" );
-
-        // All combinations from pool
-        $pool_summary = $wpdb->get_results(
-            "SELECT standard, term, subject, difficulty, COUNT(*) as pool_count,
-                    SUM(times_served) as total_served,
-                    MAX(created_at) as latest_at
-             FROM {$pool_table}
-             GROUP BY standard, term, subject, difficulty
-             ORDER BY standard, subject, difficulty",
-            ARRAY_A
-        ) ?: [];
-
-        // Known combinations from Railway taxonomy
-        $all_combinations = self::get_all_combinations();
+        $railway_ok  = ! empty( get_option( 'knowly_railway_endpoint' ) );
+        $server_key  = get_option( 'knowly_railway_server_key', '' );
+        $nonce       = wp_create_nonce( 'knowly_admin_nonce' );
         ?>
         <div class="wrap knowly-wrap">
-            <h1>KnowlyAPI — Pool Manager</h1>
-
-            <?php self::render_notices(); ?>
+            <h1>Pool Manager</h1>
+            <p style="color:#666;margin-bottom:16px;">
+                All package data is sourced from Railway (Supabase). Click a tab and load to fetch live inventory.
+            </p>
 
             <?php if ( ! $railway_ok ) : ?>
-                <div class="notice notice-warning">
-                    <p>Railway endpoint not configured. <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>">Configure in Settings →</a></p>
-                </div>
+            <div class="notice notice-warning">
+                <p>Railway endpoint not configured. <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>">Configure in Settings →</a></p>
+            </div>
             <?php endif; ?>
 
             <?php if ( $railway_ok && ! $server_key ) : ?>
-                <div class="notice notice-warning">
-                    <p>No <strong>Server Key</strong> configured. Packages will be imported <em>without</em> answer sheets. Set it in <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>">Settings</a> to receive answer sheets for server-side scoring.</p>
-                </div>
+            <div class="notice notice-warning">
+                <p>No <strong>Server Key</strong> configured. Package details and answer sheets will not be available. Set it in <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>">Settings</a>.</p>
+            </div>
             <?php endif; ?>
 
-            <!-- Stats Row -->
-            <div class="knowly-stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px;">
-                <div class="knowly-stat-card">
-                    <div class="knowly-stat-number"><?= esc_html( $total_packages ) ?></div>
-                    <div class="knowly-stat-label">Packages in Pool</div>
+            <!-- Tab nav -->
+            <div style="display:flex;gap:0;margin-bottom:0;border-bottom:2px solid #c3c4c7;">
+                <button class="knowly-pool-tab button" data-tab="trials" style="border-radius:4px 4px 0 0;border-bottom:2px solid #2271b1;margin-bottom:-2px;background:#fff;color:#2271b1;font-weight:600;">
+                    Trial Packages
+                </button>
+                <button class="knowly-pool-tab button" data-tab="quests" style="border-radius:4px 4px 0 0;background:#f6f7f7;border-bottom:none;">
+                    Quest Catalogue
+                </button>
+                <button class="knowly-pool-tab button" data-tab="review" style="border-radius:4px 4px 0 0;background:#f6f7f7;border-bottom:none;">
+                    Review Queue
+                </button>
+            </div>
+
+            <!-- ── TRIAL PACKAGES ─────────────────────────────────────────── -->
+            <div id="knowly-tab-trials" class="knowly-pool-panel" style="border:1px solid #c3c4c7;border-top:none;padding:20px;background:#fff;">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+                    <button id="knowly-load-trials" class="button button-primary" <?= $railway_ok ? '' : 'disabled' ?>>
+                        ↓ Load Trial Pool Inventory
+                    </button>
+                    <input type="text" id="knowly-trial-filter" placeholder="Filter by subject…" class="regular-text" style="height:30px;" />
+                    <span id="knowly-trial-summary-text" style="color:#666;font-size:13px;"></span>
                 </div>
-                <div class="knowly-stat-card">
-                    <div class="knowly-stat-number"><?= esc_html( count( $pool_summary ) ) ?> <small style="font-size:16px;color:#888;">/ <?= count( $all_combinations ) ?></small></div>
-                    <div class="knowly-stat-label">Slots Filled / Total</div>
-                </div>
-                <div class="knowly-stat-card">
-                    <div class="knowly-stat-number"><?= esc_html( $has_answers ) ?></div>
-                    <div class="knowly-stat-label">With Answer Sheet</div>
-                </div>
-                <div class="knowly-stat-card">
-                    <div class="knowly-stat-number"><?= esc_html( number_format( $total_served ) ) ?></div>
-                    <div class="knowly-stat-label">Total Serves</div>
+                <div id="knowly-trial-results">
+                    <p style="color:#888;">Click "Load Trial Pool Inventory" to fetch current stats from Railway.</p>
                 </div>
             </div>
 
-            <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start;">
-
-                <!-- ── POOL INSPECTOR ───────────────────────────────────────── -->
-                <div class="knowly-settings-section" style="padding:0;overflow:hidden;">
-                    <div style="padding:16px 20px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;">
-                        <h2 style="margin:0;font-size:15px;">Pool Inspector</h2>
-                        <div style="display:flex;gap:8px;align-items:center;">
-                            <input type="text" id="knowly-pool-filter" placeholder="Filter by subject…" class="regular-text" style="height:30px;" />
-                            <?php if ( $railway_ok ) : ?>
-                            <form method="post" action="<?= esc_url( admin_url( 'admin-post.php' ) ) ?>" style="margin:0;">
-                                <?php wp_nonce_field( 'knowly_pool_sync', 'knowly_sync_nonce' ); ?>
-                                <input type="hidden" name="action" value="knowly_pool_sync" />
-                                <button type="submit" class="button button-primary">↓ Sync from Railway</button>
-                            </form>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-
-                    <table class="knowly-table knowly-pool-table" style="border:none;border-radius:0;">
-                        <thead>
-                            <tr>
-                                <th>Standard</th>
-                                <th>Term</th>
-                                <th>Subject</th>
-                                <th>Difficulty</th>
-                                <th style="text-align:center;">Pool</th>
-                                <th style="text-align:center;">Answers</th>
-                                <th style="text-align:center;">Serves</th>
-                                <th>Status</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        <?php
-                        // Index pool data by key
-                        $pool_index = [];
-                        foreach ( $pool_summary as $row ) {
-                            $key = "{$row['level']}|{$row['period']}|{$row['subject']}|{$row['difficulty']}";
-                            $pool_index[ $key ] = $row;
-                        }
-
-                        foreach ( $all_combinations as $combo ) :
-                            $key       = "{$combo['level']}|{$combo['period']}|{$combo['subject_display']}|{$combo['difficulty']}";
-                            $pool_row  = $pool_index[ $key ] ?? null;
-                            $count     = $pool_row ? (int) $pool_row['pool_count'] : 0;
-                            $serves    = $pool_row ? (int) $pool_row['total_served'] : 0;
-
-                            // Count packages with answer_sheet for this slot
-                            $ans_count = $count > 0 ? (int) $wpdb->get_var( $wpdb->prepare(
-                                "SELECT COUNT(*) FROM {$pool_table}
-                                 WHERE standard=%s AND term=%s AND subject=%s AND difficulty=%s
-                                 AND package_json LIKE %s",
-                                $combo['level'], $combo['period'], $combo['subject_display'], $combo['difficulty'],
-                                '%answer_sheet%'
-                            ) ) : 0;
-
-                            $status = $count === 0 ? 'empty' : ( $count < 3 ? 'low' : 'ready' );
-                            $row_class = $count === 0 ? 'pool-empty' : '';
-                        ?>
-                        <tr class="knowly-pool-row <?= esc_attr( $row_class ) ?>"
-                            data-subject="<?= esc_attr( strtolower( $combo['subject'] ) ) ?>">
-                            <td><?= esc_html( strtoupper( $combo['level'] ) ) ?></td>
-                            <td><?= esc_html( $combo['period'] ? strtoupper( $combo['period'] ) : 'SEA' ) ?></td>
-                            <td><strong><?= esc_html( $combo['subject_display'] ) ?></strong></td>
-                            <td><?= esc_html( ucfirst( $combo['difficulty'] ) ) ?></td>
-                            <td style="text-align:center;font-weight:600;"><?= esc_html( $count ) ?></td>
-                            <td style="text-align:center;">
-                                <?php if ( $count > 0 ) : ?>
-                                    <span style="color:<?= $ans_count === $count ? '#16a34a' : ( $ans_count > 0 ? '#d97706' : '#dc2626' ) ?>;">
-                                        <?= esc_html( $ans_count ) ?>/<?= esc_html( $count ) ?>
-                                    </span>
-                                <?php else : ?>—<?php endif; ?>
-                            </td>
-                            <td style="text-align:center;color:#888;"><?= esc_html( $serves ) ?></td>
-                            <td><?= self::status_badge( $status ) ?></td>
-                            <td>
-                                <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                                    <?php if ( $railway_ok ) : ?>
-                                    <form method="post" action="<?= esc_url( admin_url( 'admin-post.php' ) ) ?>" style="margin:0;">
-                                        <?php wp_nonce_field( 'knowly_pool_generate', 'knowly_gen_nonce' ); ?>
-                                        <input type="hidden" name="action"     value="knowly_pool_generate" />
-                                        <input type="hidden" name="level"   value="<?= esc_attr( $combo['level'] ) ?>" />
-                                        <input type="hidden" name="period"       value="<?= esc_attr( $combo['period'] ) ?>" />
-                                        <input type="hidden" name="subject"    value="<?= esc_attr( $combo['subject_display'] ) ?>" />
-                                        <input type="hidden" name="difficulty" value="<?= esc_attr( $combo['difficulty'] ) ?>" />
-                                        <button type="submit" class="button button-small">Generate</button>
-                                    </form>
-                                    <?php endif; ?>
-                                    <?php if ( $count > 0 ) : ?>
-                                        <button class="button button-small knowly-view-packages"
-                                            data-key="<?= esc_attr( $key ) ?>">View</button>
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                        </tr>
-
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
-
-                    <!-- Package Detail Drawer (hidden, populated via JS) -->
-                    <div id="knowly-package-drawer" style="display:none;padding:16px 20px;background:#f9fafb;border-top:1px solid #e5e7eb;">
-                        <div id="knowly-package-drawer-content"></div>
-                    </div>
+            <!-- ── QUEST CATALOGUE ────────────────────────────────────────── -->
+            <div id="knowly-tab-quests" class="knowly-pool-panel" style="display:none;border:1px solid #c3c4c7;border-top:none;padding:20px;background:#fff;">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+                    <button id="knowly-load-quests" class="button button-primary" <?= $railway_ok ? '' : 'disabled' ?>>
+                        ↓ Load Quest Catalogue
+                    </button>
+                    <span id="knowly-quest-summary-text" style="color:#666;font-size:13px;"></span>
                 </div>
-
-                <!-- ── SIDEBAR ──────────────────────────────────────────────── -->
-                <div style="display:flex;flex-direction:column;gap:16px;">
-
-                    <!-- Manual Upload -->
-                    <div class="knowly-settings-section">
-                        <h2>Manual Upload</h2>
-                        <p style="font-size:12px;color:#666;margin-bottom:8px;">
-                            Paste a raw Railway package JSON (with or without <code>answer_sheet</code>).
-                        </p>
-                        <form method="post" action="<?= esc_url( admin_url( 'admin-post.php' ) ) ?>">
-                            <?php wp_nonce_field( 'knowly_pool_upload', 'knowly_upload_nonce' ); ?>
-                            <input type="hidden" name="action" value="knowly_pool_upload" />
-                            <textarea name="knowly_package_json" rows="8" class="large-text"
-                                style="font-family:monospace;font-size:11px;"
-                                placeholder='{"package_id":"pkg-...","meta":{...},"questions":[...]}'></textarea>
-                            <button type="submit" class="button button-primary" style="margin-top:8px;width:100%;">
-                                Add to Pool
-                            </button>
-                        </form>
+                <div id="knowly-quest-results">
+                    <p style="color:#888;">Click "Load Quest Catalogue" to fetch approved quests from Railway.</p>
+                </div>
+                <div style="margin-top:20px;padding:16px;background:#f6f7f7;border-radius:4px;border:1px solid #e5e7eb;">
+                    <h3 style="margin:0 0 12px;">Generate Quest</h3>
+                    <p style="font-size:12px;color:#666;margin:0 0 10px;">Generate a new quest and store it as approved. Requires Railway server key.</p>
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr) auto;gap:8px;align-items:end;">
+                        <label style="font-size:12px;">Level<br><input type="text" id="gen-quest-level" class="regular-text" placeholder="std_4" style="margin-top:4px;" /></label>
+                        <label style="font-size:12px;">Period<br><input type="text" id="gen-quest-period" class="regular-text" placeholder="term_1 or blank" style="margin-top:4px;" /></label>
+                        <label style="font-size:12px;">Subject<br><input type="text" id="gen-quest-subject" class="regular-text" placeholder="math" style="margin-top:4px;" /></label>
+                        <label style="font-size:12px;">Module Index (0-based)<br><input type="number" id="gen-quest-module-index" class="regular-text" value="0" min="0" style="margin-top:4px;" /></label>
+                        <button id="knowly-generate-quest" class="button button-primary" style="height:30px;align-self:end;" <?= ( $railway_ok && $server_key ) ? '' : 'disabled' ?>>Generate</button>
                     </div>
-
-                    <!-- Railway Live Catalogue -->
-                    <?php if ( $railway_ok ) : ?>
-                    <div class="knowly-settings-section">
-                        <h2>Railway Catalogue</h2>
-                        <p style="font-size:12px;color:#666;margin-bottom:10px;">
-                            Live availability from Railway server.
-                        </p>
-                        <button id="knowly-load-railway-catalogue" class="button" style="width:100%;">
-                            Load Live Catalogue
-                        </button>
-                        <div id="knowly-railway-catalogue-result" style="margin-top:10px;font-size:12px;"></div>
-                    </div>
-                    <?php endif; ?>
-
-                    <!-- Pool Health -->
-                    <div class="knowly-settings-section">
-                        <h2>Quick Stats</h2>
-                        <?php
-                        $by_difficulty = $wpdb->get_results(
-                            "SELECT difficulty, COUNT(*) as cnt FROM {$pool_table} GROUP BY difficulty",
-                            ARRAY_A
-                        ) ?: [];
-                        $by_standard = $wpdb->get_results(
-                            "SELECT standard, COUNT(*) as cnt FROM {$pool_table} GROUP BY standard ORDER BY standard",
-                            ARRAY_A
-                        ) ?: [];
-                        ?>
-                        <table style="width:100%;font-size:12px;border-collapse:collapse;">
-                            <tr style="background:#f6f7f7;"><th style="padding:4px 6px;text-align:left;">Difficulty</th><th style="text-align:right;padding:4px 6px;">Packages</th></tr>
-                            <?php foreach ( $by_difficulty as $d ) : ?>
-                            <tr style="border-bottom:1px solid #f0f0f0;">
-                                <td style="padding:4px 6px;"><?= esc_html( ucfirst( $d['difficulty'] ) ) ?></td>
-                                <td style="text-align:right;padding:4px 6px;font-weight:600;"><?= esc_html( $d['cnt'] ) ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </table>
-                        <table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:12px;">
-                            <tr style="background:#f6f7f7;"><th style="padding:4px 6px;text-align:left;">Standard</th><th style="text-align:right;padding:4px 6px;">Packages</th></tr>
-                            <?php foreach ( $by_standard as $s ) : ?>
-                            <tr style="border-bottom:1px solid #f0f0f0;">
-                                <td style="padding:4px 6px;"><?= esc_html( strtoupper( $s['level'] ) ) ?></td>
-                                <td style="text-align:right;padding:4px 6px;font-weight:600;"><?= esc_html( $s['cnt'] ) ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </table>
-
-                        <hr style="margin:12px 0;" />
-                        <p style="font-size:12px;color:#666;margin:0 0 8px;">
-                            Last pool sync: <strong><?= esc_html( get_option( 'knowly_last_pool_sync', 'Never' ) ) ?></strong>
-                        </p>
-                        <a href="<?= esc_url( rest_url( KNOWLY_REST_NAMESPACE . '/exams' ) . '?_wpnonce=' . wp_create_nonce( 'wp_rest' ) ) ?>"
-                           target="_blank" class="button button-small" style="width:100%;text-align:center;box-sizing:border-box;">
-                            Test GET /exams →
-                        </a>
-                    </div>
-
+                    <div id="knowly-quest-gen-result" style="margin-top:10px;font-size:13px;"></div>
                 </div>
             </div>
 
-            <!-- Package Detail Modal (populated by AJAX) -->
-            <div id="knowly-package-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow:auto;">
-                <div style="background:#fff;max-width:900px;margin:40px auto;border-radius:8px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-                    <div style="padding:16px 20px;background:#f6f7f7;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
-                        <h2 id="knowly-modal-title" style="margin:0;font-size:15px;">Package Detail</h2>
+            <!-- ── REVIEW QUEUE ───────────────────────────────────────────── -->
+            <div id="knowly-tab-review" class="knowly-pool-panel" style="display:none;border:1px solid #c3c4c7;border-top:none;padding:20px;background:#fff;">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                    <button id="knowly-load-review" class="button button-primary" <?= $railway_ok ? '' : 'disabled' ?>>
+                        ↓ Load Review Queue
+                    </button>
+                    <span id="knowly-review-summary-text" style="color:#666;font-size:13px;"></span>
+                </div>
+                <p style="font-size:13px;color:#666;margin-bottom:16px;">
+                    These packages were generated via the Editor (<code>force_generate: true</code>). Review the content, then approve or reject.
+                    Approved packages enter the pool immediately. Rejected packages are excluded from delivery.
+                </p>
+                <div id="knowly-review-results">
+                    <p style="color:#888;">Click "Load Review Queue" to fetch pending packages from Railway.</p>
+                </div>
+            </div>
+
+            <!-- Package detail modal -->
+            <div id="knowly-pkg-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow:auto;">
+                <div style="background:#fff;max-width:940px;margin:40px auto;border-radius:8px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+                    <div style="padding:14px 20px;background:#f6f7f7;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
+                        <h2 id="knowly-modal-title" style="margin:0;font-size:15px;"></h2>
                         <button id="knowly-modal-close" class="button">✕ Close</button>
                     </div>
-                    <div id="knowly-modal-body" style="padding:20px;max-height:70vh;overflow:auto;"></div>
+                    <div id="knowly-modal-body" style="padding:20px;max-height:72vh;overflow:auto;font-size:13px;"></div>
                 </div>
             </div>
+
         </div>
 
         <script>
-        ( function($) {
-            // Filter table
-            $('#knowly-pool-filter').on('input', function() {
-                var q = $(this).val().toLowerCase();
-                $('.knowly-pool-row').each(function() {
-                    $(this).toggle( !q || $(this).data('subject').indexOf(q) >= 0 );
-                });
+        (function($) {
+            var nonce = '<?= esc_js( $nonce ) ?>';
+            var ajaxUrl = '<?= esc_js( admin_url( 'admin-ajax.php' ) ) ?>';
+
+            // ── Tab switching ─────────────────────────────────────────────────
+            $('.knowly-pool-tab').on('click', function() {
+                var tab = $(this).data('tab');
+                $('.knowly-pool-tab').css({ background: '#f6f7f7', color: '', fontWeight: '', borderBottom: 'none' });
+                $(this).css({ background: '#fff', color: '#2271b1', fontWeight: '600', borderBottom: '2px solid #2271b1', marginBottom: '-2px' });
+                $('.knowly-pool-panel').hide();
+                $('#knowly-tab-' + tab).show();
             });
 
-            // View packages — fetch and show modal
-            $(document).on('click', '.knowly-view-packages', function() {
-                var key = $(this).data('key');
-                var parts = key.split('|');
+            // ── Trial inventory ───────────────────────────────────────────────
+            $('#knowly-load-trials').on('click', function() {
                 var $btn = $(this).prop('disabled', true).text('Loading…');
-
-                $.post(ajaxurl, {
-                    action: 'knowly_pool_packages',
-                    nonce: '<?= wp_create_nonce( 'knowly_admin_nonce' ) ?>',
-                    standard: parts[0],
-                    term: parts[1],
-                    subject: parts[2],
-                    difficulty: parts[3]
-                }, function(res) {
-                    $btn.prop('disabled', false).text('View');
-                    if (res.success) {
-                        renderModal(parts[2] + ' — ' + parts[3] + ' (' + parts[0].toUpperCase() + ' ' + parts[1].toUpperCase() + ')', res.data.html);
-                    } else {
-                        alert('Failed to load packages.');
-                    }
+                $.post(ajaxUrl, { action: 'knowly_pool_trial_summary', nonce: nonce }, function(res) {
+                    $btn.prop('disabled', false).text('↓ Load Trial Pool Inventory');
+                    if (!res.success) { $('#knowly-trial-results').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown error') + '</p>'); return; }
+                    renderTrialTable(res.data);
                 });
             });
 
-            // Close modal
-            $('#knowly-modal-close').on('click', function() { $('#knowly-package-modal').hide(); });
-            $('#knowly-package-modal').on('click', function(e) { if ($(e.target).is(this)) $(this).hide(); });
+            $('#knowly-trial-filter').on('input', function() {
+                var q = $(this).val().toLowerCase();
+                $('#knowly-trial-results tbody tr').each(function() {
+                    $(this).toggle(!q || $(this).text().toLowerCase().indexOf(q) >= 0);
+                });
+            });
 
-            function renderModal(title, html) {
-                $('#knowly-modal-title').text(title);
-                $('#knowly-modal-body').html(html);
-                $('#knowly-package-modal').show();
+            function renderTrialTable(data) {
+                var slots = data.slots || [];
+                $('#knowly-trial-summary-text').text(data.total_packages + ' packages across ' + data.slot_count + ' slots');
+                if (!slots.length) { $('#knowly-trial-results').html('<p style="color:#666;">No approved trial packages found.</p>'); return; }
+
+                var html = '<table class="knowly-table widefat" style="font-size:12px;">';
+                html += '<thead><tr><th>Level</th><th>Period</th><th>Subject</th><th>Difficulty</th><th>Count</th><th>Served</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+                $.each(slots, function(i, s) {
+                    var status = s.count === 0 ? '<span style="color:#dc2626;font-weight:600;">Empty</span>'
+                               : s.count < 3  ? '<span style="color:#d97706;font-weight:600;">Low</span>'
+                               : '<span style="color:#16a34a;font-weight:600;">Ready</span>';
+                    html += '<tr>'
+                        + '<td>' + s.level + '</td>'
+                        + '<td>' + (s.period || '<em>SEA</em>') + '</td>'
+                        + '<td><strong>' + s.subject + '</strong></td>'
+                        + '<td>' + (s.difficulty || '—') + '</td>'
+                        + '<td style="text-align:center;font-weight:600;">' + s.count + '</td>'
+                        + '<td style="text-align:center;color:#888;">' + s.total_served + '</td>'
+                        + '<td>' + status + '</td>'
+                        + '<td style="white-space:nowrap;">'
+                        + '<button class="button button-small knowly-view-slot" data-level="' + s.level + '" data-period="' + (s.period||'') + '" data-subject="' + s.subject + '" data-difficulty="' + (s.difficulty||'') + '" style="margin-right:4px;">View</button>'
+                        + '<button class="button button-small knowly-gen-trial" data-level="' + s.level + '" data-period="' + (s.period||'') + '" data-subject="' + s.subject + '" data-difficulty="' + (s.difficulty||'') + '">Generate</button>'
+                        + '</td></tr>';
+                });
+                html += '</tbody></table>';
+                $('#knowly-trial-results').html(html);
             }
 
-            // Load Railway catalogue
-            $('#knowly-load-railway-catalogue').on('click', function() {
-                var $btn = $(this).prop('disabled', true).text('Loading…');
-                var $result = $('#knowly-railway-catalogue-result');
-
-                $.post(ajaxurl, {
-                    action: 'knowly_railway_catalogue',
-                    nonce: '<?= wp_create_nonce( 'knowly_admin_nonce' ) ?>'
+            $(document).on('click', '.knowly-view-slot', function() {
+                var $btn = $(this).prop('disabled', true).text('…');
+                var level = $(this).data('level'), period = $(this).data('period'),
+                    subject = $(this).data('subject'), diff = $(this).data('difficulty');
+                $.post(ajaxUrl, {
+                    action: 'knowly_pool_trial_packages', nonce: nonce,
+                    level: level, period: period, subject: subject, difficulty: diff
                 }, function(res) {
-                    $btn.prop('disabled', false).text('Load Live Catalogue');
+                    $btn.prop('disabled', false).text('View');
+                    if (res.success) openModal(subject + ' ' + diff + ' (' + level + '/' + period + ')', res.data.html);
+                    else openModal('Error', '<p style="color:#dc2626;">' + (res.data.message || 'Failed') + '</p>');
+                });
+            });
+
+            $(document).on('click', '.knowly-gen-trial', function() {
+                var $btn = $(this).prop('disabled', true).text('Generating…');
+                var level = $(this).data('level'), period = $(this).data('period'),
+                    subject = $(this).data('subject'), diff = $(this).data('difficulty');
+                $.post(ajaxUrl, {
+                    action: 'knowly_pool_generate_trial', nonce: nonce,
+                    level: level, period: period, subject: subject, difficulty: diff
+                }, function(res) {
+                    $btn.prop('disabled', false).text('Generate');
+                    if (res.success) alert('Generated: ' + res.data.package_id);
+                    else alert('Error: ' + (res.data.message || 'Failed'));
+                });
+            });
+
+            // ── Quest catalogue ───────────────────────────────────────────────
+            $('#knowly-load-quests').on('click', function() {
+                var $btn = $(this).prop('disabled', true).text('Loading…');
+                $.post(ajaxUrl, { action: 'knowly_pool_quest_catalogue', nonce: nonce }, function(res) {
+                    $btn.prop('disabled', false).text('↓ Load Quest Catalogue');
+                    if (!res.success) { $('#knowly-quest-results').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown error') + '</p>'); return; }
+                    renderQuestTable(res.data);
+                });
+            });
+
+            function renderQuestTable(data) {
+                var quests = data.quests || [];
+                $('#knowly-quest-summary-text').text(quests.length + ' approved quest(s)');
+                if (!quests.length) {
+                    $('#knowly-quest-results').html('<p style="color:#666;">No approved quests found. Generate some using the form below.</p>');
+                    return;
+                }
+                var html = '<table class="knowly-table widefat" style="font-size:12px;">';
+                html += '<thead><tr><th>Quest ID</th><th>Level</th><th>Period</th><th>Subject</th><th>Module</th><th>Topic</th><th>Generated</th></tr></thead><tbody>';
+                $.each(quests, function(i, q) {
+                    html += '<tr>'
+                        + '<td style="font-family:monospace;">' + q.quest_id + '</td>'
+                        + '<td>' + (q.level||'') + '</td>'
+                        + '<td>' + (q.period||'<em>capstone</em>') + '</td>'
+                        + '<td><strong>' + (q.subject||'') + '</strong></td>'
+                        + '<td>' + (q.module_number != null ? q.module_number : '—') + '</td>'
+                        + '<td>' + (q.topic||q.module_title||'—') + '</td>'
+                        + '<td>' + (q.generated_at ? q.generated_at.slice(0,10) : '—') + '</td>'
+                        + '</tr>';
+                });
+                html += '</tbody></table>';
+                $('#knowly-quest-results').html(html);
+            }
+
+            $('#knowly-generate-quest').on('click', function() {
+                var level = $('#gen-quest-level').val().trim();
+                var period = $('#gen-quest-period').val().trim();
+                var subject = $('#gen-quest-subject').val().trim();
+                var moduleIndex = parseInt($('#gen-quest-module-index').val(), 10);
+                if (!level || !subject) { alert('Level and Subject are required.'); return; }
+
+                var $btn = $(this).prop('disabled', true).text('Generating…');
+                var $result = $('#knowly-quest-gen-result');
+                $result.html('<em>Generating… this may take 10–20 seconds.</em>');
+
+                $.post(ajaxUrl, {
+                    action: 'knowly_pool_generate_quest', nonce: nonce,
+                    level: level, period: period, subject: subject, module_index: moduleIndex
+                }, function(res) {
+                    $btn.prop('disabled', false).text('Generate');
                     if (res.success) {
-                        var html = '<table style="width:100%;border-collapse:collapse;">';
-                        html += '<tr style="background:#f6f7f7;font-weight:600;"><td style="padding:3px 6px;">Slot</td><td style="padding:3px 6px;text-align:right;">Count</td></tr>';
-                        $.each(res.data.catalogue, function(i, row) {
-                            var color = row.available_count > 0 ? '#16a34a' : '#dc2626';
-                            html += '<tr style="border-bottom:1px solid #f0f0f0;">';
-                            html += '<td style="padding:3px 6px;font-size:11px;">' + row.subject + ' ' + row.difficulty + ' ' + (row.standard || '') + '</td>';
-                            html += '<td style="padding:3px 6px;text-align:right;font-weight:600;color:' + color + ';">' + row.available_count + '</td>';
-                            html += '</tr>';
-                        });
-                        html += '</table>';
-                        $result.html(html);
+                        $result.html('<span style="color:#16a34a;">✓ Generated: <strong>' + res.data.quest_id + '</strong> (status: ' + res.data.status + ')</span>');
                     } else {
-                        $result.html('<p style="color:#dc2626;">Failed: ' + (res.data.message || 'Unknown error') + '</p>');
+                        $result.html('<span style="color:#dc2626;">✗ ' + (res.data.message || 'Generation failed') + '</span>');
                     }
                 });
             });
+
+            // ── Review queue ──────────────────────────────────────────────────
+            $('#knowly-load-review').on('click', function() {
+                var $btn = $(this).prop('disabled', true).text('Loading…');
+                $.post(ajaxUrl, { action: 'knowly_pool_review_queue', nonce: nonce }, function(res) {
+                    $btn.prop('disabled', false).text('↓ Load Review Queue');
+                    if (!res.success) { $('#knowly-review-results').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown error') + '</p>'); return; }
+                    renderReviewQueue(res.data);
+                });
+            });
+
+            function renderReviewQueue(data) {
+                var packages = data.packages || [];
+                $('#knowly-review-summary-text').text(packages.length + ' package(s) pending review');
+                if (!packages.length) { $('#knowly-review-results').html('<p style="color:#666;">No packages pending review.</p>'); return; }
+
+                var html = '<table class="knowly-table widefat" style="font-size:12px;">';
+                html += '<thead><tr><th>Package ID</th><th>Level</th><th>Period</th><th>Subject</th><th>Difficulty</th><th>Type</th><th>Actions</th></tr></thead><tbody>';
+                $.each(packages, function(i, pkg) {
+                    var meta = pkg.meta || {};
+                    var pid  = pkg.package_id || '—';
+                    html += '<tr id="review-row-' + pid.replace(/[^a-z0-9]/gi, '_') + '">'
+                        + '<td style="font-family:monospace;">' + pid + '</td>'
+                        + '<td>' + (meta.level||'') + '</td>'
+                        + '<td>' + (meta.period||'<em>SEA</em>') + '</td>'
+                        + '<td><strong>' + (meta.subject||'') + '</strong></td>'
+                        + '<td>' + (meta.difficulty||'—') + '</td>'
+                        + '<td>' + (meta.trial_type||'practice') + '</td>'
+                        + '<td style="white-space:nowrap;">'
+                        + '<button class="button button-small" style="color:#16a34a;margin-right:4px;" onclick="knowlyApprove(\'' + pid + '\',\'approve\',this)">✓ Approve</button>'
+                        + '<button class="button button-small" style="color:#dc2626;" onclick="knowlyApprove(\'' + pid + '\',\'reject\',this)">✗ Reject</button>'
+                        + '</td></tr>';
+                });
+                html += '</tbody></table>';
+                $('#knowly-review-results').html(html);
+            }
+
+            window.knowlyApprove = function(packageId, action, btn) {
+                if (!confirm((action === 'approve' ? 'Approve' : 'Reject') + ' package ' + packageId + '?')) return;
+                $(btn).prop('disabled', true);
+                $.post(ajaxUrl, { action: 'knowly_pool_approve_package', nonce: nonce, package_id: packageId, approve_action: action }, function(res) {
+                    if (res.success) {
+                        var rowId = '#review-row-' + packageId.replace(/[^a-z0-9]/gi, '_');
+                        $(rowId).html('<td colspan="7" style="color:' + (action === 'approve' ? '#16a34a' : '#dc2626') + ';padding:8px 12px;">'
+                            + (action === 'approve' ? '✓ Approved' : '✗ Rejected') + ' — ' + packageId + '</td>');
+                    } else {
+                        alert('Error: ' + (res.data.message || 'Failed'));
+                        $(btn).prop('disabled', false);
+                    }
+                });
+            };
+
+            // ── Modal ─────────────────────────────────────────────────────────
+            function openModal(title, html) {
+                $('#knowly-modal-title').text(title);
+                $('#knowly-modal-body').html(html);
+                $('#knowly-pkg-modal').show();
+            }
+            $('#knowly-modal-close').on('click', function() { $('#knowly-pkg-modal').hide(); });
+            $('#knowly-pkg-modal').on('click', function(e) { if ($(e.target).is(this)) $(this).hide(); });
+
         })(jQuery);
         </script>
         <?php
     }
 
-    // ── Action Handlers ───────────────────────────────────────────────────────
+    // ── AJAX: Trial Summary ───────────────────────────────────────────────────
 
-    public static function handle_sync(): void {
-        check_admin_referer( 'knowly_pool_sync', 'knowly_sync_nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden' );
-
-        Knowly_Debug::log( 'admin.pool', 'Full sync triggered from admin', [], null, 'info' );
-
-        $result = self::sync_from_railway();
-
-        if ( is_wp_error( $result ) ) {
-            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&sync_error=' . urlencode( $result->get_error_message() ) ) );
-        } else {
-            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&synced=' . urlencode( wp_json_encode( $result ) ) ) );
-        }
-        exit;
-    }
-
-    public static function handle_generate(): void {
-        check_admin_referer( 'knowly_pool_generate', 'knowly_gen_nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden' );
-
-        $level   = sanitize_text_field( $_POST['level']   ?? '' );
-        $period       = sanitize_text_field( $_POST['period']       ?? '' );
-        $subject    = sanitize_text_field( $_POST['subject']    ?? '' );
-        $difficulty = sanitize_text_field( $_POST['difficulty'] ?? '' );
-
-        Knowly_Debug::log( 'admin.pool', 'Generate triggered from admin', [
-            'level'     => $level,
-            'period'   => $period,
-            'subject'    => $subject,
-            'difficulty' => $difficulty,
-        ], null, 'info' );
-
-        // Get existing package IDs to exclude from Railway
-        global $wpdb;
-        $seen = $wpdb->get_col( $wpdb->prepare(
-            "SELECT package_id FROM {$wpdb->prefix}knowly_exam_pool
-             WHERE standard=%s AND term=%s AND subject=%s AND difficulty=%s",
-            $level, $period, $subject, $difficulty
-        ) ) ?: [];
-
-        $package = Knowly_Exam_Service::fetch_from_railway( $level, $period, $subject, $difficulty, $seen );
-
-        if ( is_wp_error( $package ) ) {
-            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&gen_error=' . urlencode( $package->get_error_message() ) ) );
-        } else {
-            // Store in pool
-            self::store_package( $package, $level, $period, $subject, $difficulty );
-            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&generated=' . urlencode( $package['package_id'] ?? 'ok' ) ) );
-        }
-        exit;
-    }
-
-    public static function handle_upload(): void {
-        check_admin_referer( 'knowly_pool_upload', 'knowly_upload_nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden' );
-
-        $json = wp_unslash( $_POST['knowly_package_json'] ?? '' );
-        if ( ! trim( $json ) ) {
-            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&upload_error=' . urlencode( 'No JSON provided.' ) ) );
-            exit;
-        }
-
-        $pkg = json_decode( $json, true );
-        if ( ! $pkg || empty( $pkg['package_id'] ) ) {
-            wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&upload_error=' . urlencode( 'Invalid JSON or missing package_id.' ) ) );
-            exit;
-        }
-
-        $meta     = $pkg['meta'] ?? [];
-        $level = sanitize_text_field( $meta['level'] ?? '' );
-        $period     = sanitize_text_field( $meta['period']     ?? '' );
-        $subject  = sanitize_text_field( $meta['subject']  ?? '' );
-        $diff     = sanitize_text_field( $meta['difficulty'] ?? 'medium' );
-
-        // Map Railway subject slug back to display name
-        $subject_display = self::subject_to_display( $subject );
-
-        self::store_package( $pkg, $level, $period, $subject_display, $diff );
-
-        Knowly_Debug::log( 'admin.pool', 'Package uploaded via admin', [
-            'package_id' => $pkg['package_id'],
-            'level'     => $level,
-            'subject'    => $subject_display,
-        ], null, 'info' );
-
-        wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&uploaded=' . urlencode( $pkg['package_id'] ) ) );
-        exit;
-    }
-
-    public static function handle_delete(): void {
-        check_admin_referer( 'knowly_pool_delete', 'knowly_del_nonce' );
-        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden' );
-
-        $pool_id = (int) ( $_POST['pool_id'] ?? 0 );
-        if ( ! $pool_id ) wp_die( 'Invalid pool_id' );
-
-        global $wpdb;
-        $wpdb->delete( $wpdb->prefix . 'knowly_exam_pool', [ 'pool_id' => $pool_id ], [ '%d' ] );
-
-        Knowly_Debug::log( 'admin.pool', 'Package deleted from pool', [ 'pool_id' => $pool_id ], null, 'info' );
-        wp_safe_redirect( admin_url( 'admin.php?page=knowly-pool&deleted=1' ) );
-        exit;
-    }
-
-    // ── AJAX handlers (registered in Knowly_Admin) ──────────────────────────────
-
-    public static function handle_ajax_packages(): void {
+    public static function ajax_trial_summary(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        global $wpdb;
-        $level   = sanitize_text_field( $_POST['level']   ?? '' );
-        $period       = sanitize_text_field( $_POST['period']       ?? '' );
+        $data = self::railway_get( '/api/v1/pool/summary', [ 'status' => 'approved' ] );
+
+        if ( is_wp_error( $data ) ) {
+            wp_send_json_error( [ 'message' => $data->get_error_message() ] );
+        }
+
+        wp_send_json_success( $data );
+    }
+
+    // ── AJAX: Trial Packages (detail view for a slot) ─────────────────────────
+
+    public static function ajax_trial_packages(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $level      = sanitize_text_field( $_POST['level']      ?? '' );
+        $period     = sanitize_text_field( $_POST['period']     ?? '' );
         $subject    = sanitize_text_field( $_POST['subject']    ?? '' );
         $difficulty = sanitize_text_field( $_POST['difficulty'] ?? '' );
 
-        $rows = $wpdb->get_results( $wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}knowly_exam_pool
-             WHERE standard=%s AND term=%s AND subject=%s AND difficulty=%s
-             ORDER BY created_at DESC",
-            $level, $period, $subject, $difficulty
-        ), ARRAY_A ) ?: [];
+        $params = [ 'status' => 'approved', 'limit' => 20 ];
+        if ( $level )      $params['level']      = $level;
+        if ( $period )     $params['period']     = $period;
+        if ( $subject )    $params['subject']    = $subject;
+        if ( $difficulty ) $params['difficulty'] = $difficulty;
+
+        $data = self::railway_get( '/api/v1/pool', $params );
+
+        if ( is_wp_error( $data ) ) {
+            wp_send_json_error( [ 'message' => $data->get_error_message() ] );
+        }
+
+        $packages = $data['packages'] ?? [];
 
         ob_start();
-        self::render_package_list( $rows );
+        if ( empty( $packages ) ) {
+            echo '<p style="color:#666;">No packages found for this slot.</p>';
+        } else {
+            foreach ( $packages as $pkg ) {
+                $pid      = esc_html( $pkg['package_id'] ?? '—' );
+                $meta     = $pkg['meta'] ?? [];
+                $q_count  = count( $pkg['questions'] ?? [] );
+                $has_ans  = ! empty( $pkg['answer_sheet'] );
+                ?>
+                <div style="border:1px solid #e5e7eb;border-radius:4px;padding:12px 16px;margin-bottom:10px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <code style="font-size:12px;"><?= $pid ?></code>
+                        <div>
+                            <span style="font-size:11px;background:<?= $has_ans ? '#dcfce7' : '#fef3c7' ?>;color:<?= $has_ans ? '#16a34a' : '#d97706' ?>;padding:2px 6px;border-radius:3px;margin-right:6px;">
+                                <?= $has_ans ? '✓ Answer sheet' : '⚠ No answer sheet' ?>
+                            </span>
+                            <span style="font-size:11px;background:#f3f4f6;color:#374151;padding:2px 6px;border-radius:3px;">
+                                <?= esc_html( $q_count ) ?> questions
+                            </span>
+                        </div>
+                    </div>
+                    <table style="width:100%;font-size:11px;border-collapse:collapse;">
+                        <tr><td style="padding:2px 8px 2px 0;color:#888;">Subject</td><td style="font-weight:600;"><?= esc_html( $meta['subject'] ?? '—' ) ?></td>
+                            <td style="padding:2px 8px;color:#888;">Level</td><td><?= esc_html( $meta['level'] ?? '—' ) ?></td>
+                            <td style="padding:2px 8px;color:#888;">Period</td><td><?= esc_html( $meta['period'] ?? 'SEA' ) ?></td></tr>
+                        <tr><td style="padding:2px 8px 2px 0;color:#888;">Difficulty</td><td><?= esc_html( $meta['difficulty'] ?? '—' ) ?></td>
+                            <td style="padding:2px 8px;color:#888;">Type</td><td><?= esc_html( $meta['trial_type'] ?? 'practice' ) ?></td>
+                            <td style="padding:2px 8px;color:#888;">Topic</td><td><?= esc_html( $meta['topic'] ?? '—' ) ?></td></tr>
+                    </table>
+                </div>
+                <?php
+            }
+        }
         $html = ob_get_clean();
 
-        wp_send_json_success( [ 'html' => $html, 'count' => count( $rows ) ] );
+        wp_send_json_success( [ 'html' => $html, 'count' => count( $packages ), 'total' => $data['total'] ?? count( $packages ) ] );
     }
 
-    public static function handle_ajax_railway_catalogue(): void {
+    // ── AJAX: Quest Catalogue ─────────────────────────────────────────────────
+
+    public static function ajax_quest_catalogue(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $api_key  = get_option( 'knowly_railway_api_key', '' );
+        $admin_id = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        $token    = ! empty( $admin_id ) ? Knowly_JWT::encode( (int) $admin_id[0] ) : '';
+
+        if ( ! $token ) {
+            wp_send_json_error( [ 'message' => 'Could not generate admin token for Railway auth.' ] );
+        }
 
         $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
         if ( ! $endpoint ) {
             wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] );
         }
 
-        // GET /catalogue is public — no auth needed
-        $response = wp_remote_get( "{$endpoint}/catalogue", [ 'timeout' => 15 ] );
+        // Quest catalogue uses Bearer JWT auth (not server key)
+        $response = wp_remote_get( $endpoint . '/api/v1/quest/catalogue', [
+            'timeout' => 15,
+            'headers' => [
+                'Authorization' => "Bearer {$token}",
+                'Content-Type'  => 'application/json',
+            ],
+        ] );
 
         if ( is_wp_error( $response ) ) {
             wp_send_json_error( [ 'message' => $response->get_error_message() ] );
@@ -527,280 +474,237 @@ class Knowly_Admin_Pool {
         $code = wp_remote_retrieve_response_code( $response );
         $body = json_decode( wp_remote_retrieve_body( $response ), true );
 
-        if ( $code !== 200 || ! is_array( $body ) ) {
-            wp_send_json_error( [ 'message' => "Railway returned HTTP {$code}." ] );
+        if ( $code !== 200 ) {
+            wp_send_json_error( [ 'message' => "Railway returned HTTP {$code}: " . ( $body['error'] ?? '' ) ] );
         }
 
-        wp_send_json_success( [ 'catalogue' => $body ] );
+        wp_send_json_success( [
+            'quests' => $body['quests'] ?? [],
+            'count'  => $body['count']  ?? 0,
+        ] );
     }
 
-    // ── Sync Logic ────────────────────────────────────────────────────────────
+    // ── AJAX: Review Queue ────────────────────────────────────────────────────
 
-    private static function sync_from_railway(): array|WP_Error {
+    public static function ajax_review_queue(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $data = self::railway_get( '/api/v1/pool', [ 'status' => 'pending_review', 'limit' => 50 ] );
+
+        if ( is_wp_error( $data ) ) {
+            wp_send_json_error( [ 'message' => $data->get_error_message() ] );
+        }
+
+        wp_send_json_success( [
+            'packages' => $data['packages'] ?? [],
+            'total'    => $data['total']    ?? 0,
+        ] );
+    }
+
+    // ── AJAX: Generate Trial ──────────────────────────────────────────────────
+
+    public static function ajax_generate_trial(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $level      = sanitize_text_field( $_POST['level']      ?? '' );
+        $period     = sanitize_text_field( $_POST['period']     ?? '' );
+        $subject    = sanitize_text_field( $_POST['subject']    ?? '' );
+        $difficulty = sanitize_text_field( $_POST['difficulty'] ?? '' );
+
+        if ( ! $level || ! $subject || ! $difficulty ) {
+            wp_send_json_error( [ 'message' => 'level, subject, and difficulty are required.' ] );
+        }
+
+        $api_key  = get_option( 'knowly_railway_api_key', '' );
+        $admin_id = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        $token    = ! empty( $admin_id ) ? Knowly_JWT::encode( (int) $admin_id[0] ) : '';
+
+        $data = self::railway_post_token( '/api/v1/generate-exam', [
+            'user_id'        => 'admin_pool_gen',
+            'level'          => $level,
+            'period'         => $period ?: null,
+            'subject'        => $subject,
+            'difficulty'     => $difficulty,
+            'trial_type'     => 'practice',
+            'force_generate' => true,
+        ], $token );
+
+        if ( is_wp_error( $data ) ) {
+            wp_send_json_error( [ 'message' => $data->get_error_message() ] );
+        }
+
+        wp_send_json_success( [
+            'package_id' => $data['package_id'] ?? $data['session_id'] ?? 'ok',
+            'status'     => 'pending_review',
+        ] );
+    }
+
+    // ── AJAX: Generate Quest ──────────────────────────────────────────────────
+
+    public static function ajax_generate_quest(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $level        = sanitize_text_field( $_POST['level']        ?? '' );
+        $period       = sanitize_text_field( $_POST['period']       ?? '' );
+        $subject      = sanitize_text_field( $_POST['subject']      ?? '' );
+        $module_index = (int) ( $_POST['module_index'] ?? 0 );
+
+        if ( ! $level || ! $subject ) {
+            wp_send_json_error( [ 'message' => 'level and subject are required.' ] );
+        }
+
+        $data = self::railway_post( '/api/v1/quest/generate', [
+            'curriculum'   => 'tt_primary',
+            'level'        => $level,
+            'period'       => $period ?: null,
+            'subject'      => $subject,
+            'module_index' => $module_index,
+            'status'       => 'approved',
+        ] );
+
+        if ( is_wp_error( $data ) ) {
+            wp_send_json_error( [ 'message' => $data->get_error_message() ] );
+        }
+
+        wp_send_json_success( [
+            'quest_id' => $data['quest_id'] ?? '—',
+            'status'   => $data['status']   ?? 'approved',
+        ] );
+    }
+
+    // ── AJAX: Approve / Reject Package ────────────────────────────────────────
+
+    public static function ajax_approve_package(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $package_id     = sanitize_text_field( $_POST['package_id']     ?? '' );
+        $approve_action = sanitize_text_field( $_POST['approve_action'] ?? '' );
+
+        if ( ! $package_id || ! in_array( $approve_action, [ 'approve', 'reject' ], true ) ) {
+            wp_send_json_error( [ 'message' => 'package_id and approve_action (approve|reject) required.' ] );
+        }
+
+        $data = self::railway_patch( '/api/v1/pool/approve', [
+            'package_id' => $package_id,
+            'action'     => $approve_action,
+        ] );
+
+        if ( is_wp_error( $data ) ) {
+            wp_send_json_error( [ 'message' => $data->get_error_message() ] );
+        }
+
+        Knowly_Debug::log( 'admin.pool', 'Package ' . $approve_action . 'd', [
+            'package_id' => $package_id,
+            'new_status' => $data['status'] ?? '—',
+        ], null, 'info' );
+
+        wp_send_json_success( [ 'package_id' => $package_id, 'status' => $data['status'] ?? $approve_action . 'd' ] );
+    }
+
+    // ── Railway HTTP Helpers ──────────────────────────────────────────────────
+
+    private static function railway_get( string $path, array $params = [] ): array|WP_Error {
         $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
-        $api_key    = get_option( 'knowly_railway_api_key', '' );
         $server_key = get_option( 'knowly_railway_server_key', '' );
 
         if ( ! $endpoint ) {
             return new WP_Error( 'knowly_not_configured', 'Railway endpoint not configured.' );
         }
 
-        $added   = 0;
-        $skipped = 0;
-        $errors  = [];
-        $offset  = 0;
-        $limit   = 50;
+        $url = $endpoint . $path;
+        if ( ! empty( $params ) ) {
+            $url .= '?' . http_build_query( $params );
+        }
 
-        do {
-            Knowly_Debug::log( 'admin.pool.sync', 'Fetching pool page', [
-                'offset' => $offset,
-                'limit'  => $limit,
-            ], null, 'info' );
-
-            $headers = [
-                'Authorization' => "Bearer {$api_key}",
-            ];
-            if ( $server_key ) {
-                $headers['X-AEP-Server-Key'] = $server_key;
-            }
-
-            $response = wp_remote_get(
-                add_query_arg( [ 'status' => 'approved', 'limit' => $limit, 'offset' => $offset ], "{$endpoint}/pool" ),
-                [ 'timeout' => 30, 'headers' => $headers ]
-            );
-
-            if ( is_wp_error( $response ) ) {
-                return $response;
-            }
-
-            $code = wp_remote_retrieve_response_code( $response );
-            $body = json_decode( wp_remote_retrieve_body( $response ), true );
-
-            if ( $code !== 200 || empty( $body['packages'] ) ) {
-                break;
-            }
-
-            foreach ( $body['packages'] as $pkg ) {
-                if ( empty( $pkg['package_id'] ) ) continue;
-
-                $meta     = $pkg['meta'] ?? [];
-                $level = sanitize_text_field( $meta['level'] ?? '' );
-                $period     = sanitize_text_field( $meta['period']     ?? '' );
-                $subject  = self::subject_to_display( $meta['subject'] ?? '' );
-                $diff     = sanitize_text_field( $meta['difficulty'] ?? 'medium' );
-
-                $inserted = self::store_package( $pkg, $level, $period, $subject, $diff );
-                if ( $inserted ) {
-                    $added++;
-                } else {
-                    $skipped++;
-                }
-            }
-
-            $total_available = (int) ( $body['total'] ?? 0 );
-            $offset         += $limit;
-
-        } while ( $offset < $total_available );
-
-        update_option( 'knowly_last_pool_sync', current_time( 'mysql', true ) );
-
-        Knowly_Debug::log( 'admin.pool.sync', 'Railway sync complete', [
-            'added'   => $added,
-            'skipped' => $skipped,
-        ], null, 'info' );
-
-        return [
-            'added'   => $added,
-            'skipped' => $skipped,
-        ];
-    }
-
-    // ── Package Storage ───────────────────────────────────────────────────────
-
-    private static function store_package( array $pkg, string $level, string $period, string $subject, string $difficulty ): bool {
-        global $wpdb;
-
-        $package_id = sanitize_text_field( $pkg['package_id'] ?? '' );
-        if ( ! $package_id ) return false;
-
-        // Skip if already exists
-        $exists = $wpdb->get_var( $wpdb->prepare(
-            "SELECT pool_id FROM {$wpdb->prefix}knowly_exam_pool WHERE package_id = %s",
-            $package_id
-        ) );
-        if ( $exists ) return false;
-
-        $wpdb->insert(
-            $wpdb->prefix . 'knowly_exam_pool',
-            [
-                'package_id'   => $package_id,
-                'level'     => $level,
-                'period'   => $period,
-                'subject'      => $subject,
-                'difficulty'   => in_array( $difficulty, [ 'easy', 'medium', 'hard' ], true ) ? $difficulty : 'medium',
-                'package_json' => wp_json_encode( $pkg ),
-                'created_at'   => current_time( 'mysql', true ),
+        $response = wp_remote_get( $url, [
+            'timeout' => 20,
+            'headers' => [
+                'X-AEP-Server-Key' => $server_key,
+                'Content-Type'     => 'application/json',
             ],
-            [ '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
-        );
+        ] );
 
-        return (bool) $wpdb->insert_id;
+        return self::parse_response( $response );
     }
 
-    // ── Package List HTML (for modal) ─────────────────────────────────────────
+    private static function railway_post( string $path, array $body ): array|WP_Error {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
 
-    private static function render_package_list( array $rows ): void {
-        if ( empty( $rows ) ) {
-            echo '<p style="color:#888;">No packages found.</p>';
-            return;
-        }
-        foreach ( $rows as $row ) :
-            $pkg          = json_decode( $row['package_json'], true ) ?? [];
-            $questions    = $pkg['questions'] ?? [];
-            $has_answers  = ! empty( $pkg['answer_sheet'] );
-            $topics       = $pkg['meta']['topics_covered'] ?? [];
-        ?>
-        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:14px;margin-bottom:12px;">
-            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
-                <code style="font-size:11px;background:#f0f0f0;padding:2px 6px;border-radius:3px;"><?= esc_html( $row['package_id'] ) ?></code>
-                <span style="font-size:11px;color:#666;">Created: <?= esc_html( $row['created_at'] ) ?></span>
-                <span style="font-size:11px;color:#666;">Served: <?= esc_html( $row['times_served'] ) ?>×</span>
-                <span style="font-size:11px;font-weight:600;color:<?= $has_answers ? '#16a34a' : '#dc2626' ?>;">
-                    <?= $has_answers ? '✓ Answer sheet present' : '✗ No answer sheet' ?>
-                </span>
-                <?php if ( $topics ) : ?>
-                <span style="font-size:11px;color:#666;">Topics: <?= esc_html( implode( ', ', (array) $topics ) ) ?></span>
-                <?php endif; ?>
-            </div>
-
-            <?php if ( ! empty( $questions ) ) : ?>
-            <details>
-                <summary style="cursor:pointer;font-size:12px;color:#2563eb;user-select:none;">
-                    ▶ <?= count( $questions ) ?> questions
-                </summary>
-                <table class="knowly-table" style="margin-top:8px;font-size:11px;">
-                    <thead>
-                        <tr><th>ID</th><th>Topic</th><th>Subtopic</th><th>Level</th><th>Answer</th></tr>
-                    </thead>
-                    <tbody>
-                    <?php foreach ( $questions as $q ) : ?>
-                        <tr>
-                            <td><code><?= esc_html( $q['question_id'] ?? '?' ) ?></code></td>
-                            <td><?= esc_html( $q['meta']['topic'] ?? '' ) ?></td>
-                            <td style="color:#888;"><?= esc_html( $q['meta']['subtopic'] ?? '' ) ?></td>
-                            <td><?= esc_html( $q['meta']['cognitive_level'] ?? '' ) ?></td>
-                            <td style="font-weight:700;color:#16a34a;"><?= esc_html( $q['correct_answer'] ?? '' ) ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </details>
-            <?php endif; ?>
-
-            <!-- Delete button -->
-            <form method="post" action="<?= esc_url( admin_url( 'admin-post.php' ) ) ?>" style="margin-top:10px;">
-                <?php wp_nonce_field( 'knowly_pool_delete', 'knowly_del_nonce' ); ?>
-                <input type="hidden" name="action"  value="knowly_pool_delete" />
-                <input type="hidden" name="pool_id" value="<?= esc_attr( $row['pool_id'] ) ?>" />
-                <button type="submit" class="button button-small"
-                    onclick="return confirm('Delete this package from the pool?')"
-                    style="color:#dc2626;border-color:#dc2626;">
-                    Delete Package
-                </button>
-            </form>
-        </div>
-        <?php
-        endforeach;
-    }
-
-    // ── Notices ───────────────────────────────────────────────────────────────
-
-    private static function render_notices(): void {
-        if ( isset( $_GET['synced'] ) ) :
-            $r = json_decode( urldecode( $_GET['synced'] ), true );
-        ?>
-            <div class="notice notice-success is-dismissible">
-                <p>Sync complete — <strong><?= (int) ( $r['added'] ?? 0 ) ?> added</strong>, <?= (int) ( $r['skipped'] ?? 0 ) ?> already in pool.</p>
-            </div>
-        <?php elseif ( isset( $_GET['sync_error'] ) ) : ?>
-            <div class="notice notice-error is-dismissible"><p>Sync failed: <?= esc_html( urldecode( $_GET['sync_error'] ) ) ?></p></div>
-        <?php elseif ( isset( $_GET['generated'] ) ) : ?>
-            <div class="notice notice-success is-dismissible"><p>Package generated: <code><?= esc_html( urldecode( $_GET['generated'] ) ) ?></code></p></div>
-        <?php elseif ( isset( $_GET['gen_error'] ) ) : ?>
-            <div class="notice notice-error is-dismissible"><p>Generation failed: <?= esc_html( urldecode( $_GET['gen_error'] ) ) ?></p></div>
-        <?php elseif ( isset( $_GET['uploaded'] ) ) : ?>
-            <div class="notice notice-success is-dismissible"><p>Package uploaded: <code><?= esc_html( urldecode( $_GET['uploaded'] ) ) ?></code></p></div>
-        <?php elseif ( isset( $_GET['upload_error'] ) ) : ?>
-            <div class="notice notice-error is-dismissible"><p>Upload failed: <?= esc_html( urldecode( $_GET['upload_error'] ) ) ?></p></div>
-        <?php elseif ( isset( $_GET['deleted'] ) ) : ?>
-            <div class="notice notice-success is-dismissible"><p>Package removed from pool.</p></div>
-        <?php endif;
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /**
-     * All 48 valid curriculum combinations.
-     * Std4: 4 subjects × 3 terms × 3 difficulties = 36
-     * Std5: 4 subjects × 3 difficulties            = 12
-     */
-    public static function get_all_combinations(): array {
-        $combinations = [];
-        $subjects     = [
-            'math'          => 'Mathematics',
-            'english'       => 'English Language Arts',
-            'science'       => 'Science',
-            'social_studies' => 'Social Studies',
-        ];
-        $difficulties = [ 'easy', 'medium', 'hard' ];
-
-        // Std 4 — term-scoped
-        foreach ( [ 'term_1', 'term_2', 'term_3' ] as $period ) {
-            foreach ( $subjects as $slug => $display ) {
-                foreach ( $difficulties as $diff ) {
-                    $combinations[] = [
-                        'level'     => 'std_4',
-                        'period'   => $period,
-                        'subject'         => $slug,
-                        'subject_display' => $display,
-                        'difficulty'      => $diff,
-                    ];
-                }
-            }
+        if ( ! $endpoint ) {
+            return new WP_Error( 'knowly_not_configured', 'Railway endpoint not configured.' );
         }
 
-        // Std 5 — SEA prep, no term
-        foreach ( $subjects as $slug => $display ) {
-            foreach ( $difficulties as $diff ) {
-                $combinations[] = [
-                    'level'     => 'std_5',
-                    'period'   => '',
-                    'subject'         => $slug,
-                    'subject_display' => $display,
-                    'difficulty'      => $diff,
-                ];
-            }
+        $response = wp_remote_post( $endpoint . $path, [
+            'timeout' => 30,
+            'headers' => [
+                'X-AEP-Server-Key' => $server_key,
+                'Content-Type'     => 'application/json',
+            ],
+            'body'    => wp_json_encode( $body ),
+        ] );
+
+        return self::parse_response( $response );
+    }
+
+    private static function railway_post_token( string $path, array $body, string $token ): array|WP_Error {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            return new WP_Error( 'knowly_not_configured', 'Railway endpoint not configured.' );
         }
 
-        return $combinations;
+        $response = wp_remote_post( $endpoint . $path, [
+            'timeout' => 30,
+            'headers' => [
+                'Authorization'    => "Bearer {$token}",
+                'X-AEP-Server-Key' => $server_key,
+                'Content-Type'     => 'application/json',
+            ],
+            'body'    => wp_json_encode( $body ),
+        ] );
+
+        return self::parse_response( $response );
     }
 
-    private static function subject_to_display( string $slug ): string {
-        return match ( strtolower( $slug ) ) {
-            'math'           => 'Mathematics',
-            'english'        => 'English Language Arts',
-            'science'        => 'Science',
-            'social_studies' => 'Social Studies',
-            default          => ucwords( str_replace( '_', ' ', $slug ) ),
-        };
+    private static function railway_patch( string $path, array $body ): array|WP_Error {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            return new WP_Error( 'knowly_not_configured', 'Railway endpoint not configured.' );
+        }
+
+        $response = wp_remote_request( $endpoint . $path, [
+            'method'  => 'PATCH',
+            'timeout' => 10,
+            'headers' => [
+                'X-AEP-Server-Key' => $server_key,
+                'Content-Type'     => 'application/json',
+            ],
+            'body'    => wp_json_encode( $body ),
+        ] );
+
+        return self::parse_response( $response );
     }
 
-    private static function status_badge( string $status ): string {
-        [ $colour, $label ] = match ( $status ) {
-            'ready'   => [ '#16a34a', '● Ready' ],
-            'low'     => [ '#d97706', '● Low' ],
-            default   => [ '#dc2626', '● Empty' ],
-        };
-        return "<span style='color:{$colour};font-weight:600;font-size:11px;'>{$label}</span>";
+    private static function parse_response( $response ): array|WP_Error {
+        if ( is_wp_error( $response ) ) {
+            return new WP_Error( 'knowly_railway_error', 'Railway connection failed: ' . $response->get_error_message() );
+        }
+
+        $code = wp_remote_retrieve_response_code( $response );
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( $code < 200 || $code >= 300 ) {
+            return new WP_Error( 'knowly_railway_error', $body['error'] ?? "Railway returned HTTP {$code}" );
+        }
+
+        return $body ?: [];
     }
 }
