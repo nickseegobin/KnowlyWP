@@ -357,6 +357,9 @@ class Knowly_Activator {
             'knowly_fygaro_webhook_secret' => '',
             // Block 5 — Classes
             'knowly_task_gem_cost'         => 1,
+            // Block 6 — Quests
+            'knowly_gem_cost_quest_first_tt_primary'  => 3,
+            'knowly_gem_cost_quest_retake_tt_primary' => 1,
         ];
 
         foreach ( $defaults as $key => $value ) {
