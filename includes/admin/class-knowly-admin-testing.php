@@ -156,6 +156,10 @@ class Knowly_Admin_Testing {
                 'quest6_badge_award'       => self::test_quest6_badge_award(),
                 'quest6_badge_idempotent'  => self::test_quest6_badge_idempotent(),
                 'quest6_badge_list'        => self::test_quest6_badge_list(),
+                // Block 7 — Analytics
+                'analytics7_class'         => self::test_analytics7_class(),
+                'analytics7_student'       => self::test_analytics7_student(),
+                'analytics7_access_control' => self::test_analytics7_access_control(),
                 default                    => [ 'pass' => false, 'message' => "Unknown test: {$test_id}" ],
             };
         } catch ( Throwable $e ) {
@@ -1254,6 +1258,97 @@ class Knowly_Admin_Testing {
         ] );
     }
 
+    // ── Block 7 Test Methods ──────────────────────────────────────────────────
+
+    private static function test_analytics7_class(): array {
+        $teacher_user = get_user_by( 'email', 'test.teacher@knowly.test' );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found. Run Block 2 account setup first.' );
+
+        // Find most recent Math 4A class owned by test teacher
+        global $wpdb;
+        $class = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_classes WHERE teacher_user_id = %d AND name = 'Math 4A' ORDER BY id DESC LIMIT 1",
+            $teacher_user->ID
+        ) );
+        if ( ! $class ) return self::warn( 'Math 4A class not found. Run class5_create first.' );
+
+        $token = Knowly_JWT::encode( $teacher_user->ID );
+        $res   = self::api_get( '/analytics/class/' . $class->id, $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'Class analytics endpoint failed.', $res );
+        }
+
+        $data = $res['body']['data'] ?? [];
+
+        return self::pass( 'Class analytics returned.', [
+            'class_id'        => $data['class_id'] ?? null,
+            'student_count'   => $data['student_count'] ?? 0,
+            'total_trials'    => $data['total_trials'] ?? 0,
+            'total_quests'    => $data['total_quests'] ?? 0,
+            'class_avg_score' => $data['class_avg_score'] ?? null,
+            'direct_count'    => $data['direct_count'] ?? 0,
+            'assignment_count' => $data['assignment_count'] ?? 0,
+        ] );
+    }
+
+    private static function test_analytics7_student(): array {
+        $teacher_user = get_user_by( 'email', 'test.teacher@knowly.test' );
+        $child_user   = get_user_by( 'login', 'test.child' );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found.' );
+        if ( ! $child_user )   return self::warn( 'Test child not found.' );
+
+        global $wpdb;
+        $class = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_classes WHERE teacher_user_id = %d AND name = 'Math 4A' ORDER BY id DESC LIMIT 1",
+            $teacher_user->ID
+        ) );
+        if ( ! $class ) return self::warn( 'Math 4A class not found.' );
+
+        $token = Knowly_JWT::encode( $teacher_user->ID );
+        $res   = self::api_get( '/analytics/class/' . $class->id . '/student/' . $child_user->ID, $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'Student analytics endpoint failed.', $res );
+        }
+
+        $data = $res['body']['data'] ?? [];
+
+        return self::pass( 'Student analytics returned.', [
+            'user_id'         => $data['user_id'] ?? null,
+            'nickname'        => $data['nickname'] ?? '',
+            'level'           => $data['level'] ?? '',
+            'trial_count'     => $data['trial_count'] ?? 0,
+            'quest_count'     => $data['quest_count'] ?? 0,
+            'avg_score'       => $data['avg_score'] ?? null,
+            'direct_count'    => $data['direct_count'] ?? 0,
+            'assignment_count' => $data['assignment_count'] ?? 0,
+            'subjects'        => count( $data['subjects'] ?? [] ),
+        ] );
+    }
+
+    private static function test_analytics7_access_control(): array {
+        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found.' );
+
+        // Find any class — parent should be forbidden
+        global $wpdb;
+        $class = $wpdb->get_row( "SELECT id FROM {$wpdb->prefix}knowly_classes ORDER BY id ASC LIMIT 1" );
+        if ( ! $class ) return self::warn( 'No classes found. Run class5_create first.' );
+
+        $parent_token = Knowly_JWT::encode( $parent_user->ID );
+        $res = self::api_get( '/analytics/class/' . $class->id, $parent_token );
+
+        if ( $res['status'] === 403 ) {
+            return self::pass( 'Access control confirmed — parent receives 403 on class analytics.', [
+                'class_id' => (int) $class->id,
+                'status'   => $res['status'],
+            ] );
+        }
+
+        return self::fail( "Expected 403 for parent but got {$res['status']}.", $res );
+    }
+
     // ── Test Definition List ──────────────────────────────────────────────────
 
     private static function test_groups(): array {
@@ -1367,6 +1462,14 @@ class Knowly_Admin_Testing {
                     'quest6_badge_award'      => [ 'label' => 'Admin awards test-quest-b6 badge to test child',                'method' => 'POST',  'route' => '/badges/award' ],
                     'quest6_badge_idempotent' => [ 'label' => 'Award same badge again → no duplicate in user meta',            'method' => 'POST',  'route' => '/badges/award' ],
                     'quest6_badge_list'       => [ 'label' => 'Child lists their badges → test-quest-b6 badge appears',        'method' => 'GET',   'route' => '/badges/{user_id}' ],
+                ],
+            ],
+            'block7_analytics' => [
+                'label' => '📊 Block 7 — Analytics',
+                'tests' => [
+                    'analytics7_class'          => [ 'label' => 'Teacher fetches class analytics (aggregate: trials, quests, scores)',    'method' => 'GET', 'route' => '/analytics/class/{id}' ],
+                    'analytics7_student'        => [ 'label' => 'Teacher fetches per-student analytics (subject breakdown, sessions)',    'method' => 'GET', 'route' => '/analytics/class/{id}/student/{id}' ],
+                    'analytics7_access_control' => [ 'label' => 'Parent attempt on class analytics → 403 Forbidden',                    'method' => 'GET', 'route' => '/analytics/class/{id}' ],
                 ],
             ],
         ];

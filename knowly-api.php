@@ -3,7 +3,7 @@
  * Plugin Name:  KnowlyAPI
  * Plugin URI:   https://knowly.app
  * Description:  Unified REST API for the Knowly learning platform. React / Next.js interface only — no WP front-end output.
- * Version:      1.6.0
+ * Version:      1.7.0
  * Author:       Knowly
  * Requires PHP: 8.0
  * Requires at least: 6.3
@@ -14,7 +14,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ────────────────────────────────────────────────────────────────
-define( 'KNOWLY_VERSION',            '1.6.0' );
+define( 'KNOWLY_VERSION',            '1.7.0' );
 define( 'KNOWLY_DB_VERSION',         '1.6' );
 define( 'KNOWLY_PLUGIN_FILE',        __FILE__ );
 define( 'KNOWLY_PLUGIN_DIR',         plugin_dir_path( __FILE__ ) );
@@ -94,6 +94,10 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Badge_Service'          => 'includes/services/class-knowly-badge-service.php',
         'Knowly_Quests_API'             => 'includes/api/class-knowly-quests-api.php',
         'Knowly_Badges_API'             => 'includes/api/class-knowly-badges-api.php',
+        // Block 7 — Analytics
+        'Knowly_Analytics_Service'      => 'includes/services/class-knowly-analytics-service.php',
+        'Knowly_Analytics_API'          => 'includes/api/class-knowly-analytics-api.php',
+        'Knowly_Admin_Analytics'        => 'includes/admin/class-knowly-admin-analytics.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {

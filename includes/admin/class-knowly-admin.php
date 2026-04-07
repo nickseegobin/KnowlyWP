@@ -34,6 +34,8 @@ class Knowly_Admin {
         Knowly_Admin_Gems::boot();
         // Block 5
         Knowly_Admin_Classes::boot();
+        // Block 7
+        Knowly_Admin_Analytics::boot();
     }
 
     // ── Menu Registration ─────────────────────────────────────────────────────
@@ -55,6 +57,7 @@ class Knowly_Admin {
         add_submenu_page( 'knowly-api', 'Pool Manager', 'Pool Manager', 'manage_options', 'knowly-pool',         [ 'Knowly_Admin_Pool', 'render' ] );
         add_submenu_page( 'knowly-api', 'Gems',         'Gems',         'manage_options', 'knowly-gems',         [ 'Knowly_Admin_Gems', 'render' ] );
         add_submenu_page( 'knowly-api', 'Classes',      'Classes',      'manage_options', 'knowly-classes',      [ 'Knowly_Admin_Classes', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Analytics',    'Analytics',    'manage_options', 'knowly-analytics',    [ 'Knowly_Admin_Analytics', 'render' ] );
         add_submenu_page( 'knowly-api', 'Settings',     'Settings',     'manage_options', 'knowly-settings',     [ 'Knowly_Admin_Settings', 'render' ] );
         add_submenu_page( 'knowly-api', 'UM Migration', 'UM Migration', 'manage_options', 'knowly-migration',    [ 'Knowly_Admin_Migration', 'render' ] );
         add_submenu_page( 'knowly-api', 'Debug Log',    'Debug Log',    'manage_options', 'knowly-debug',        [ 'Knowly_Admin_Debug', 'render' ] );
@@ -167,6 +170,7 @@ class Knowly_Admin {
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-teachers' ) ) ?>" class="button button-primary<?= $pending_teachers > 0 ? ' knowly-alert-btn' : '' ?>">Teachers<?= $pending_teachers > 0 ? " ({$pending_teachers})" : '' ?></a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-gems' ) ) ?>" class="button button-primary">Gems</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-classes' ) ) ?>" class="button button-primary">Classes</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-analytics' ) ) ?>" class="button button-primary">Analytics</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-pool' ) ) ?>" class="button button-primary">Pool Manager</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>" class="button">Settings</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-migration' ) ) ?>" class="button">UM Migration</a>
@@ -295,6 +299,9 @@ class Knowly_Admin {
             [ 'POST',   '/classes/{id}/tasks',            'JWT Teacher','Create task (deducts red gem)' ],
             [ 'GET',    '/classes/{id}/tasks',            'JWT Teacher','List tasks for class' ],
             [ 'GET',    '/classes/my',                    'JWT Child',  'List classes the student is enrolled in' ],
+            // Block 7 — Analytics
+            [ 'GET',    '/analytics/class/{class_id}',               'JWT Teacher', 'Class aggregate analytics (trials, quests, scores, source)' ],
+            [ 'GET',    '/analytics/class/{class_id}/student/{user_id}', 'JWT Teacher', 'Per-student drill-down (subject breakdown, recent sessions)' ],
         ];
     }
 }
