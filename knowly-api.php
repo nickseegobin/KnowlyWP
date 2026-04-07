@@ -102,6 +102,12 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Admin_Signoff'          => 'includes/admin/class-knowly-admin-signoff.php',
         // Block 10 — Training Material
         'Knowly_Admin_Training'         => 'includes/admin/class-knowly-admin-training.php',
+        // Restructured module pages (Production Spec menu)
+        'Knowly_Admin_Users'                  => 'includes/admin/class-knowly-admin-users.php',
+        'Knowly_Admin_Trials'                 => 'includes/admin/class-knowly-admin-trials.php',
+        'Knowly_Admin_Quests_Panel'           => 'includes/admin/class-knowly-admin-quests-panel.php',
+        'Knowly_Admin_Notifications_Panel'    => 'includes/admin/class-knowly-admin-notifications-panel.php',
+        'Knowly_Admin_System'                 => 'includes/admin/class-knowly-admin-system.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {

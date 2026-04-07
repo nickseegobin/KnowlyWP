@@ -90,6 +90,46 @@ class Knowly_Admin_Testing {
         <?php
     }
 
+    // ── Per-module group renderer ─────────────────────────────────────────────
+    // Call from a module page's Unit Tests tab to embed the relevant test groups.
+    // Requires the knowly-admin JS to be enqueued on the page (it is for all knowly-* pages).
+
+    public static function render_test_groups( array $group_ids ): void {
+        $all_groups = self::test_groups();
+        ?>
+        <div class="knowly-test-toolbar" style="margin-bottom:12px;">
+            <button id="knowly-run-all" class="button button-primary">▶ Run All</button>
+            <button id="knowly-clear-results" class="button">Clear</button>
+            <span id="knowly-test-summary" class="knowly-test-summary"></span>
+        </div>
+        <?php
+        foreach ( $group_ids as $group_id ) {
+            if ( ! isset( $all_groups[ $group_id ] ) ) continue;
+            $group = $all_groups[ $group_id ];
+            ?>
+            <div class="knowly-test-group" id="group-<?= esc_attr( $group_id ) ?>">
+                <div class="knowly-test-group-header">
+                    <h3 style="margin:0;"><?= esc_html( $group['label'] ) ?></h3>
+                    <button class="button knowly-run-group" data-group="<?= esc_attr( $group_id ) ?>">Run Group</button>
+                </div>
+                <div class="knowly-test-list">
+                    <?php foreach ( $group['tests'] as $test_id => $test ) : ?>
+                    <div class="knowly-test-item" id="test-<?= esc_attr( $test_id ) ?>">
+                        <div class="knowly-test-header">
+                            <span class="knowly-test-status" id="status-<?= esc_attr( $test_id ) ?>">○</span>
+                            <span class="knowly-test-name"><?= esc_html( $test['label'] ) ?></span>
+                            <code class="knowly-test-route"><?= esc_html( $test['method'] . ( $test['route'] ? ' /knowly/v1' . $test['route'] : '' ) ) ?></code>
+                            <button class="button button-small knowly-run-test" data-test="<?= esc_attr( $test_id ) ?>">Run</button>
+                        </div>
+                        <div class="knowly-test-result" id="result-<?= esc_attr( $test_id ) ?>" style="display:none"></div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php
+        }
+    }
+
     // ── Test Runner (called via AJAX) ─────────────────────────────────────────
 
     public static function run_test( string $test_id, array $data = [] ): array {
@@ -189,12 +229,13 @@ class Knowly_Admin_Testing {
     private static function test_db_tables(): array {
         global $wpdb;
         $tables = [
-            'knowly_children', 'knowly_exam_pool',
+            'knowly_children',
             'knowly_exam_sessions', 'knowly_exam_answers', 'knowly_topic_breakdown',
             'knowly_exam_insights', 'knowly_weekly_insights',
             'knowly_notifications', 'knowly_migration_log', 'knowly_debug_log',
             'knowly_gem_transactions', 'knowly_red_gem_transactions', 'knowly_processed_webhooks',
             'knowly_classes', 'knowly_class_members', 'knowly_tasks',
+            'knowly_training_material',
         ];
 
         $missing = [];
@@ -994,6 +1035,21 @@ class Knowly_Admin_Testing {
     private static function test_quest6_start_first(): array {
         $child_user = get_user_by( 'login', 'test.child' );
         if ( ! $child_user ) return self::warn( 'Test child not found. Run Block 2 account setup first.' );
+
+        // Reset all quest sessions for this child so the first-attempt check is clean
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+        if ( $endpoint && $server_key ) {
+            wp_remote_request( $endpoint . '/api/v1/quest/sessions/reset', [
+                'method'  => 'DELETE',
+                'timeout' => 10,
+                'headers' => [
+                    'X-AEP-Server-Key' => $server_key,
+                    'Content-Type'     => 'application/json',
+                ],
+                'body' => wp_json_encode( [ 'user_id' => (string) $child_user->ID ] ),
+            ] );
+        }
 
         // Ensure test child has enough Blue Gems for 2 starts (first + retake = 4)
         $balance = (int) get_user_meta( $child_user->ID, 'knowly_gem_balance', true );

@@ -98,6 +98,19 @@ class Knowly_Admin_Pool {
             <!-- ── QUEST CATALOGUE ────────────────────────────────────────── -->
             <div id="knowly-tab-quests" class="knowly-pool-panel" style="display:none;border:1px solid #c3c4c7;border-top:none;padding:20px;background:#fff;">
                 <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+                    <select id="knowly-quest-level" style="height:30px;">
+                        <option value="std_1">std_1</option>
+                        <option value="std_2">std_2</option>
+                        <option value="std_3">std_3</option>
+                        <option value="std_4" selected>std_4</option>
+                        <option value="std_5">std_5</option>
+                    </select>
+                    <select id="knowly-quest-period-filter" style="height:30px;">
+                        <option value="">All periods</option>
+                        <option value="term_1">term_1</option>
+                        <option value="term_2">term_2</option>
+                        <option value="term_3">term_3</option>
+                    </select>
                     <button id="knowly-load-quests" class="button button-primary" <?= $railway_ok ? '' : 'disabled' ?>>
                         ↓ Load Quest Catalogue
                     </button>
@@ -240,7 +253,9 @@ class Knowly_Admin_Pool {
             // ── Quest catalogue ───────────────────────────────────────────────
             $('#knowly-load-quests').on('click', function() {
                 var $btn = $(this).prop('disabled', true).text('Loading…');
-                $.post(ajaxUrl, { action: 'knowly_pool_quest_catalogue', nonce: nonce }, function(res) {
+                var level  = $('#knowly-quest-level').val();
+                var period = $('#knowly-quest-period-filter').val();
+                $.post(ajaxUrl, { action: 'knowly_pool_quest_catalogue', nonce: nonce, level: level, period: period }, function(res) {
                     $btn.prop('disabled', false).text('↓ Load Quest Catalogue');
                     if (!res.success) { $('#knowly-quest-results').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown error') + '</p>'); return; }
                     renderQuestTable(res.data);
@@ -445,7 +460,13 @@ class Knowly_Admin_Pool {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        $api_key  = get_option( 'knowly_railway_api_key', '' );
+        $level  = sanitize_key( $_POST['level']  ?? 'std_4' );
+        $period = sanitize_key( $_POST['period'] ?? '' );
+
+        if ( ! $level ) {
+            wp_send_json_error( [ 'message' => 'level is required.' ] );
+        }
+
         $admin_id = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
         $token    = ! empty( $admin_id ) ? Knowly_JWT::encode( (int) $admin_id[0] ) : '';
 
@@ -458,8 +479,11 @@ class Knowly_Admin_Pool {
             wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] );
         }
 
+        $params = [ 'level' => $level ];
+        if ( $period ) $params['period'] = $period;
+
         // Quest catalogue uses Bearer JWT auth (not server key)
-        $response = wp_remote_get( $endpoint . '/api/v1/quest/catalogue', [
+        $response = wp_remote_get( $endpoint . '/api/v1/quest/catalogue?' . http_build_query( $params ), [
             'timeout' => 15,
             'headers' => [
                 'Authorization' => "Bearer {$token}",
@@ -490,7 +514,15 @@ class Knowly_Admin_Pool {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        $data = self::railway_get( '/api/v1/pool', [ 'status' => 'pending_review', 'limit' => 50 ] );
+        // GET /api/v1/pool uses authenticateToken (Bearer JWT), not server key
+        $admin_id = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        $token    = ! empty( $admin_id ) ? Knowly_JWT::encode( (int) $admin_id[0] ) : '';
+
+        if ( ! $token ) {
+            wp_send_json_error( [ 'message' => 'Could not generate admin JWT for Railway auth.' ] );
+        }
+
+        $data = self::railway_get_token( '/api/v1/pool', [ 'status' => 'pending_review', 'limit' => 50 ], $token );
 
         if ( is_wp_error( $data ) ) {
             wp_send_json_error( [ 'message' => $data->get_error_message() ] );
@@ -625,6 +657,29 @@ class Knowly_Admin_Pool {
             'headers' => [
                 'X-AEP-Server-Key' => $server_key,
                 'Content-Type'     => 'application/json',
+            ],
+        ] );
+
+        return self::parse_response( $response );
+    }
+
+    private static function railway_get_token( string $path, array $params, string $token ): array|WP_Error {
+        $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+
+        if ( ! $endpoint ) {
+            return new WP_Error( 'knowly_not_configured', 'Railway endpoint not configured.' );
+        }
+
+        $url = $endpoint . $path;
+        if ( ! empty( $params ) ) {
+            $url .= '?' . http_build_query( $params );
+        }
+
+        $response = wp_remote_get( $url, [
+            'timeout' => 20,
+            'headers' => [
+                'Authorization' => "Bearer {$token}",
+                'Content-Type'  => 'application/json',
             ],
         ] );
 
