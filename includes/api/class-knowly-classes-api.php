@@ -33,7 +33,7 @@ class Knowly_Classes_API extends Knowly_API_Base {
             'callback'            => [ $this, 'child_lookup' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'nickname' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'q' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
             ],
         ] );
 
@@ -172,10 +172,10 @@ class Knowly_Classes_API extends Knowly_API_Base {
         $teacher_id = $this->require_teacher( $request );
         if ( is_wp_error( $teacher_id ) ) return $teacher_id;
 
-        $child = Knowly_Class_Service::find_child_by_nickname( $request->get_param( 'nickname' ) );
-        if ( is_wp_error( $child ) ) return $child;
+        $results = Knowly_Class_Service::search_children( $request->get_param( 'q' ) );
+        if ( is_wp_error( $results ) ) return $results;
 
-        return $this->success( $child );
+        return $this->success( [ 'results' => $results, 'count' => count( $results ) ] );
     }
 
     public function invite( WP_REST_Request $request ): WP_REST_Response|WP_Error {
@@ -244,8 +244,8 @@ class Knowly_Classes_API extends Knowly_API_Base {
         if ( is_wp_error( $task_id ) ) return $task_id;
 
         return $this->created( [
-            'task_id'   => $task_id,
-            'gem_cost'  => Knowly_Task_Service::get_task_cost(),
+            'task_id'         => $task_id,
+            'red_gem_cost'    => Knowly_Task_Service::get_task_cost(),
             'red_gem_balance' => Knowly_Red_Gem_Service::get_balance( $teacher_id ),
         ] );
     }

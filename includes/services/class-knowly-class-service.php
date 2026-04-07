@@ -157,12 +157,60 @@ class Knowly_Class_Service {
         }, $rows ?: [] );
     }
 
-    // ── Child Lookup by Nickname ──────────────────────────────────────────────
+    // ── Child Search by Nickname ──────────────────────────────────────────────
 
     /**
-     * Find a child user by their public nickname (knowly_nickname user meta).
+     * Search for children by partial nickname match (case-insensitive LIKE).
+     * Returns a list — used by the teacher child-lookup UI.
      *
-     * @param  string $nickname  Case-insensitive.
+     * Minimum query length: 2 characters.
+     *
+     * @param  string $query  Partial nickname fragment.
+     * @return array|WP_Error  Array of { child_id, nickname, level }
+     */
+    public static function search_children( string $query ): array|WP_Error {
+        global $wpdb;
+
+        $query = sanitize_text_field( $query );
+        if ( strlen( $query ) < 2 ) {
+            return new WP_Error( 'knowly_query_too_short', 'Search query must be at least 2 characters.', [ 'status' => 400 ] );
+        }
+
+        $like = '%' . $wpdb->esc_like( $query ) . '%';
+
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT um.user_id, um.meta_value AS nickname
+             FROM {$wpdb->usermeta} um
+             INNER JOIN {$wpdb->usermeta} role_meta
+                ON role_meta.user_id = um.user_id
+                AND role_meta.meta_key = '{$wpdb->prefix}capabilities'
+                AND role_meta.meta_value LIKE %s
+             WHERE um.meta_key = 'knowly_nickname'
+               AND um.meta_value LIKE %s
+             ORDER BY um.meta_value ASC
+             LIMIT 20",
+            '%knowly_child%',
+            $like
+        ), ARRAY_A );
+
+        if ( empty( $rows ) ) {
+            return [];
+        }
+
+        return array_map( function ( array $row ): array {
+            $user_id = (int) $row['user_id'];
+            return [
+                'child_id' => $user_id,
+                'nickname' => $row['nickname'],
+                'level'    => get_user_meta( $user_id, 'knowly_level', true ) ?: null,
+            ];
+        }, $rows );
+    }
+
+    /**
+     * Resolve a single child by exact nickname — used internally by the invite flow.
+     *
+     * @param  string $nickname  Exact nickname (case-insensitive).
      * @return array|WP_Error    { child_id, nickname, display_name, level, period, parent_id }
      */
     public static function find_child_by_nickname( string $nickname ): array|WP_Error {
@@ -173,7 +221,6 @@ class Knowly_Class_Service {
             return new WP_Error( 'knowly_missing_fields', 'Nickname is required.', [ 'status' => 422 ] );
         }
 
-        // Search knowly_nickname user meta (case-insensitive)
         $user_id = $wpdb->get_var( $wpdb->prepare(
             "SELECT user_id FROM {$wpdb->usermeta}
              WHERE meta_key = 'knowly_nickname' AND LOWER(meta_value) = LOWER(%s)
@@ -391,6 +438,7 @@ class Knowly_Class_Service {
             'name'            => $row['name'],
             'description'     => $row['description'],
             'level'           => $row['level'],
+            'status'          => $row['status'] ?? 'active',
             'member_count'    => isset( $row['member_count'] ) ? (int) $row['member_count'] : null,
             'task_count'      => isset( $row['task_count'] )   ? (int) $row['task_count']   : null,
             'joined_at'       => $row['joined_at'] ?? null,

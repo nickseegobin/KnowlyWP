@@ -81,22 +81,9 @@ class Knowly_Activator {
             KEY           idx_created (created_at)
         ) {$charset};" );
 
-        // ── 3. Exam Pool ──────────────────────────────────────────────────────
-        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_exam_pool (
-            pool_id        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            package_id     VARCHAR(100)    NOT NULL,
-            level          VARCHAR(20)     NOT NULL DEFAULT '',
-            period         VARCHAR(20)     NOT NULL DEFAULT '',
-            subject        VARCHAR(100)    NOT NULL DEFAULT '',
-            difficulty     ENUM('easy','medium','hard') NOT NULL DEFAULT 'medium',
-            package_json   LONGTEXT        NOT NULL,
-            times_served   INT UNSIGNED    NOT NULL DEFAULT 0,
-            last_served_at DATETIME                 DEFAULT NULL,
-            created_at     DATETIME        NOT NULL,
-            PRIMARY KEY    (pool_id),
-            UNIQUE KEY     uq_package (package_id),
-            KEY            idx_filter (level, period, subject, difficulty)
-        ) {$charset};" );
+        // ── 3. Exam Pool — removed (Block 1) ─────────────────────────────────
+        // WP-side pool retired in Block 1. All exam delivery goes through Railway.
+        // Table intentionally not created.
 
         // ── 4. Exam Sessions ──────────────────────────────────────────────────
         dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_exam_sessions (
@@ -262,9 +249,11 @@ class Knowly_Activator {
             name            VARCHAR(100)    NOT NULL DEFAULT '',
             description     TEXT                     DEFAULT NULL,
             level           VARCHAR(20)     NOT NULL DEFAULT '',
+            status          ENUM('active','disbanded') NOT NULL DEFAULT 'active',
             created_at      DATETIME        NOT NULL,
             PRIMARY KEY (id),
-            KEY idx_teacher (teacher_user_id)
+            KEY idx_teacher (teacher_user_id),
+            KEY idx_status (status)
         ) {$charset};" );
 
         // ── 15. Class Members ─────────────────────────────────────────────────────
@@ -286,16 +275,21 @@ class Knowly_Activator {
             id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             class_id        BIGINT UNSIGNED NOT NULL,
             teacher_user_id BIGINT UNSIGNED NOT NULL,
+            type            ENUM('quest','trial') NOT NULL DEFAULT 'trial',
+            reference_id    VARCHAR(100)             DEFAULT NULL,
             title           VARCHAR(200)    NOT NULL DEFAULT '',
             description     TEXT                     DEFAULT NULL,
             subject         VARCHAR(100)             DEFAULT NULL,
             difficulty      ENUM('easy','medium','hard') DEFAULT NULL,
             due_date        DATE                     DEFAULT NULL,
-            gem_cost        TINYINT UNSIGNED NOT NULL DEFAULT 1,
+            gem_reward      TINYINT UNSIGNED         DEFAULT NULL,
+            red_gem_cost    TINYINT UNSIGNED NOT NULL DEFAULT 1,
+            status          ENUM('active','closed')  NOT NULL DEFAULT 'active',
             created_at      DATETIME        NOT NULL,
             PRIMARY KEY (id),
             KEY idx_class (class_id),
-            KEY idx_teacher (teacher_user_id)
+            KEY idx_teacher (teacher_user_id),
+            KEY idx_status (status)
         ) {$charset};" );
 
         // ── 17. Debug Log ─────────────────────────────────────────────────────────

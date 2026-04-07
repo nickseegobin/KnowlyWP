@@ -74,12 +74,16 @@ class Knowly_Task_Service {
             [
                 'class_id'        => $class_id,
                 'teacher_user_id' => $teacher_id,
+                'type'            => sanitize_text_field( $data['type'] ?? 'trial' ),
+                'reference_id'    => sanitize_text_field( $data['reference_id'] ?? '' ) ?: null,
                 'title'           => $title,
                 'description'     => sanitize_textarea_field( $data['description'] ?? '' ) ?: null,
                 'subject'         => sanitize_text_field( $data['subject'] ?? '' ) ?: null,
                 'difficulty'      => $difficulty,
                 'due_date'        => $due_date,
-                'gem_cost'        => $gem_cost,
+                'gem_reward'      => isset( $data['gem_reward'] ) ? (int) $data['gem_reward'] : null,
+                'red_gem_cost'    => $gem_cost,
+                'status'          => 'active',
                 'created_at'      => current_time( 'mysql', true ),
             ]
         );
@@ -123,13 +127,17 @@ class Knowly_Task_Service {
      *
      * @return array
      */
-    public static function list_for_class( int $class_id ): array {
+    public static function list_for_class( int $class_id, bool $active_only = true ): array {
         global $wpdb;
 
-        $rows = $wpdb->get_results( $wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}knowly_tasks WHERE class_id = %d ORDER BY created_at DESC",
-            $class_id
-        ), ARRAY_A );
+        $where = $active_only
+            ? $wpdb->prepare( "WHERE class_id = %d AND status = 'active'", $class_id )
+            : $wpdb->prepare( "WHERE class_id = %d", $class_id );
+
+        $rows = $wpdb->get_results(
+            "SELECT * FROM {$wpdb->prefix}knowly_tasks {$where} ORDER BY created_at DESC",
+            ARRAY_A
+        );
 
         return array_map( [ __CLASS__, 'format_task' ], $rows ?: [] );
     }
@@ -141,12 +149,16 @@ class Knowly_Task_Service {
             'id'              => (int) $row['id'],
             'class_id'        => (int) $row['class_id'],
             'teacher_user_id' => (int) $row['teacher_user_id'],
+            'type'            => $row['type'],
+            'reference_id'    => $row['reference_id'],
             'title'           => $row['title'],
             'description'     => $row['description'],
             'subject'         => $row['subject'],
             'difficulty'      => $row['difficulty'],
             'due_date'        => $row['due_date'],
-            'gem_cost'        => (int) $row['gem_cost'],
+            'gem_reward'      => isset( $row['gem_reward'] ) ? (int) $row['gem_reward'] : null,
+            'red_gem_cost'    => (int) $row['red_gem_cost'],
+            'status'          => $row['status'],
             'created_at'      => $row['created_at'],
         ];
     }
