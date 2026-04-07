@@ -1018,8 +1018,9 @@ class Knowly_Admin_Testing {
         $session_id  = $res['body']['data']['session_id'] ?? '';
         $bal_after   = $res['body']['data']['balance_after'] ?? null;
 
-        // Store quest_id for dependent tests
-        set_transient( 'knowly_test_b6_quest_id', $quest_id, HOUR_IN_SECONDS );
+        // Store quest_id and session_id for dependent tests
+        set_transient( 'knowly_test_b6_quest_id',    $quest_id,   HOUR_IN_SECONDS );
+        set_transient( 'knowly_test_b6_session_id',  $session_id, HOUR_IN_SECONDS );
 
         if ( $gem_cost !== 3 ) {
             return self::fail( "Expected gem_cost 3 (first attempt) but got {$gem_cost}.", $res['body']['data'] ?? [] );
@@ -1038,9 +1039,20 @@ class Knowly_Admin_Testing {
         $child_user = get_user_by( 'login', 'test.child' );
         if ( ! $child_user ) return self::warn( 'Test child not found.' );
 
-        $quest_id = get_transient( 'knowly_test_b6_quest_id' );
-        if ( ! $quest_id ) {
-            return self::warn( 'No quest_id found from quest6_start_first. Run that test first.' );
+        $quest_id   = get_transient( 'knowly_test_b6_quest_id' );
+        $session_id = get_transient( 'knowly_test_b6_session_id' );
+
+        if ( ! $quest_id || ! $session_id ) {
+            return self::warn( 'No quest_id / session_id from quest6_start_first. Run that test first.' );
+        }
+
+        $token = Knowly_JWT::encode( $child_user->ID );
+
+        // Complete the first session so Railway records state=completed.
+        // Only then will has_prior_completion() return true and charge retake cost.
+        $complete_res = self::api_post( '/quests/complete', [ 'session_id' => $session_id ], $token );
+        if ( $complete_res['status'] !== 200 ) {
+            return self::fail( 'Could not complete first session before retake test.', $complete_res );
         }
 
         // Ensure enough gems for the retake (cost = 1)
@@ -1050,23 +1062,22 @@ class Knowly_Admin_Testing {
             $balance = 5;
         }
 
-        $token = Knowly_JWT::encode( $child_user->ID );
-        $res   = self::api_post( '/quests/start', [ 'quest_id' => $quest_id, 'source' => 'direct' ], $token );
+        $res = self::api_post( '/quests/start', [ 'quest_id' => $quest_id, 'source' => 'direct' ], $token );
 
         if ( $res['status'] !== 200 ) {
             return self::fail( 'Quest retake start failed.', $res );
         }
 
-        $gem_cost   = $res['body']['data']['gem_cost'] ?? -1;
-        $bal_after  = $res['body']['data']['balance_after'] ?? null;
+        $gem_cost  = $res['body']['data']['gem_cost'] ?? -1;
+        $bal_after = $res['body']['data']['balance_after'] ?? null;
 
         if ( $gem_cost !== 1 ) {
             return self::fail( "Expected gem_cost 1 (retake) but got {$gem_cost}.", $res['body']['data'] ?? [] );
         }
 
-        return self::pass( "Quest retake started. gem_cost=1 confirmed. Balance {$balance} → {$bal_after}.", [
-            'quest_id'      => $quest_id,
-            'gem_cost'      => $gem_cost,
+        return self::pass( "First session completed, retake started. gem_cost=1 confirmed. Balance {$balance} → {$bal_after}.", [
+            'quest_id'       => $quest_id,
+            'gem_cost'       => $gem_cost,
             'balance_before' => $balance,
             'balance_after'  => $bal_after,
         ] );
