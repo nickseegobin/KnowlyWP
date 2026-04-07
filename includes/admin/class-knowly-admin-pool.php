@@ -21,16 +21,25 @@ class Knowly_Admin_Pool {
     // ── Boot ──────────────────────────────────────────────────────────────────
 
     public static function boot(): void {
-        add_action( 'admin_post_knowly_pool_sync',      [ __CLASS__, 'handle_sync' ] );
-        add_action( 'admin_post_knowly_pool_generate',  [ __CLASS__, 'handle_generate' ] );
-        add_action( 'admin_post_knowly_pool_upload',    [ __CLASS__, 'handle_upload' ] );
-        add_action( 'admin_post_knowly_pool_delete',    [ __CLASS__, 'handle_delete' ] );
+        // WP-side pool retired in Block 1 — no action handlers registered.
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
 
     public static function render(): void {
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Insufficient permissions.' );
+        ?>
+        <div class="wrap">
+            <h1>Exam Pool</h1>
+            <div class="notice notice-info inline" style="margin-top:16px;">
+                <p><strong>The local WordPress exam pool was retired in Block 1.</strong><br>
+                All Trial delivery now goes through Railway's sequential pool. Use
+                <strong>WP Admin → Settings → Railway</strong> to verify the Railway connection,
+                and the <strong>Railway catalogue endpoint</strong> to inspect pool inventory.</p>
+            </div>
+        </div>
+        <?php
+        return; // Nothing further to render.
 
         global $wpdb;
 

@@ -89,6 +89,11 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Task_Service'           => 'includes/services/class-knowly-task-service.php',
         'Knowly_Classes_API'            => 'includes/api/class-knowly-classes-api.php',
         'Knowly_Admin_Classes'          => 'includes/admin/class-knowly-admin-classes.php',
+        // Block 6 — Quests and Badges
+        'Knowly_Quest_Service'          => 'includes/services/class-knowly-quest-service.php',
+        'Knowly_Badge_Service'          => 'includes/services/class-knowly-badge-service.php',
+        'Knowly_Quests_API'             => 'includes/api/class-knowly-quests-api.php',
+        'Knowly_Badges_API'             => 'includes/api/class-knowly-badges-api.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {
