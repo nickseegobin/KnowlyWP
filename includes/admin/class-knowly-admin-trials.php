@@ -269,7 +269,8 @@ class Knowly_Admin_Trials {
         } else {
             $resp = wp_remote_get( $endpoint . '/api/v1/health', [ 'timeout' => 8 ] );
             $ok   = ! is_wp_error( $resp ) && wp_remote_retrieve_response_code( $resp ) === 200;
-            $checks[] = [ 'label' => 'Railway reachable', 'status' => $ok ? 'pass' : 'fail', 'detail' => $ok ? $endpoint : wp_is_wp_error( $resp ) ? $resp->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code( $resp ) ];
+            $detail   = $ok ? $endpoint : ( is_wp_error( $resp ) ? $resp->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code( $resp ) );
+            $checks[] = [ 'label' => 'Railway reachable', 'status' => $ok ? 'pass' : 'fail', 'detail' => $detail ];
         }
 
         // 2. Server key configured

@@ -86,7 +86,7 @@ class Knowly_Admin_Leaderboard {
         $subject  = sanitize_text_field( $_GET['subject']  ?? '' );
 
         $levels = self::standards();
-        $periods     = self::periods();
+        $periods     = self::terms();
         $subjects  = self::subjects();
 
         $board_data = null;
@@ -331,7 +331,7 @@ class Knowly_Admin_Leaderboard {
         $error    = sanitize_text_field( $_GET['test_error']  ?? '' );
 
         $levels  = self::standards();
-        $periods      = self::periods();
+        $periods      = self::terms();
         $subjects   = self::subjects();
         $difficulties = [ 'easy' => 'Easy', 'medium' => 'Medium', 'hard' => 'Hard' ];
         ?>
