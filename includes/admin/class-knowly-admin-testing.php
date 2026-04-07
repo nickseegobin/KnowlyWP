@@ -14,6 +14,7 @@
  *   Results             — History, stats, session detail
  *   Insights            — Per-exam insight, weekly digest
  *   Block 4 — Notifications — Create, list, count, respond, read-all
+ *   Block 6 — Quests & Badges  — Catalogue, start (first/retake/assignment), badge award/idempotent/list
  *
  * @package KnowlyAPI
  */
@@ -146,6 +147,15 @@ class Knowly_Admin_Testing {
                 'class5_create_task'       => self::test_class5_create_task( $data ),
                 'class5_list_tasks'        => self::test_class5_list_tasks( $data ),
                 'class5_child_classes'     => self::test_class5_child_classes(),
+                // Block 6 — Quests & Badges
+                'quest6_catalogue'         => self::test_quest6_catalogue(),
+                'quest6_start_first'       => self::test_quest6_start_first(),
+                'quest6_retake_cost'       => self::test_quest6_retake_cost(),
+                'quest6_assigned_free'     => self::test_quest6_assigned_free(),
+                'quest6_badge_setup'       => self::test_quest6_badge_setup(),
+                'quest6_badge_award'       => self::test_quest6_badge_award(),
+                'quest6_badge_idempotent'  => self::test_quest6_badge_idempotent(),
+                'quest6_badge_list'        => self::test_quest6_badge_list(),
                 default                    => [ 'pass' => false, 'message' => "Unknown test: {$test_id}" ],
             };
         } catch ( Throwable $e ) {
@@ -951,6 +961,288 @@ class Knowly_Admin_Testing {
         return self::fail( 'GET /classes/my failed.', $res );
     }
 
+    // ── Block 6 Test Methods ──────────────────────────────────────────────────
+
+    private static function test_quest6_catalogue(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found. Run Block 2 account setup first.' );
+
+        $token = Knowly_JWT::encode( $child_user->ID );
+        $res   = self::api_get( '/quests', $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'Catalogue endpoint failed.', $res );
+        }
+
+        $count = $res['body']['data']['count'] ?? 0;
+
+        return $count > 0
+            ? self::pass( "Quest catalogue returned {$count} quest(s) for std_4 / term_1.", [
+                'count'  => $count,
+                'quests' => array_map( fn( $q ) => [ 'quest_id' => $q['quest_id'] ?? '', 'subject' => $q['subject'] ?? '' ], array_slice( $res['body']['data']['quests'] ?? [], 0, 5 ) ),
+            ] )
+            : self::warn( 'Catalogue is empty. Seed quest content on Railway before running start/complete tests.', [
+                'level'  => 'std_4',
+                'period' => 'term_1',
+            ] );
+    }
+
+    private static function test_quest6_start_first(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found. Run Block 2 account setup first.' );
+
+        // Ensure test child has enough Blue Gems for 2 starts (first + retake = 4)
+        $balance = (int) get_user_meta( $child_user->ID, 'knowly_gem_balance', true );
+        if ( $balance < 10 ) {
+            update_user_meta( $child_user->ID, 'knowly_gem_balance', 10 );
+            $balance = 10;
+        }
+
+        // Discover a quest_id from the catalogue
+        $token       = Knowly_JWT::encode( $child_user->ID );
+        $cat_res     = self::api_get( '/quests', $token );
+        $quests      = $cat_res['body']['data']['quests'] ?? [];
+        $quest_id    = ! empty( $quests ) ? ( $quests[0]['quest_id'] ?? '' ) : '';
+
+        if ( ! $quest_id ) {
+            return self::warn( 'No quests in catalogue. Seed quest content on Railway first, then re-run.' );
+        }
+
+        $res = self::api_post( '/quests/start', [ 'quest_id' => $quest_id, 'source' => 'direct' ], $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'Quest start failed.', $res );
+        }
+
+        $gem_cost    = $res['body']['data']['gem_cost'] ?? -1;
+        $session_id  = $res['body']['data']['session_id'] ?? '';
+        $bal_after   = $res['body']['data']['balance_after'] ?? null;
+
+        // Store quest_id for dependent tests
+        set_transient( 'knowly_test_b6_quest_id', $quest_id, HOUR_IN_SECONDS );
+
+        if ( $gem_cost !== 3 ) {
+            return self::fail( "Expected gem_cost 3 (first attempt) but got {$gem_cost}.", $res['body']['data'] ?? [] );
+        }
+
+        return self::pass( "Quest started (first attempt). gem_cost=3, balance {$balance} → {$bal_after}.", [
+            'quest_id'      => $quest_id,
+            'session_id'    => $session_id,
+            'gem_cost'      => $gem_cost,
+            'balance_before' => $balance,
+            'balance_after'  => $bal_after,
+        ] );
+    }
+
+    private static function test_quest6_retake_cost(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found.' );
+
+        $quest_id = get_transient( 'knowly_test_b6_quest_id' );
+        if ( ! $quest_id ) {
+            return self::warn( 'No quest_id found from quest6_start_first. Run that test first.' );
+        }
+
+        // Ensure enough gems for the retake (cost = 1)
+        $balance = (int) get_user_meta( $child_user->ID, 'knowly_gem_balance', true );
+        if ( $balance < 5 ) {
+            update_user_meta( $child_user->ID, 'knowly_gem_balance', 5 );
+            $balance = 5;
+        }
+
+        $token = Knowly_JWT::encode( $child_user->ID );
+        $res   = self::api_post( '/quests/start', [ 'quest_id' => $quest_id, 'source' => 'direct' ], $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'Quest retake start failed.', $res );
+        }
+
+        $gem_cost   = $res['body']['data']['gem_cost'] ?? -1;
+        $bal_after  = $res['body']['data']['balance_after'] ?? null;
+
+        if ( $gem_cost !== 1 ) {
+            return self::fail( "Expected gem_cost 1 (retake) but got {$gem_cost}.", $res['body']['data'] ?? [] );
+        }
+
+        return self::pass( "Quest retake started. gem_cost=1 confirmed. Balance {$balance} → {$bal_after}.", [
+            'quest_id'      => $quest_id,
+            'gem_cost'      => $gem_cost,
+            'balance_before' => $balance,
+            'balance_after'  => $bal_after,
+        ] );
+    }
+
+    private static function test_quest6_assigned_free(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found.' );
+
+        $quest_id = get_transient( 'knowly_test_b6_quest_id' );
+        if ( ! $quest_id ) {
+            return self::warn( 'No quest_id found. Run quest6_start_first first.' );
+        }
+
+        $balance = (int) get_user_meta( $child_user->ID, 'knowly_gem_balance', true );
+
+        $token = Knowly_JWT::encode( $child_user->ID );
+        $res   = self::api_post( '/quests/start', [ 'quest_id' => $quest_id, 'source' => 'assignment' ], $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'Assignment quest start failed.', $res );
+        }
+
+        $gem_cost  = $res['body']['data']['gem_cost'] ?? -1;
+        $bal_after = $res['body']['data']['balance_after'] ?? null;
+
+        if ( $gem_cost !== 0 ) {
+            return self::fail( "Expected gem_cost 0 for assignment-sourced quest but got {$gem_cost}.", $res['body']['data'] ?? [] );
+        }
+
+        return self::pass( "Assignment quest start: gem_cost=0 confirmed. Balance unchanged at {$balance}.", [
+            'quest_id'    => $quest_id,
+            'gem_cost'    => $gem_cost,
+            'balance'     => $balance,
+            'bal_after'   => $bal_after,
+        ] );
+    }
+
+    private static function test_quest6_badge_setup(): array {
+        $test_quest_id = 'test-quest-b6';
+
+        // Check if test badge post already exists
+        $existing = get_posts( [
+            'post_type'      => 'knowly_badge',
+            'post_status'    => 'publish',
+            'posts_per_page' => 1,
+            'meta_query'     => [ [ 'key' => '_knowly_quest_id', 'value' => $test_quest_id ] ],
+        ] );
+
+        if ( ! empty( $existing ) ) {
+            $badge_post_id = (int) $existing[0]->ID;
+            set_transient( 'knowly_test_b6_badge_post_id', $badge_post_id, HOUR_IN_SECONDS );
+            return self::pass( "Test badge post already exists (ID: {$badge_post_id}).", [
+                'badge_post_id' => $badge_post_id,
+                'quest_id'      => $test_quest_id,
+            ] );
+        }
+
+        // Create a published badge CPT post for the test quest
+        $badge_post_id = wp_insert_post( [
+            'post_type'    => 'knowly_badge',
+            'post_title'   => 'Block 6 Test Badge',
+            'post_excerpt' => 'Awarded for completing the Block 6 test quest.',
+            'post_status'  => 'publish',
+        ] );
+
+        if ( is_wp_error( $badge_post_id ) ) {
+            return self::fail( 'Badge post creation failed: ' . $badge_post_id->get_error_message() );
+        }
+
+        update_post_meta( $badge_post_id, '_knowly_quest_id', $test_quest_id );
+        set_transient( 'knowly_test_b6_badge_post_id', $badge_post_id, HOUR_IN_SECONDS );
+
+        return self::pass( "Test badge post created (ID: {$badge_post_id}, quest_id: {$test_quest_id}).", [
+            'badge_post_id' => $badge_post_id,
+            'quest_id'      => $test_quest_id,
+        ] );
+    }
+
+    private static function test_quest6_badge_award(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found.' );
+
+        $admin_token = self::get_admin_token();
+        if ( ! $admin_token ) return self::warn( 'Could not generate admin token.' );
+
+        // Clear any prior award for this test quest to test fresh award
+        $raw     = get_user_meta( $child_user->ID, Knowly_Badge_Service::META_KEY, true );
+        $earned  = is_string( $raw ) ? ( json_decode( $raw, true ) ?: [] ) : [];
+        $filtered = array_values( array_filter( $earned, fn( $e ) => ( $e['quest_id'] ?? '' ) !== 'test-quest-b6' ) );
+        update_user_meta( $child_user->ID, Knowly_Badge_Service::META_KEY, wp_json_encode( $filtered ) );
+
+        $res = self::api_post( '/badges/award', [
+            'user_id'  => $child_user->ID,
+            'quest_id' => 'test-quest-b6',
+        ], $admin_token );
+
+        if ( $res['status'] === 200 && ! empty( $res['body']['data']['badge_id'] ) ) {
+            return self::pass( 'Badge awarded to test child.', [
+                'badge_id'   => $res['body']['data']['badge_id'],
+                'quest_id'   => $res['body']['data']['quest_id'] ?? 'test-quest-b6',
+                'awarded_at' => $res['body']['data']['awarded_at'] ?? '',
+            ] );
+        }
+
+        return self::fail( 'Badge award failed.', $res );
+    }
+
+    private static function test_quest6_badge_idempotent(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found.' );
+
+        $admin_token = self::get_admin_token();
+        if ( ! $admin_token ) return self::warn( 'Could not generate admin token.' );
+
+        // Record current earned badge count before second award call
+        $raw_before = get_user_meta( $child_user->ID, Knowly_Badge_Service::META_KEY, true );
+        $before     = is_string( $raw_before ) ? count( json_decode( $raw_before, true ) ?: [] ) : 0;
+
+        // Award same badge again — must be a no-op, not a duplicate
+        $res = self::api_post( '/badges/award', [
+            'user_id'  => $child_user->ID,
+            'quest_id' => 'test-quest-b6',
+        ], $admin_token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'Badge award (idempotent) returned unexpected status.', $res );
+        }
+
+        // Flush object cache then re-read
+        clean_user_cache( $child_user->ID );
+        $raw_after = get_user_meta( $child_user->ID, Knowly_Badge_Service::META_KEY, true );
+        $after     = is_string( $raw_after ) ? count( json_decode( $raw_after, true ) ?: [] ) : 0;
+
+        if ( $before !== $after ) {
+            return self::fail( "Badge was duplicated — count went from {$before} to {$after}.", [
+                'before' => $before,
+                'after'  => $after,
+            ] );
+        }
+
+        return self::pass( "Idempotent award confirmed. Badge count unchanged at {$after}.", [
+            'count_before' => $before,
+            'count_after'  => $after,
+        ] );
+    }
+
+    private static function test_quest6_badge_list(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found.' );
+
+        $token = Knowly_JWT::encode( $child_user->ID );
+        $res   = self::api_get( '/badges/' . $child_user->ID, $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'GET /badges/{user_id} failed.', $res );
+        }
+
+        $count  = $res['body']['data']['count'] ?? 0;
+        $badges = $res['body']['data']['badges'] ?? [];
+
+        $test_badge = array_values( array_filter( $badges, fn( $b ) => ( $b['quest_id'] ?? '' ) === 'test-quest-b6' ) );
+
+        if ( $count < 1 || empty( $test_badge ) ) {
+            return self::fail( 'test-quest-b6 badge not in list. Run quest6_badge_award first.', [
+                'count'  => $count,
+                'badges' => array_map( fn( $b ) => [ 'badge_id' => $b['badge_id'], 'quest_id' => $b['quest_id'] ], $badges ),
+            ] );
+        }
+
+        return self::pass( "Badge list returned {$count} badge(s). test-quest-b6 badge confirmed.", [
+            'count'      => $count,
+            'test_badge' => $test_badge[0],
+        ] );
+    }
+
     // ── Test Definition List ──────────────────────────────────────────────────
 
     private static function test_groups(): array {
@@ -1051,6 +1343,19 @@ class Knowly_Admin_Testing {
                 'tests' => [
                     'notifications_create' => [ 'label' => 'Create simple notification',              'method' => 'CHECK', 'route' => '' ],
                     'notifications_list'   => [ 'label' => 'List notifications for user (user_id req)', 'method' => 'CHECK', 'route' => '' ],
+                ],
+            ],
+            'block6_quests' => [
+                'label' => '🗺 Block 6 — Quests & Badges',
+                'tests' => [
+                    'quest6_catalogue'        => [ 'label' => 'Fetch quest catalogue for test child (std_4/term_1)',            'method' => 'GET',   'route' => '/quests' ],
+                    'quest6_start_first'      => [ 'label' => 'Start quest (first attempt) → gem_cost=3, stores session_id',   'method' => 'POST',  'route' => '/quests/start' ],
+                    'quest6_retake_cost'      => [ 'label' => 'Start same quest again (retake) → gem_cost=1',                  'method' => 'POST',  'route' => '/quests/start' ],
+                    'quest6_assigned_free'    => [ 'label' => 'Start quest via assignment → gem_cost=0',                       'method' => 'POST',  'route' => '/quests/start' ],
+                    'quest6_badge_setup'      => [ 'label' => 'Create test badge CPT post (quest_id: test-quest-b6)',          'method' => 'CHECK', 'route' => '' ],
+                    'quest6_badge_award'      => [ 'label' => 'Admin awards test-quest-b6 badge to test child',                'method' => 'POST',  'route' => '/badges/award' ],
+                    'quest6_badge_idempotent' => [ 'label' => 'Award same badge again → no duplicate in user meta',            'method' => 'POST',  'route' => '/badges/award' ],
+                    'quest6_badge_list'       => [ 'label' => 'Child lists their badges → test-quest-b6 badge appears',        'method' => 'GET',   'route' => '/badges/{user_id}' ],
                 ],
             ],
         ];
