@@ -91,12 +91,36 @@ class Knowly_Admin_Quests_Panel {
         <div style="margin-top:24px;padding:16px;background:#f6f7f7;border-radius:4px;border:1px solid #e5e7eb;">
             <h3 style="margin:0 0 12px;">Generate Quest</h3>
             <p style="font-size:12px;color:#666;margin:0 0 10px;">Generate a new quest and store it as approved in Railway/Supabase.</p>
-            <div style="display:grid;grid-template-columns:repeat(4,1fr) auto;gap:8px;align-items:end;">
-                <label style="font-size:12px;">Level<br><input type="text" id="qp-gen-level" class="regular-text" placeholder="std_4" style="margin-top:4px;"></label>
-                <label style="font-size:12px;">Period<br><input type="text" id="qp-gen-period" class="regular-text" placeholder="term_1 or blank" style="margin-top:4px;"></label>
-                <label style="font-size:12px;">Subject<br><input type="text" id="qp-gen-subject" class="regular-text" placeholder="math" style="margin-top:4px;"></label>
-                <label style="font-size:12px;">Module Index<br><input type="number" id="qp-gen-module" class="regular-text" value="0" min="0" style="margin-top:4px;"></label>
-                <button id="qp-generate" class="button button-primary" style="height:30px;align-self:end;" <?= ( $railway_ok && $server_key ) ? '' : 'disabled' ?>>Generate</button>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
+                <label style="font-size:12px;display:flex;flex-direction:column;gap:4px;min-width:100px;">Level
+                    <select id="qp-gen-level" style="height:30px;">
+                        <option value="std_1">std_1</option>
+                        <option value="std_2">std_2</option>
+                        <option value="std_3">std_3</option>
+                        <option value="std_4" selected>std_4</option>
+                        <option value="std_5">std_5</option>
+                    </select>
+                </label>
+                <label style="font-size:12px;display:flex;flex-direction:column;gap:4px;min-width:110px;">Period
+                    <select id="qp-gen-period" style="height:30px;">
+                        <option value="">(none / capstone)</option>
+                        <option value="term_1" selected>term_1</option>
+                        <option value="term_2">term_2</option>
+                        <option value="term_3">term_3</option>
+                    </select>
+                </label>
+                <label style="font-size:12px;display:flex;flex-direction:column;gap:4px;min-width:120px;">Subject
+                    <select id="qp-gen-subject" style="height:30px;">
+                        <option value="math" selected>math</option>
+                        <option value="english">english</option>
+                        <option value="science">science</option>
+                        <option value="social_studies">social_studies</option>
+                    </select>
+                </label>
+                <label style="font-size:12px;display:flex;flex-direction:column;gap:4px;min-width:90px;">Module Index
+                    <input type="number" id="qp-gen-module" style="height:30px;width:80px;" value="0" min="0">
+                </label>
+                <button id="qp-generate" class="button button-primary" style="height:30px;" <?= ( $railway_ok && $server_key ) ? '' : 'disabled' ?>>Generate</button>
             </div>
             <div id="qp-gen-result" style="margin-top:10px;font-size:13px;"></div>
         </div>
@@ -126,8 +150,8 @@ class Knowly_Admin_Quests_Panel {
                 });
             });
             $('#qp-generate').on('click', function() {
-                var level = $('#qp-gen-level').val().trim(), period = $('#qp-gen-period').val().trim(),
-                    subject = $('#qp-gen-subject').val().trim(), mi = parseInt($('#qp-gen-module').val(), 10);
+                var level = $('#qp-gen-level').val(), period = $('#qp-gen-period').val(),
+                    subject = $('#qp-gen-subject').val(), mi = parseInt($('#qp-gen-module').val(), 10) || 0;
                 if (!level || !subject) { alert('Level and Subject are required.'); return; }
                 $(this).prop('disabled', true).text('Generating…');
                 var $res = $('#qp-gen-result').html('<em>Generating… this may take 10–20 seconds.</em>');
@@ -173,7 +197,7 @@ class Knowly_Admin_Quests_Panel {
 
     private static function render_tests(): void {
         echo '<p style="color:#666;margin-bottom:16px;">Test quest catalogue, start (first/retake/assigned), badge award and idempotency.</p>';
-        Knowly_Admin_Testing::render_test_groups( [ 'block6_quests' ] );
+        Knowly_Admin_Testing::render_test_groups( [ 'block6_quests', 'block6_badges' ] );
     }
 
     // ── Simulations Tab ───────────────────────────────────────────────────────

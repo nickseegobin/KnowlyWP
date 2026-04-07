@@ -97,6 +97,24 @@ class Knowly_Admin_Testing {
     public static function render_test_groups( array $group_ids ): void {
         $all_groups = self::test_groups();
         ?>
+        <!-- Test data panel — required by knowly-admin.js syncTestDataFromInputs() -->
+        <details class="knowly-test-data-panel" style="margin-bottom:16px;background:#fff;border:1px solid #ddd;border-radius:4px;padding:12px 16px;">
+            <summary style="cursor:pointer;font-weight:600;font-size:13px;">🔑 Test Data (credentials for auth tests)</summary>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px;">
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Email (parent login)<input type="text" id="td-username" class="regular-text" placeholder="parent@email.com" autocomplete="off" /></label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Password<input type="password" id="td-password" class="regular-text" placeholder="parent password" autocomplete="off" /></label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">JWT Token<input type="text" id="td-token" class="regular-text" placeholder="paste token or generate below" /></label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">Child ID<input type="number" id="td-child-id" class="regular-text" placeholder="child WP user ID" /></label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">User ID (admin token)<input type="number" id="td-user-id" class="regular-text" placeholder="WP user ID" /></label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">PIN (4 digits)<input type="text" id="td-pin" class="regular-text" placeholder="e.g. 1234" maxlength="4" /></label>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <button type="button" id="knowly-gen-admin-token" class="button">⚡ Generate Admin Token</button>
+                <button type="button" id="knowly-gen-user-token" class="button">🔑 Generate Token for User ID</button>
+                <span id="knowly-token-status" style="font-size:12px;color:#666;"></span>
+            </div>
+        </details>
+
         <div class="knowly-test-toolbar" style="margin-bottom:12px;">
             <button id="knowly-run-all" class="button button-primary">▶ Run All</button>
             <button id="knowly-clear-results" class="button">Clear</button>
@@ -1508,16 +1526,21 @@ class Knowly_Admin_Testing {
                 ],
             ],
             'block6_quests' => [
-                'label' => '🗺 Block 6 — Quests & Badges',
+                'label' => '🗺 Block 6 — Quests',
                 'tests' => [
-                    'quest6_catalogue'        => [ 'label' => 'Fetch quest catalogue for test child (std_4/term_1)',            'method' => 'GET',   'route' => '/quests' ],
-                    'quest6_start_first'      => [ 'label' => 'Start quest (first attempt) → gem_cost=3, stores session_id',   'method' => 'POST',  'route' => '/quests/start' ],
-                    'quest6_retake_cost'      => [ 'label' => 'Start same quest again (retake) → gem_cost=1',                  'method' => 'POST',  'route' => '/quests/start' ],
-                    'quest6_assigned_free'    => [ 'label' => 'Start quest via assignment → gem_cost=0',                       'method' => 'POST',  'route' => '/quests/start' ],
-                    'quest6_badge_setup'      => [ 'label' => 'Create test badge CPT post (quest_id: test-quest-b6)',          'method' => 'CHECK', 'route' => '' ],
-                    'quest6_badge_award'      => [ 'label' => 'Admin awards test-quest-b6 badge to test child',                'method' => 'POST',  'route' => '/badges/award' ],
-                    'quest6_badge_idempotent' => [ 'label' => 'Award same badge again → no duplicate in user meta',            'method' => 'POST',  'route' => '/badges/award' ],
-                    'quest6_badge_list'       => [ 'label' => 'Child lists their badges → test-quest-b6 badge appears',        'method' => 'GET',   'route' => '/badges/{user_id}' ],
+                    'quest6_catalogue'     => [ 'label' => 'Fetch quest catalogue for test child (std_4/term_1)',           'method' => 'GET',  'route' => '/quests' ],
+                    'quest6_start_first'   => [ 'label' => 'Start quest (first attempt) → gem_cost=3, stores session_id',  'method' => 'POST', 'route' => '/quests/start' ],
+                    'quest6_retake_cost'   => [ 'label' => 'Start same quest again (retake) → gem_cost=1',                 'method' => 'POST', 'route' => '/quests/start' ],
+                    'quest6_assigned_free' => [ 'label' => 'Start quest via assignment → gem_cost=0',                      'method' => 'POST', 'route' => '/quests/start' ],
+                ],
+            ],
+            'block6_badges' => [
+                'label' => '🏅 Block 6 — Badges',
+                'tests' => [
+                    'quest6_badge_setup'      => [ 'label' => 'Create test badge CPT post (quest_id: test-quest-b6)',    'method' => 'CHECK', 'route' => '' ],
+                    'quest6_badge_award'      => [ 'label' => 'Admin awards test-quest-b6 badge to test child',         'method' => 'POST',  'route' => '/badges/award' ],
+                    'quest6_badge_idempotent' => [ 'label' => 'Award same badge again → no duplicate in user meta',     'method' => 'POST',  'route' => '/badges/award' ],
+                    'quest6_badge_list'       => [ 'label' => 'Child lists their badges → test-quest-b6 badge appears', 'method' => 'GET',   'route' => '/badges/{user_id}' ],
                 ],
             ],
             'block7_analytics' => [

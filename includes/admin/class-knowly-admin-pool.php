@@ -384,9 +384,11 @@ class Knowly_Admin_Pool {
         $data = self::railway_get( '/api/v1/pool/summary', [ 'status' => 'approved' ] );
 
         if ( is_wp_error( $data ) ) {
+            Knowly_Debug::log( 'admin.pool', 'ajax_trial_summary failed', [ 'error' => $data->get_error_message() ], null, 'error' );
             wp_send_json_error( [ 'message' => $data->get_error_message() ] );
         }
 
+        Knowly_Debug::log( 'admin.pool', 'Trial summary loaded', [ 'total' => $data['total_packages'] ?? 0 ], null, 'info' );
         wp_send_json_success( $data );
     }
 
@@ -407,9 +409,18 @@ class Knowly_Admin_Pool {
         if ( $subject )    $params['subject']    = $subject;
         if ( $difficulty ) $params['difficulty'] = $difficulty;
 
-        $data = self::railway_get( '/api/v1/pool', $params );
+        // GET /api/v1/pool requires Bearer JWT (authenticateToken middleware)
+        $admin_ids = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        $token     = ! empty( $admin_ids ) ? Knowly_JWT::encode( (int) $admin_ids[0] ) : '';
+
+        if ( ! $token ) {
+            wp_send_json_error( [ 'message' => 'Could not generate admin JWT.' ] );
+        }
+
+        $data = self::railway_get_token( '/api/v1/pool', $params, $token );
 
         if ( is_wp_error( $data ) ) {
+            Knowly_Debug::log( 'admin.pool', 'ajax_trial_packages failed', [ 'params' => $params, 'error' => $data->get_error_message() ], null, 'error' );
             wp_send_json_error( [ 'message' => $data->get_error_message() ] );
         }
 
@@ -492,6 +503,7 @@ class Knowly_Admin_Pool {
         ] );
 
         if ( is_wp_error( $response ) ) {
+            Knowly_Debug::log( 'admin.pool', 'ajax_quest_catalogue HTTP error', [ 'error' => $response->get_error_message(), 'params' => $params ], null, 'error' );
             wp_send_json_error( [ 'message' => $response->get_error_message() ] );
         }
 
@@ -499,9 +511,11 @@ class Knowly_Admin_Pool {
         $body = json_decode( wp_remote_retrieve_body( $response ), true );
 
         if ( $code !== 200 ) {
+            Knowly_Debug::log( 'admin.pool', 'ajax_quest_catalogue non-200', [ 'code' => $code, 'body' => $body, 'params' => $params ], null, 'warning' );
             wp_send_json_error( [ 'message' => "Railway returned HTTP {$code}: " . ( $body['error'] ?? '' ) ] );
         }
 
+        Knowly_Debug::log( 'admin.pool', 'Quest catalogue loaded', [ 'level' => $level, 'period' => $period, 'count' => $body['count'] ?? 0 ], null, 'info' );
         wp_send_json_success( [
             'quests' => $body['quests'] ?? [],
             'count'  => $body['count']  ?? 0,

@@ -27,7 +27,7 @@ class Knowly_Admin {
         // User management (AJAX handlers used by Users page)
         Knowly_Admin_Members::boot();
         Knowly_Admin_Teachers::boot();
-        // Leaderboard utility
+        // Leaderboard (register hooks + AJAX)
         Knowly_Admin_Leaderboard::register();
         // Modules
         Knowly_Admin_Gems::boot();
@@ -57,17 +57,19 @@ class Knowly_Admin {
             30
         );
 
-        // ── Primary navigation (matches Production Spec) ─────────────────────
-        add_submenu_page( 'knowly-api', 'Dashboard',      'Dashboard',      'manage_options', 'knowly-api',                   [ __CLASS__,                    'render_dashboard' ] );
-        add_submenu_page( 'knowly-api', 'Settings',       'Settings',       'manage_options', 'knowly-settings',              [ 'Knowly_Admin_Settings',      'render' ] );
-        add_submenu_page( 'knowly-api', 'Gems',           'Gems',           'manage_options', 'knowly-gems',                  [ 'Knowly_Admin_Gems',          'render' ] );
-        add_submenu_page( 'knowly-api', 'Users',          'Users',          'manage_options', 'knowly-users',                 [ 'Knowly_Admin_Users',         'render' ] );
-        add_submenu_page( 'knowly-api', 'Classes',        'Classes',        'manage_options', 'knowly-classes',               [ 'Knowly_Admin_Classes',       'render' ] );
-        add_submenu_page( 'knowly-api', 'Trials',         'Trials',         'manage_options', 'knowly-trials',                [ 'Knowly_Admin_Trials',        'render' ] );
-        add_submenu_page( 'knowly-api', 'Quests',         'Quests',         'manage_options', 'knowly-quests-panel',          [ 'Knowly_Admin_Quests_Panel',  'render' ] );
-        add_submenu_page( 'knowly-api', 'Notifications',  'Notifications',  'manage_options', 'knowly-notifications-panel',   [ 'Knowly_Admin_Notifications_Panel', 'render' ] );
-        add_submenu_page( 'knowly-api', 'Analytics',      'Analytics',      'manage_options', 'knowly-analytics',             [ 'Knowly_Admin_Analytics',     'render' ] );
-        add_submenu_page( 'knowly-api', 'System',         'System',         'manage_options', 'knowly-system',                [ 'Knowly_Admin_System',        'render' ] );
+        // ── Primary navigation — ordered per Production Spec ─────────────────
+        add_submenu_page( 'knowly-api', 'Dashboard',      'Dashboard',      'manage_options', 'knowly-api',                   [ __CLASS__,                         'render_dashboard' ] );
+        add_submenu_page( 'knowly-api', 'System',         'System',         'manage_options', 'knowly-system',                [ 'Knowly_Admin_System',             'render' ] );
+        add_submenu_page( 'knowly-api', 'Settings',       'Settings',       'manage_options', 'knowly-settings',              [ 'Knowly_Admin_Settings',           'render' ] );
+        add_submenu_page( 'knowly-api', 'Users',          'Users',          'manage_options', 'knowly-users',                 [ 'Knowly_Admin_Users',              'render' ] );
+        add_submenu_page( 'knowly-api', 'Teachers',       'Teachers',       'manage_options', 'knowly-teachers',              [ 'Knowly_Admin_Teachers',           'render' ] );
+        add_submenu_page( 'knowly-api', 'Gems',           'Gems',           'manage_options', 'knowly-gems',                  [ 'Knowly_Admin_Gems',               'render' ] );
+        add_submenu_page( 'knowly-api', 'Classes',        'Classes',        'manage_options', 'knowly-classes',               [ 'Knowly_Admin_Classes',            'render' ] );
+        add_submenu_page( 'knowly-api', 'Trials',         'Trials',         'manage_options', 'knowly-trials',                [ 'Knowly_Admin_Trials',             'render' ] );
+        add_submenu_page( 'knowly-api', 'Quests',         'Quests',         'manage_options', 'knowly-quests-panel',          [ 'Knowly_Admin_Quests_Panel',       'render' ] );
+        // Leaderboard menu entry is registered by Knowly_Admin_Leaderboard::add_menu() via admin_menu hook
+        add_submenu_page( 'knowly-api', 'Notifications',  'Notifications',  'manage_options', 'knowly-notifications-panel',   [ 'Knowly_Admin_Notifications_Panel','render' ] );
+        add_submenu_page( 'knowly-api', 'Analytics',      'Analytics',      'manage_options', 'knowly-analytics',             [ 'Knowly_Admin_Analytics',          'render' ] );
     }
 
     // ── Assets ────────────────────────────────────────────────────────────────
@@ -172,14 +174,16 @@ class Knowly_Admin {
             </div>
 
             <div class="knowly-quick-links">
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-users' ) ) ?>" class="button button-primary<?= $pending_teachers > 0 ? ' knowly-alert-btn' : '' ?>">Users<?= $pending_teachers > 0 ? " ({$pending_teachers} pending)" : '' ?></a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-system' ) ) ?>" class="button button-primary">System</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-users' ) ) ?>" class="button button-primary">Users</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-teachers' ) ) ?>" class="button button-primary<?= $pending_teachers > 0 ? ' knowly-alert-btn' : '' ?>">Teachers<?= $pending_teachers > 0 ? " ({$pending_teachers})" : '' ?></a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-gems' ) ) ?>" class="button button-primary">Gems</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-classes' ) ) ?>" class="button button-primary">Classes</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-trials' ) ) ?>" class="button button-primary">Trials</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-quests-panel' ) ) ?>" class="button button-primary">Quests</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-leaderboard' ) ) ?>" class="button button-primary">Leaderboard</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-notifications-panel' ) ) ?>" class="button button-primary">Notifications</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-analytics' ) ) ?>" class="button button-primary">Analytics</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-system' ) ) ?>" class="button button-primary">System</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>" class="button">Settings</a>
             </div>
 
