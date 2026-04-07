@@ -894,6 +894,7 @@ class Knowly_Admin_Testing {
         ], $token );
 
         if ( $res['status'] === 201 && ! empty( $res['body']['data']['task_id'] ) ) {
+            clean_user_cache( $teacher_user->ID ); // flush object cache — deduction ran in a separate HTTP process
             $red_gems_after = (int) get_user_meta( $teacher_user->ID, 'knowly_red_gem_balance', true );
             return self::pass( 'Task created. Red gem deducted.', [
                 'task_id'          => $res['body']['data']['task_id'],
