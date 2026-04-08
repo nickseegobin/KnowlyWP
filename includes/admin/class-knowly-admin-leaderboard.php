@@ -24,7 +24,7 @@ class Knowly_Admin_Leaderboard {
     // ── Boot ──────────────────────────────────────────────────────────────────
 
     public static function register(): void {
-        add_action( 'admin_menu', [ __CLASS__, 'add_menu' ] );
+        // Menu is registered in Knowly_Admin::register_menus() to control ordering.
         add_action( 'admin_post_knowly_regenerate_nickname',   [ __CLASS__, 'handle_regenerate_nickname' ] );
         add_action( 'admin_post_knowly_lb_inject_entry',       [ __CLASS__, 'handle_inject_entry' ] );
         add_action( 'admin_post_knowly_lb_simulate_upsert',    [ __CLASS__, 'handle_simulate_upsert' ] );
@@ -56,7 +56,8 @@ class Knowly_Admin_Leaderboard {
                 <?php foreach ( [
                     'boards'    => "Today's Boards",
                     'nicknames' => 'Nickname Management',
-                    'testing'   => '🧪 Testing',
+                    'tests'     => 'Unit Tests',
+                    'testing'   => 'Simulations',
                 ] as $tab => $label ) : ?>
                     <a href="<?php echo esc_url( self::tab_url( $tab ) ); ?>"
                        class="nav-tab <?php echo $active_tab === $tab ? 'nav-tab-active' : ''; ?>">
@@ -69,6 +70,7 @@ class Knowly_Admin_Leaderboard {
                 <?php
                 match ( $active_tab ) {
                     'nicknames' => self::render_nicknames_tab(),
+                    'tests'     => self::render_tests_tab(),
                     'testing'   => self::render_testing_tab(),
                     default     => self::render_boards_tab(),
                 };
@@ -324,7 +326,14 @@ class Knowly_Admin_Leaderboard {
         <?php
     }
 
-    // ── Tab 3: Testing ────────────────────────────────────────────────────────
+    // ── Tab 3: Unit Tests ─────────────────────────────────────────────────────
+
+    private static function render_tests_tab(): void {
+        echo '<p style="color:#666;margin-bottom:16px;">AJAX unit tests for leaderboard: board reads, nickname generation, upsert simulation, and board reset.</p>';
+        Knowly_Admin_Testing::render_test_groups( [ 'block_leaderboard' ] );
+    }
+
+    // ── Tab 4: Simulations ────────────────────────────────────────────────────
 
     private static function render_testing_tab(): void {
         $feedback = sanitize_text_field( $_GET['test_result'] ?? '' );

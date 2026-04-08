@@ -218,6 +218,13 @@ class Knowly_Admin_Testing {
                 'analytics7_class'         => self::test_analytics7_class(),
                 'analytics7_student'       => self::test_analytics7_student(),
                 'analytics7_access_control' => self::test_analytics7_access_control(),
+                // Leaderboard
+                'lb_nickname_generate'     => self::test_lb_nickname_generate(),
+                'lb_read_board'            => self::test_lb_read_board(),
+                'lb_read_my_boards'        => self::test_lb_read_my_boards(),
+                'lb_simulate_upsert'       => self::test_lb_simulate_upsert(),
+                'lb_inject_entry'          => self::test_lb_inject_entry(),
+                'lb_reset_board'           => self::test_lb_reset_board(),
                 default                    => [ 'pass' => false, 'message' => "Unknown test: {$test_id}" ],
             };
         } catch ( Throwable $e ) {
@@ -404,15 +411,30 @@ class Knowly_Admin_Testing {
     }
 
     private static function test_exams_start( array $data ): array {
-        if ( empty( $data['token'] ) ) return self::warn( 'Provide token (with active child).' );
-        $res = self::api_post( '/exams/start', [
-            'level'     => $data['level'] ?? 'std_4',
-            'period'   => $data['period'] ?? 'term_1',
-            'subject'    => $data['subject'] ?? 'Mathematics',
-            'difficulty' => $data['difficulty'] ?? 'medium',
-        ], $data['token'] );
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child (test.child) not found. Run Block 2 account setup first.' );
+
+        // Ensure test child has enough gems to cover the exam cost (typically 2)
+        $balance = (int) get_user_meta( $child_user->ID, 'knowly_gem_balance', true );
+        if ( $balance < 5 ) {
+            update_user_meta( $child_user->ID, 'knowly_gem_balance', 10 );
+            $balance = 10;
+        }
+
+        $token = Knowly_JWT::encode( $child_user->ID );
+        $res   = self::api_post( '/exams/start', [
+            'level'      => 'std_4',
+            'period'     => 'term_1',
+            'subject'    => 'math',
+            'difficulty' => 'medium',
+        ], $token );
+
         if ( $res['status'] === 200 ) {
-            return self::pass( 'Exam started.', [ 'session_id' => $res['body']['data']['session_id'] ?? null ] );
+            return self::pass( 'Exam started.', [
+                'session_id'     => $res['body']['data']['session_id'] ?? null,
+                'balance_before' => $balance,
+                'balance_after'  => $res['body']['data']['balance_after'] ?? null,
+            ] );
         }
         // 503 pool_empty is expected when Railway has no packages ready — not a plugin bug
         if ( $res['status'] === 503 && ( $res['body']['code'] ?? '' ) === 'knowly_pool_empty' ) {
@@ -845,7 +867,7 @@ class Knowly_Admin_Testing {
         if ( ! $teacher_user ) return self::warn( 'Test teacher not found.' );
 
         $token = Knowly_JWT::encode( $teacher_user->ID );
-        $res   = self::api_get( '/classes/child-lookup?nickname=TestKid', $token );
+        $res   = self::api_get( '/classes/child-lookup?q=TestKid', $token );
 
         if ( $res['status'] === 200 && ! empty( $res['body']['data']['child_id'] ) ) {
             return self::pass( 'Child found by nickname.', [
@@ -961,7 +983,7 @@ class Knowly_Admin_Testing {
         $res   = self::api_post( "/classes/{$class->id}/tasks", [
             'title'       => 'Block 5 Test Task',
             'description' => 'Practise fractions.',
-            'subject'     => 'Mathematics',
+            'subject'     => 'math',
             'difficulty'  => 'easy',
             'due_date'    => date( 'Y-m-d', strtotime( '+7 days' ) ),
         ], $token );
@@ -1423,6 +1445,112 @@ class Knowly_Admin_Testing {
         return self::fail( "Expected 403 for parent but got {$res['status']}.", $res );
     }
 
+    // ── Leaderboard Test Methods ──────────────────────────────────────────────
+
+    private static function test_lb_nickname_generate(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found. Run Block 2 account setup first.' );
+
+        $result = Knowly_Leaderboard_Service::generate_nickname( $child_user->ID, 'std_4', 'term_1' );
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'generate_nickname failed: ' . $result->get_error_message() );
+        }
+        $nickname = get_user_meta( $child_user->ID, 'knowly_nickname', true );
+        return self::pass( 'Nickname generated/confirmed for test child.', [
+            'child_id' => $child_user->ID,
+            'nickname' => $nickname ?: '(see Railway response)',
+            'result'   => is_string( $result ) ? $result : 'OK',
+        ] );
+    }
+
+    private static function test_lb_read_board(): array {
+        $result = Knowly_Leaderboard_Service::get_board( 'std_4', 'term_1', 'math' );
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'get_board failed: ' . $result->get_error_message() );
+        }
+        return self::pass( 'Board (std_4/term_1/math) read OK.', [
+            'date'         => $result['date'] ?? '—',
+            'participants' => $result['total_participants'] ?? 0,
+            'entries'      => count( $result['entries'] ?? [] ),
+        ] );
+    }
+
+    private static function test_lb_read_my_boards(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found. Run Block 2 account setup first.' );
+
+        $result = Knowly_Leaderboard_Service::get_my_boards( $child_user->ID );
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'get_my_boards failed: ' . $result->get_error_message() );
+        }
+        $boards = $result['boards'] ?? [];
+        return self::pass( 'My boards returned.', [
+            'child_id' => $child_user->ID,
+            'boards'   => count( $boards ),
+        ] );
+    }
+
+    private static function test_lb_simulate_upsert(): array {
+        $child_user = get_user_by( 'login', 'test.child' );
+        if ( ! $child_user ) return self::warn( 'Test child not found. Run Block 2 account setup first.' );
+
+        $nickname = get_user_meta( $child_user->ID, 'knowly_nickname', true );
+        if ( ! $nickname ) {
+            return self::warn( 'Test child has no nickname. Run lb_nickname_generate first.' );
+        }
+
+        $fake_session = [
+            'child_id'            => $child_user->ID,
+            'level'               => 'std_4',
+            'period'              => 'term_1',
+            'subject'             => 'math',
+            'difficulty'          => 'easy',
+            'external_session_id' => 'ses_lb_unit_test_' . time(),
+        ];
+        $fake_result = [
+            'score'      => 15,
+            'total'      => 20,
+            'percentage' => 75,
+        ];
+
+        Knowly_Debug::log( 'leaderboard.unit_test', 'Simulating submit upsert', [
+            'child_id' => $child_user->ID,
+            'session'  => $fake_session,
+        ], get_current_user_id(), 'info' );
+
+        $update = Knowly_Leaderboard_Service::handle_submit_upsert( $fake_session, $fake_result );
+        if ( $update === null ) {
+            return self::fail( 'handle_submit_upsert returned null. Check Debug Log for leaderboard.upsert_failed.' );
+        }
+        return self::pass( 'Simulated upsert OK — leaderboard_update block received.', [
+            'rank'         => $update['rank'] ?? '—',
+            'total_points' => $update['total_points'] ?? '—',
+        ] );
+    }
+
+    private static function test_lb_inject_entry(): array {
+        $result = Knowly_Leaderboard_Service::inject_test_entry( [
+            'nickname'  => 'UnitTestBot_' . substr( (string) time(), -4 ),
+            'level'     => 'std_4',
+            'period'    => 'term_1',
+            'subject'   => 'math',
+            'points'    => 12,
+            'score_pct' => 60,
+        ] );
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'inject_test_entry failed: ' . $result->get_error_message() );
+        }
+        return self::pass( 'Fake entry injected onto std_4/term_1/math board.', is_array( $result ) ? $result : [] );
+    }
+
+    private static function test_lb_reset_board(): array {
+        $result = Knowly_Leaderboard_Service::reset_board( 'std_4', 'term_1', 'math' );
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'reset_board failed: ' . $result->get_error_message() );
+        }
+        return self::pass( 'std_4/term_1/math board reset. Fake entries cleared.', is_array( $result ) ? $result : [ 'result' => $result ] );
+    }
+
     // ── Test Definition List ──────────────────────────────────────────────────
 
     private static function test_groups(): array {
@@ -1549,6 +1677,17 @@ class Knowly_Admin_Testing {
                     'analytics7_class'          => [ 'label' => 'Teacher fetches class analytics (aggregate: trials, quests, scores)',    'method' => 'GET', 'route' => '/analytics/class/{id}' ],
                     'analytics7_student'        => [ 'label' => 'Teacher fetches per-student analytics (subject breakdown, sessions)',    'method' => 'GET', 'route' => '/analytics/class/{id}/student/{id}' ],
                     'analytics7_access_control' => [ 'label' => 'Parent attempt on class analytics → 403 Forbidden',                    'method' => 'GET', 'route' => '/analytics/class/{id}' ],
+                ],
+            ],
+            'block_leaderboard' => [
+                'label' => '🏆 Leaderboard',
+                'tests' => [
+                    'lb_nickname_generate' => [ 'label' => 'Generate/confirm nickname for test child (std_4/term_1)',        'method' => 'POST',  'route' => '/leaderboard/generate-nickname' ],
+                    'lb_read_board'        => [ 'label' => 'Read board (std_4/term_1/math) via Leaderboard_Service',         'method' => 'GET',   'route' => '/leaderboard/std_4/term_1/math' ],
+                    'lb_read_my_boards'    => [ 'label' => 'Read all boards for test child (get_my_boards)',                  'method' => 'GET',   'route' => '/leaderboard/me' ],
+                    'lb_simulate_upsert'   => [ 'label' => 'Simulate exam submit → handle_submit_upsert (real code path)',   'method' => 'POST',  'route' => '/leaderboard/upsert' ],
+                    'lb_inject_entry'      => [ 'label' => 'Inject fake test entry onto std_4/term_1/math board',            'method' => 'POST',  'route' => '/leaderboard/test/inject' ],
+                    'lb_reset_board'       => [ 'label' => 'Reset std_4/term_1/math board — cleans up test entries',         'method' => 'POST',  'route' => '/leaderboard/test/reset-board' ],
                 ],
             ],
         ];

@@ -67,7 +67,7 @@ class Knowly_Admin {
         add_submenu_page( 'knowly-api', 'Classes',        'Classes',        'manage_options', 'knowly-classes',               [ 'Knowly_Admin_Classes',            'render' ] );
         add_submenu_page( 'knowly-api', 'Trials',         'Trials',         'manage_options', 'knowly-trials',                [ 'Knowly_Admin_Trials',             'render' ] );
         add_submenu_page( 'knowly-api', 'Quests',         'Quests',         'manage_options', 'knowly-quests-panel',          [ 'Knowly_Admin_Quests_Panel',       'render' ] );
-        // Leaderboard menu entry is registered by Knowly_Admin_Leaderboard::add_menu() via admin_menu hook
+        add_submenu_page( 'knowly-api', 'Leaderboards',   'Leaderboards',   'manage_options', 'knowly-leaderboard',            [ 'Knowly_Admin_Leaderboard',        'render' ] );
         add_submenu_page( 'knowly-api', 'Notifications',  'Notifications',  'manage_options', 'knowly-notifications-panel',   [ 'Knowly_Admin_Notifications_Panel','render' ] );
         add_submenu_page( 'knowly-api', 'Analytics',      'Analytics',      'manage_options', 'knowly-analytics',             [ 'Knowly_Admin_Analytics',          'render' ] );
     }
