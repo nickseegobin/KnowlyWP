@@ -124,7 +124,7 @@ class Knowly_Badge_Service {
             ],
             'public'              => false,
             'show_ui'             => true,
-            'show_in_menu'        => 'knowly-api',
+            'show_in_menu'        => false,
             'supports'            => [ 'title', 'excerpt', 'thumbnail' ],
             'has_archive'         => false,
             'rewrite'             => false,
