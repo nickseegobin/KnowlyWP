@@ -38,7 +38,27 @@ class Knowly_Activator {
     public static function maybe_upgrade(): void {
         if ( get_option( 'knowly_db_version' ) !== KNOWLY_DB_VERSION ) {
             self::create_tables();
+            self::run_migrations();
             update_option( 'knowly_db_version', KNOWLY_DB_VERSION );
+        }
+    }
+
+    // ── Column migrations (idempotent ALTER TABLEs) ───────────────────────────
+
+    private static function run_migrations(): void {
+        global $wpdb;
+
+        // v1.7.1 — add trial_type column to knowly_exam_sessions if missing
+        $col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'trial_type'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_exam_sessions'
+        ) );
+        if ( empty( $col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_exam_sessions
+                ADD COLUMN trial_type VARCHAR(50) NOT NULL DEFAULT 'practice'
+                AFTER difficulty" );
         }
     }
 
@@ -96,6 +116,7 @@ class Knowly_Activator {
             level               VARCHAR(20)     NOT NULL DEFAULT '',
             period              VARCHAR(20)     NOT NULL DEFAULT '',
             difficulty          ENUM('easy','medium','hard') NOT NULL DEFAULT 'medium',
+            trial_type          VARCHAR(50)      NOT NULL DEFAULT 'practice',
             state               ENUM('active','completed','cancelled') NOT NULL DEFAULT 'active',
             score               INT UNSIGNED             DEFAULT NULL,
             total               INT UNSIGNED             DEFAULT NULL,
