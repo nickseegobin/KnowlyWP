@@ -72,8 +72,19 @@ class Knowly_Quests_API extends Knowly_API_Base {
         if ( is_wp_error( $ctx ) ) return $ctx;
 
         $child_id = $ctx['child_id'];
-        $level    = get_user_meta( $child_id, 'knowly_level', true )  ?: '';
-        $period   = get_user_meta( $child_id, 'knowly_period', true ) ?: '';
+
+        // Level and period live in knowly_children table, NOT in wp_usermeta.
+        global $wpdb;
+        $child_row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT level, period FROM {$wpdb->prefix}knowly_children WHERE child_id = %d",
+                $child_id
+            ),
+            ARRAY_A
+        );
+        $level  = $child_row['level']  ?? '';
+        $period = $child_row['period'] ?? '';
+
         $subject  = $request->get_param( 'subject' ) ?: '';
 
         if ( ! $level ) {
