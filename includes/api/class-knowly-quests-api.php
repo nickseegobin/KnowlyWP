@@ -73,19 +73,25 @@ class Knowly_Quests_API extends Knowly_API_Base {
 
         $child_id = $ctx['child_id'];
 
-        // Level and period live in knowly_children table, NOT in wp_usermeta.
-        global $wpdb;
-        $child_row = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT level, period FROM {$wpdb->prefix}knowly_children WHERE child_id = %d",
-                $child_id
-            ),
-            ARRAY_A
-        );
-        $level  = $child_row['level']  ?? '';
-        $period = $child_row['period'] ?? '';
+        // Accept explicit level/period from the React layer (more reliable than meta look-up).
+        // Fall back to knowly_children DB row if not supplied.
+        $level  = sanitize_text_field( $request->get_param( 'level' )  ?: '' );
+        $period = sanitize_text_field( $request->get_param( 'period' ) ?: '' );
 
-        $subject  = $request->get_param( 'subject' ) ?: '';
+        if ( ! $level ) {
+            global $wpdb;
+            $child_row = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT level, period FROM {$wpdb->prefix}knowly_children WHERE child_id = %d",
+                    $child_id
+                ),
+                ARRAY_A
+            );
+            $level  = $child_row['level']  ?? '';
+            $period = $child_row['period'] ?? '';
+        }
+
+        $subject = sanitize_text_field( $request->get_param( 'subject' ) ?: '' );
 
         if ( ! $level ) {
             return new WP_Error( 'knowly_missing_profile', 'Student profile is missing a level.', [ 'status' => 422 ] );
