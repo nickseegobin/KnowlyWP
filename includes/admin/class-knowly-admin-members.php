@@ -28,8 +28,9 @@ class Knowly_Admin_Members {
         add_action( 'wp_ajax_knowly_members_reset_pin',      [ __CLASS__, 'ajax_reset_pin' ] );
         add_action( 'wp_ajax_knowly_members_send_recovery',  [ __CLASS__, 'ajax_send_recovery' ] );
         add_action( 'wp_ajax_knowly_members_child_exams',    [ __CLASS__, 'ajax_child_exams' ] );
-        add_action( 'wp_ajax_knowly_members_credit_tokens',  [ __CLASS__, 'ajax_credit_tokens' ] );
-        add_action( 'wp_ajax_knowly_members_load_children',  [ __CLASS__, 'ajax_load_children' ] );
+        add_action( 'wp_ajax_knowly_members_credit_tokens',      [ __CLASS__, 'ajax_credit_tokens' ] );
+        add_action( 'wp_ajax_knowly_members_load_children',      [ __CLASS__, 'ajax_load_children' ] );
+        add_action( 'wp_ajax_knowly_members_credit_child_gems',   [ __CLASS__, 'ajax_credit_child_gems' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ class Knowly_Admin_Members {
                     </thead>
                     <tbody>
                     <?php foreach ( $parents as $parent ) :
-                        $balance      = (int) get_user_meta( $parent->ID, 'knowly_token_balance', true );
+                        $balance      = (int) get_user_meta( $parent->ID, 'knowly_gem_balance', true );
                         $pin_hash     = get_user_meta( $parent->ID, 'knowly_pin_hash', true );
                         $pin_locked   = (int) get_user_meta( $parent->ID, 'knowly_pin_locked_until', true );
                         $is_locked    = $pin_locked && time() < $pin_locked;
@@ -270,6 +271,27 @@ class Knowly_Admin_Members {
                 </div>
                 <div class="knowly-modal-footer">
                     <button id="ct-submit" class="button button-primary">Credit Tokens</button>
+                    <button class="button knowly-modal-close">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Credit Child Gems Modal ────────────────────────────────────── -->
+        <div id="knowly-child-credit-modal" class="knowly-modal-overlay" style="display:none;">
+            <div class="knowly-modal-box" style="max-width:360px;">
+                <div class="knowly-modal-header">
+                    <h2>Credit Gems — <span id="ccg-child-name"></span></h2>
+                    <button class="button knowly-modal-close">✕</button>
+                </div>
+                <div class="knowly-modal-body">
+                    <input type="hidden" id="ccg-child-id" value="" />
+                    <p style="font-size:13px;margin:0 0 12px;">Current balance: <strong id="ccg-current-balance"></strong> gems</p>
+                    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Blue Gems to add</label>
+                    <input type="number" id="ccg-amount" class="regular-text" value="5" min="1" max="1000" />
+                    <div id="ccg-error" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></div>
+                </div>
+                <div class="knowly-modal-footer">
+                    <button id="ccg-submit" class="button button-primary">Credit Gems</button>
                     <button class="button knowly-modal-close">Cancel</button>
                 </div>
             </div>
@@ -630,6 +652,46 @@ class Knowly_Admin_Members {
                 });
             });
 
+            // ── Credit Child Gems ──────────────────────────────────────────────
+            $(document).on('click', '.knowly-credit-child-gems', function() {
+                var cid     = $(this).data('child-id');
+                var name    = $(this).data('child-name');
+                var balance = $(this).data('balance') || 0;
+                $('#ccg-child-id').val(cid);
+                $('#ccg-child-name').text(name);
+                $('#ccg-current-balance').text(balance);
+                $('#ccg-amount').val(5);
+                $('#ccg-error').hide();
+                openModal('knowly-child-credit-modal');
+            });
+
+            $('#ccg-submit').on('click', function() {
+                var $btn = $(this).prop('disabled', true).text('Crediting…');
+                $('#ccg-error').hide();
+
+                $.post(ajaxurl, {
+                    action:   'knowly_members_credit_child_gems',
+                    nonce:    nonce,
+                    child_id: $('#ccg-child-id').val(),
+                    amount:   $('#ccg-amount').val()
+                }, function(res) {
+                    $btn.prop('disabled', false).text('Credit Gems');
+                    if (res.success) {
+                        closeAllModals();
+                        // Update the button's balance data
+                        var cid = $('#ccg-child-id').val();
+                        $('.knowly-credit-child-gems[data-child-id="' + cid + '"]')
+                            .data('balance', res.data.balance_after);
+                        alert('Gems credited to ' + $('#ccg-child-name').text() + '. New balance: ' + res.data.balance_after);
+                    } else {
+                        $('#ccg-error').text(res.data ? res.data.message : 'An error occurred.').show();
+                    }
+                }).fail(function() {
+                    $btn.prop('disabled', false).text('Credit Gems');
+                    $('#ccg-error').text('Request failed. Check the WP debug log.').show();
+                });
+            });
+
         })(jQuery);
         </script>
         <?php
@@ -651,9 +713,10 @@ class Knowly_Admin_Members {
             echo '<p style="color:#888;font-size:12px;margin:0;">No children linked yet.</p>';
         } else {
             foreach ( $children as $child ) :
-                $user     = get_userdata( $child['child_id'] );
-                $exams    = self::get_child_session_count( $child['child_id'] );
-                $nickname = get_user_meta( $child['child_id'], 'knowly_nickname', true );
+                $user          = get_userdata( $child['child_id'] );
+                $exams         = self::get_child_session_count( $child['child_id'] );
+                $nickname      = get_user_meta( $child['child_id'], 'knowly_nickname', true );
+                $child_balance = Knowly_Gem_Service::get_balance( $child['child_id'] );
             ?>
             <div class="knowly-child-card">
                 <div class="knowly-child-info">
@@ -662,6 +725,7 @@ class Knowly_Admin_Members {
                         <?php if ( $nickname ) : ?>
                             <span style="font-size:11px;font-weight:400;color:#6366f1;margin-left:6px;">🏷 <?= esc_html( $nickname ) ?></span>
                         <?php endif; ?>
+                        <span style="font-size:11px;font-weight:600;color:#2563eb;margin-left:8px;">💎 <?= esc_html( $child_balance ) ?></span>
                     </div>
                     <div class="knowly-child-meta">
                         ID: <?= esc_html( $child['child_id'] ) ?>
@@ -672,7 +736,14 @@ class Knowly_Admin_Members {
                         · <strong><?= esc_html( $exams ) ?> exam<?= $exams !== 1 ? 's' : '' ?></strong>
                     </div>
                 </div>
-                <div style="display:flex;gap:6px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button class="button button-small knowly-credit-child-gems"
+                        data-child-id="<?= esc_attr( $child['child_id'] ) ?>"
+                        data-child-name="<?= esc_attr( $child['display_name'] ) ?>"
+                        data-balance="<?= esc_attr( $child_balance ) ?>"
+                        style="color:#2563eb;border-color:#2563eb;">
+                        + Gems
+                    </button>
                     <button class="button button-small knowly-view-exams"
                         data-child-id="<?= esc_attr( $child['child_id'] ) ?>"
                         data-child-name="<?= esc_attr( $child['display_name'] ) ?>">
@@ -854,7 +925,7 @@ class Knowly_Admin_Members {
         wp_send_json_success( [ 'email' => $user->user_email ] );
     }
 
-    // ── AJAX: Credit tokens ───────────────────────────────────────────────────
+    // ── AJAX: Credit tokens (parent) ─────────────────────────────────────────
 
     public static function ajax_credit_tokens(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
@@ -863,7 +934,14 @@ class Knowly_Admin_Members {
         $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
         $amount    = (int) ( $_POST['amount']    ?? 0 );
 
-        if ( ! $parent_id ) wp_send_json_error( [ 'message' => 'Invalid parent.' ] );
+        Knowly_Debug::log( 'admin.members', 'Credit tokens AJAX received', [
+            'parent_id' => $parent_id,
+            'amount'    => $amount,
+        ], null, 'debug' );
+
+        if ( ! $parent_id || ! get_userdata( $parent_id ) ) {
+            wp_send_json_error( [ 'message' => 'Parent account not found.' ] );
+        }
         if ( $amount <= 0 ) wp_send_json_error( [ 'message' => 'Amount must be greater than zero.' ] );
 
         $result = Knowly_Gem_Service::credit( $parent_id, $amount, 'admin_credit', '', '', 'Admin gem credit' );
@@ -875,6 +953,34 @@ class Knowly_Admin_Members {
             'parent_id' => $parent_id,
             'amount'    => $amount,
             'balance'   => $result['balance_after'],
+        ], null, 'info' );
+
+        wp_send_json_success( $result );
+    }
+
+    // ── AJAX: Credit gems (child) ─────────────────────────────────────────────
+
+    public static function ajax_credit_child_gems(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $child_id = (int) ( $_POST['child_id'] ?? 0 );
+        $amount   = (int) ( $_POST['amount']   ?? 0 );
+
+        if ( ! $child_id || ! get_userdata( $child_id ) ) {
+            wp_send_json_error( [ 'message' => 'Child account not found.' ] );
+        }
+        if ( $amount <= 0 ) wp_send_json_error( [ 'message' => 'Amount must be greater than zero.' ] );
+
+        $result = Knowly_Gem_Service::credit( $child_id, $amount, 'admin_credit', '', '', 'Admin child gem credit' );
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+        }
+
+        Knowly_Debug::log( 'admin.members', 'Child gems credited via admin', [
+            'child_id' => $child_id,
+            'amount'   => $amount,
+            'balance'  => $result['balance_after'],
         ], null, 'info' );
 
         wp_send_json_success( $result );
