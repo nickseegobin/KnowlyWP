@@ -26,6 +26,8 @@ class Knowly_Admin_Teachers {
         add_action( 'wp_ajax_knowly_teacher_create_class',       [ __CLASS__, 'ajax_create_class' ] );
         add_action( 'wp_ajax_knowly_teacher_disband_class',      [ __CLASS__, 'ajax_disband_class' ] );
         add_action( 'wp_ajax_knowly_teacher_update_settings',    [ __CLASS__, 'ajax_update_settings' ] );
+        add_action( 'wp_ajax_knowly_teacher_add_gems',           [ __CLASS__, 'ajax_add_gems' ] );
+        add_action( 'wp_ajax_knowly_teacher_remove_gems',        [ __CLASS__, 'ajax_remove_gems' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -126,14 +128,12 @@ class Knowly_Admin_Teachers {
                             <?= esc_html( $teacher['email'] ) ?> · <?= esc_html( $teacher['school_name'] ) ?>
                         </div>
                     </div>
-                    <div style="display:flex;align-items:center;gap:10px;font-size:13px;flex-wrap:wrap;">
-                        <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;">
-                            🔴 <input type="number" class="small-text knowly-teacher-gem-input"
-                                   data-id="<?= (int) $teacher['user_id'] ?>"
-                                   value="<?= (int) $teacher['red_gem_balance'] ?>" min="0" style="width:65px;" />
-                            <button class="button button-small knowly-teacher-save-gems"
-                                    data-id="<?= (int) $teacher['user_id'] ?>">Save</button>
-                        </label>
+                    <div style="display:flex;align-items:center;gap:6px;font-size:13px;flex-wrap:wrap;">
+                        <span style="white-space:nowrap;">🔴 <strong id="teacher-gem-balance-<?= (int) $teacher['user_id'] ?>"><?= (int) $teacher['red_gem_balance'] ?></strong></span>
+                        <button class="button button-small" style="color:#16a34a;border-color:#16a34a;"
+                            onclick="knowlyTeacherAdmin.addGems(<?= (int) $teacher['user_id'] ?>, '<?= esc_js( $nonce ) ?>')">+ Gems</button>
+                        <button class="button button-small" style="color:#d97706;border-color:#d97706;"
+                            onclick="knowlyTeacherAdmin.removeGems(<?= (int) $teacher['user_id'] ?>, '<?= esc_js( $nonce ) ?>')">- Gems</button>
                         <span class="knowly-teacher-action-result" data-id="<?= (int) $teacher['user_id'] ?>" style="font-size:11px;"></span>
                     </div>
                     <div style="display:flex;gap:5px;flex-wrap:wrap;">
@@ -327,17 +327,6 @@ class Knowly_Admin_Teachers {
                 });
             });
 
-            $(document).on('click', '.knowly-teacher-save-gems', function() {
-                const id    = $(this).data('id');
-                const gems  = parseInt($('.knowly-teacher-gem-input[data-id="' + id + '"]').val(), 10);
-                $.post(ajaxurl, { action: 'knowly_teacher_adjust_gems', teacher_id: id, balance: gems, nonce }, function(res) {
-                    if (res.success) {
-                        setResult(id, '✓ Saved', true);
-                    } else {
-                        setResult(id, res.data || 'Error', false);
-                    }
-                });
-            });
 
             $(document).on('click', '.knowly-toggle-teacher-detail', function() {
                 const id    = $(this).data('teacherId');
@@ -350,6 +339,34 @@ class Knowly_Admin_Teachers {
         });
 
         const knowlyTeacherAdmin = {
+            addGems(teacherId, nonce) {
+                var amount = parseInt(prompt('Add how many Red Gems to this teacher?'), 10);
+                if (!amount || amount <= 0) return;
+                jQuery.post(ajaxurl, { action: 'knowly_teacher_add_gems', nonce, teacher_id: teacherId, amount }, r => {
+                    if (r.success) {
+                        jQuery('#teacher-gem-balance-' + teacherId).text(r.data.balance_after);
+                        jQuery('.knowly-teacher-action-result[data-id="' + teacherId + '"]')
+                            .text('+ ' + amount + ' added').css('color','#16a34a');
+                        setTimeout(() => jQuery('.knowly-teacher-action-result[data-id="' + teacherId + '"]').text(''), 3000);
+                    } else {
+                        alert(r.data?.message || 'Error');
+                    }
+                });
+            },
+            removeGems(teacherId, nonce) {
+                var amount = parseInt(prompt('Remove how many Red Gems from this teacher?'), 10);
+                if (!amount || amount <= 0) return;
+                jQuery.post(ajaxurl, { action: 'knowly_teacher_remove_gems', nonce, teacher_id: teacherId, amount }, r => {
+                    if (r.success) {
+                        jQuery('#teacher-gem-balance-' + teacherId).text(r.data.balance_after);
+                        jQuery('.knowly-teacher-action-result[data-id="' + teacherId + '"]')
+                            .text('- ' + amount + ' removed').css('color','#d97706');
+                        setTimeout(() => jQuery('.knowly-teacher-action-result[data-id="' + teacherId + '"]').text(''), 3000);
+                    } else {
+                        alert(r.data?.message || 'Error');
+                    }
+                });
+            },
             saveSettings(teacherId, nonce, btn) {
                 const first     = jQuery('#teacher-fn-'        + teacherId).val().trim();
                 const last      = jQuery('#teacher-ln-'        + teacherId).val().trim();
@@ -425,9 +442,8 @@ class Knowly_Admin_Teachers {
                     class_id: classId,
                 }, r => {
                     if (r.success) {
-                        const row = document.getElementById('class-row-' + classId);
-                        if (row) row.remove();
                         alert('Class disbanded.');
+                        location.reload();
                     } else {
                         alert(r.data?.message || 'Error.');
                     }
@@ -595,6 +611,48 @@ class Knowly_Admin_Teachers {
         ], null, 'info' );
 
         wp_send_json_success();
+    }
+
+    // ── AJAX: Add red gems to teacher ─────────────────────────────────────────
+
+    public static function ajax_add_gems(): void {
+        check_ajax_referer( 'knowly_teacher_action', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $teacher_id = (int) ( $_POST['teacher_id'] ?? 0 );
+        $amount     = max( 1, (int) ( $_POST['amount'] ?? 0 ) );
+
+        if ( ! $teacher_id || ! get_userdata( $teacher_id ) ) {
+            wp_send_json_error( [ 'message' => 'Invalid teacher.' ] );
+        }
+
+        $result = Knowly_Red_Gem_Service::credit( $teacher_id, $amount, 'admin_credit' );
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+        }
+
+        wp_send_json_success( [ 'balance_after' => $result['balance_after'] ] );
+    }
+
+    // ── AJAX: Remove red gems from teacher ────────────────────────────────────
+
+    public static function ajax_remove_gems(): void {
+        check_ajax_referer( 'knowly_teacher_action', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $teacher_id = (int) ( $_POST['teacher_id'] ?? 0 );
+        $amount     = max( 1, (int) ( $_POST['amount'] ?? 0 ) );
+
+        if ( ! $teacher_id || ! get_userdata( $teacher_id ) ) {
+            wp_send_json_error( [ 'message' => 'Invalid teacher.' ] );
+        }
+
+        $result = Knowly_Red_Gem_Service::deduct( $teacher_id, $amount, 'admin_deduct' );
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+        }
+
+        wp_send_json_success( [ 'balance_after' => $result['balance_after'] ] );
     }
 
     // ── AJAX: Update teacher settings ─────────────────────────────────────────
