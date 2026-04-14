@@ -146,7 +146,7 @@ class Knowly_Core {
         $route = $request->get_route();
 
         if ( strpos( $route, '/knowly/v1' ) === 0 ) {
-            Knowly_Debug::log( 'core.jwt_bypass', 'Third-party JWT error cleared for noey route', [
+            Knowly_Debug::log( 'core.jwt_bypass', 'Third-party JWT error cleared for knowly route', [
                 'route'      => $route,
                 'error_code' => $result->get_error_code(),
             ], null, 'debug' );

@@ -328,7 +328,7 @@ class Knowly_Exam_Service {
 
         $body_payload = [
             'user_id'    => (string) $child_id,
-            'curriculum' => 'tt_primary',
+            'curriculum' => get_option( 'knowly_default_curriculum', 'tt_primary' ),
             'level'      => $level,
             'period'     => $period ?: null,
             'subject'    => $railway_subject,

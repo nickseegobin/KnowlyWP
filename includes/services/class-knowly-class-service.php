@@ -119,7 +119,7 @@ class Knowly_Class_Service {
             "SELECT c.*, m.joined_at
              FROM {$wpdb->prefix}knowly_classes c
              INNER JOIN {$wpdb->prefix}knowly_class_members m ON m.class_id = c.id
-             WHERE m.child_id = %d AND m.status = 'active'
+             WHERE m.child_id = %d AND m.status = 'active' AND c.status = 'active'
              ORDER BY m.joined_at DESC",
             $child_id
         ), ARRAY_A );

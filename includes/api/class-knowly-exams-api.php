@@ -3,7 +3,6 @@
  * Knowly_Exams_API — Exam delivery endpoints.
  *
  * Routes:
- *   GET    /knowly/v1/exams                          JWT  Exam catalogue
  *   GET    /knowly/v1/exams/active                   JWT  Active session for current child (or null)
  *   POST   /knowly/v1/exams/start                    JWT  Start exam (deduct token + serve package)
  *   GET    /knowly/v1/exams/{session_id}/checkpoint  JWT  Get saved checkpoint
@@ -21,18 +20,6 @@ class Knowly_Exams_API extends Knowly_API_Base {
     public function register_routes(): void {
         $ns = $this->namespace;
 
-        register_rest_route( $ns, '/exams', [
-            'methods'             => 'GET',
-            'callback'            => [ $this, 'catalogue' ],
-            'permission_callback' => '__return_true',
-            'args'                => [
-                'level'     => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
-                'period'   => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
-                'subject'    => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
-                'difficulty' => [ 'type' => 'string', 'enum' => [ 'easy', 'medium', 'hard' ] ],
-            ],
-        ] );
-
         register_rest_route( $ns, '/exams/active', [
             'methods'             => 'GET',
             'callback'            => [ $this, 'active_session' ],
@@ -44,10 +31,12 @@ class Knowly_Exams_API extends Knowly_API_Base {
             'callback'            => [ $this, 'start' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'level'     => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
-                'period'   => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'level'      => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'period'     => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
                 'subject'    => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
                 'difficulty' => [ 'required' => false, 'type' => 'string', 'default' => 'medium', 'enum' => [ 'easy', 'medium', 'hard' ] ],
+                'trial_type' => [ 'required' => false, 'type' => 'string', 'default' => 'practice', 'enum' => [ 'practice', 'sea' ], 'sanitize_callback' => 'sanitize_text_field' ],
+                'topic'      => [ 'required' => false, 'type' => 'string', 'default' => '', 'sanitize_callback' => 'sanitize_text_field' ],
             ],
         ] );
 
@@ -93,22 +82,6 @@ class Knowly_Exams_API extends Knowly_API_Base {
         return $this->success( [ 'session' => $session ] );
     }
 
-    public function catalogue( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-        $user_id = $this->authenticate( $request );
-        if ( is_wp_error( $user_id ) ) return $user_id;
-
-        $filters = array_filter( [
-            'level'     => $request->get_param( 'level' ),
-            'period'   => $request->get_param( 'period' ),
-            'subject'    => $request->get_param( 'subject' ),
-            'difficulty' => $request->get_param( 'difficulty' ),
-        ] );
-
-        return $this->success( [
-            'catalogue' => Knowly_Exam_Service::get_catalogue( $filters ),
-        ] );
-    }
-
     public function start( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
@@ -119,7 +92,9 @@ class Knowly_Exams_API extends Knowly_API_Base {
             $request->get_param( 'level' ),
             $request->get_param( 'period' ),
             $request->get_param( 'subject' ),
-            $request->get_param( 'difficulty' )
+            $request->get_param( 'difficulty' ),
+            $request->get_param( 'trial_type' ) ?: 'practice',
+            $request->get_param( 'topic' ) ?: ''
         );
 
         return is_wp_error( $result ) ? $result : $this->success( $result );

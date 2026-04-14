@@ -33,7 +33,7 @@ class Knowly_Classes_API extends Knowly_API_Base {
             'callback'            => [ $this, 'child_lookup' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'q' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'nickname' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
             ],
         ] );
 
@@ -172,7 +172,7 @@ class Knowly_Classes_API extends Knowly_API_Base {
         $teacher_id = $this->require_teacher( $request );
         if ( is_wp_error( $teacher_id ) ) return $teacher_id;
 
-        $results = Knowly_Class_Service::search_children( $request->get_param( 'q' ) );
+        $results = Knowly_Class_Service::search_children( $request->get_param( 'nickname' ) );
         if ( is_wp_error( $results ) ) return $results;
 
         return $this->success( [ 'results' => $results, 'count' => count( $results ) ] );

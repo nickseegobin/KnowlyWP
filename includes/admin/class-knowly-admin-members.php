@@ -31,6 +31,9 @@ class Knowly_Admin_Members {
         add_action( 'wp_ajax_knowly_members_credit_tokens',      [ __CLASS__, 'ajax_credit_tokens' ] );
         add_action( 'wp_ajax_knowly_members_load_children',      [ __CLASS__, 'ajax_load_children' ] );
         add_action( 'wp_ajax_knowly_members_credit_child_gems',   [ __CLASS__, 'ajax_credit_child_gems' ] );
+        add_action( 'wp_ajax_knowly_admin_allocate_to_child',     [ __CLASS__, 'ajax_allocate_to_child' ] );
+        add_action( 'wp_ajax_knowly_admin_reclaim_from_child',    [ __CLASS__, 'ajax_reclaim_from_child' ] );
+        add_action( 'wp_ajax_knowly_admin_delete_child_history',  [ __CLASS__, 'ajax_delete_child_history' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -997,8 +1000,8 @@ class Knowly_Admin_Members {
 
         global $wpdb;
         $sessions = $wpdb->get_results( $wpdb->prepare(
-            "SELECT session_id, external_session_id, subject, standard, term, difficulty,
-                    score, total, percentage, time_taken_seconds, state, started_at, completed_at
+            "SELECT session_id, external_session_id, subject, level, period, difficulty,
+                    trial_type, score, total, percentage, time_taken_seconds, state, started_at, completed_at
              FROM {$wpdb->prefix}knowly_exam_sessions
              WHERE child_id = %d
              ORDER BY started_at DESC
@@ -1050,7 +1053,7 @@ class Knowly_Admin_Members {
                 ?>
                 <tr>
                     <td><strong><?= esc_html( $s['subject'] ) ?></strong></td>
-                    <td><?= esc_html( strtoupper( $s['level'] ) ) ?> <?= $s['period'] ? esc_html( strtoupper( str_replace( '_', ' ', $s['period'] ) ) ) : 'SEA' ?></td>
+                    <td><?= esc_html( strtoupper( $s['level'] ?? '' ) ) ?> <?= ( $s['period'] ?? '' ) ? esc_html( strtoupper( str_replace( '_', ' ', $s['period'] ) ) ) : 'SEA' ?></td>
                     <td><?= esc_html( ucfirst( $s['difficulty'] ) ) ?></td>
                     <td style="text-align:center;"><?= $s['state'] === 'completed' ? esc_html( $s['score'] . '/' . $s['total'] ) : '—' ?></td>
                     <td style="text-align:center;font-weight:700;color:<?= $s['state'] === 'completed' ? $pct_color : '#9ca3af' ?>;">
@@ -1076,6 +1079,117 @@ class Knowly_Admin_Members {
         }
         $html = ob_get_clean();
         wp_send_json_success( [ 'html' => $html ] );
+    }
+
+    // ── AJAX: Allocate gems parent → child ────────────────────────────────────
+
+    public static function ajax_allocate_to_child(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
+        $child_id  = (int) ( $_POST['child_id']  ?? 0 );
+        $amount    = (int) ( $_POST['amount']     ?? 0 );
+
+        if ( ! $parent_id || ! $child_id || $amount <= 0 ) {
+            wp_send_json_error( [ 'message' => 'Invalid parameters.' ] );
+        }
+
+        $result = Knowly_Gem_Service::allocate( $parent_id, $child_id, $amount );
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+        }
+
+        Knowly_Debug::log( 'admin.members', 'Admin allocated gems parent→child', [
+            'parent_id'      => $parent_id,
+            'child_id'       => $child_id,
+            'amount'         => $amount,
+            'parent_balance' => $result['parent_balance'],
+            'child_balance'  => $result['child_balance'],
+        ], null, 'info' );
+
+        wp_send_json_success( $result );
+    }
+
+    // ── AJAX: Reclaim gems child → parent ─────────────────────────────────────
+
+    public static function ajax_reclaim_from_child(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $parent_id = (int) ( $_POST['parent_id'] ?? 0 );
+        $child_id  = (int) ( $_POST['child_id']  ?? 0 );
+        $amount    = (int) ( $_POST['amount']     ?? 0 );
+
+        if ( ! $parent_id || ! $child_id || $amount <= 0 ) {
+            wp_send_json_error( [ 'message' => 'Invalid parameters.' ] );
+        }
+
+        $child_balance = Knowly_Gem_Service::get_balance( $child_id );
+        if ( $child_balance < $amount ) {
+            wp_send_json_error( [ 'message' => "Child only has {$child_balance} gems." ] );
+        }
+
+        // Deduct from child
+        $result = Knowly_Gem_Service::deduct( $child_id, $amount, 'parent_reclaim', '', (string) $parent_id, "Reclaimed by admin/parent {$parent_id}" );
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+        }
+
+        // Credit to parent
+        Knowly_Gem_Service::credit( $parent_id, $amount, 'parent_reclaim', '', (string) $child_id, "Reclaimed from child {$child_id}" );
+
+        Knowly_Debug::log( 'admin.members', 'Admin reclaimed gems child→parent', [
+            'parent_id' => $parent_id,
+            'child_id'  => $child_id,
+            'amount'    => $amount,
+        ], null, 'info' );
+
+        wp_send_json_success( [
+            'parent_balance' => Knowly_Gem_Service::get_balance( $parent_id ),
+            'child_balance'  => Knowly_Gem_Service::get_balance( $child_id ),
+        ] );
+    }
+
+    // ── AJAX: Delete child history ────────────────────────────────────────────
+
+    public static function ajax_delete_child_history(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $child_id = (int) ( $_POST['child_id'] ?? 0 );
+        $type     = sanitize_key( $_POST['type'] ?? 'trials' );
+
+        if ( ! $child_id ) {
+            wp_send_json_error( [ 'message' => 'Invalid child.' ] );
+        }
+
+        global $wpdb;
+
+        if ( $type === 'quests' ) {
+            delete_user_meta( $child_id, 'knowly_earned_badges' );
+            $deleted = 1;
+        } else {
+            $deleted = (int) $wpdb->delete(
+                $wpdb->prefix . 'knowly_exam_sessions',
+                [ 'child_id' => $child_id ],
+                [ '%d' ]
+            );
+            // Also delete answers
+            $wpdb->delete(
+                $wpdb->prefix . 'knowly_exam_answers',
+                [ 'child_id' => $child_id ],
+                [ '%d' ]
+            );
+        }
+
+        Knowly_Debug::log( 'admin.members', 'Child history deleted via admin', [
+            'child_id' => $child_id,
+            'type'     => $type,
+            'deleted'  => $deleted,
+        ], null, 'info' );
+
+        wp_send_json_success( [ 'deleted' => $deleted ] );
     }
 
     // ── Helper ────────────────────────────────────────────────────────────────

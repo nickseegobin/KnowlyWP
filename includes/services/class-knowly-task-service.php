@@ -68,6 +68,18 @@ class Knowly_Task_Service {
             $due_date = $parsed ? $parsed->format( 'Y-m-d' ) : null;
         }
 
+        // Deduct red gems before inserting task — prevents tasks being created without payment
+        $deducted = Knowly_Red_Gem_Service::deduct(
+            $teacher_id,
+            $gem_cost,
+            'assignment_spent',
+            "task_pending_{$class_id}"
+        );
+
+        if ( is_wp_error( $deducted ) ) {
+            return $deducted;
+        }
+
         // Insert task
         $inserted = $wpdb->insert(
             $wpdb->prefix . 'knowly_tasks',
@@ -89,27 +101,13 @@ class Knowly_Task_Service {
         );
 
         if ( $inserted === false ) {
-            Knowly_Debug::log( 'task.create', 'DB insert failed', [ 'error' => $wpdb->last_error ], $teacher_id, 'error' );
+            Knowly_Debug::log( 'task.create', 'DB insert failed after gem deduction', [ 'error' => $wpdb->last_error ], $teacher_id, 'error' );
+            // Refund the deducted gems since task creation failed
+            Knowly_Red_Gem_Service::credit( $teacher_id, $gem_cost, 'assignment_refund', "task_pending_{$class_id}" );
             return new WP_Error( 'knowly_db_error', 'Failed to create task.', [ 'status' => 500 ] );
         }
 
         $task_id = (int) $wpdb->insert_id;
-
-        // Deduct red gems from teacher
-        $deducted = Knowly_Red_Gem_Service::deduct(
-            $teacher_id,
-            $gem_cost,
-            'assignment_spent',
-            "task_{$task_id}"
-        );
-
-        if ( is_wp_error( $deducted ) ) {
-            // Task is already created — log error but don't roll back
-            Knowly_Debug::log( 'task.create', 'Red gem deduction failed after task insert', [
-                'task_id'  => $task_id,
-                'error'    => $deducted->get_error_message(),
-            ], $teacher_id, 'error' );
-        }
 
         Knowly_Debug::log( 'task.create', 'Task created', [
             'task_id'  => $task_id,
