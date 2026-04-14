@@ -22,9 +22,10 @@ class Knowly_Admin_Teachers {
         add_action( 'wp_ajax_knowly_teacher_approve',           [ __CLASS__, 'ajax_approve' ] );
         add_action( 'wp_ajax_knowly_teacher_suspend',           [ __CLASS__, 'ajax_suspend' ] );
         add_action( 'wp_ajax_knowly_teacher_adjust_gems',       [ __CLASS__, 'ajax_adjust_gems' ] );
-        add_action( 'wp_ajax_knowly_teacher_upload_id_doc',     [ __CLASS__, 'ajax_upload_id_doc' ] );
-        add_action( 'wp_ajax_knowly_teacher_create_class',      [ __CLASS__, 'ajax_create_class' ] );
-        add_action( 'wp_ajax_knowly_teacher_disband_class',     [ __CLASS__, 'ajax_disband_class' ] );
+        add_action( 'wp_ajax_knowly_teacher_upload_id_doc',      [ __CLASS__, 'ajax_upload_id_doc' ] );
+        add_action( 'wp_ajax_knowly_teacher_create_class',       [ __CLASS__, 'ajax_create_class' ] );
+        add_action( 'wp_ajax_knowly_teacher_disband_class',      [ __CLASS__, 'ajax_disband_class' ] );
+        add_action( 'wp_ajax_knowly_teacher_update_settings',    [ __CLASS__, 'ajax_update_settings' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -153,18 +154,60 @@ class Knowly_Admin_Teachers {
                 <div class="knowly-teacher-detail-panel" id="teacher-detail-<?= (int) $teacher['user_id'] ?>"
                      style="display:none;border-top:1px solid #e5e7eb;background:#f9fafb;padding:12px 14px;">
 
-                    <!-- Full details -->
-                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:14px;font-size:12px;">
-                        <div><span style="color:#888;">First Name:</span> <strong><?= esc_html( $teacher['first_name'] ) ?></strong></div>
-                        <div><span style="color:#888;">Last Name:</span> <strong><?= esc_html( $teacher['last_name'] ) ?></strong></div>
-                        <div><span style="color:#888;">School:</span> <strong><?= esc_html( $teacher['school_name'] ) ?></strong></div>
-                        <div><span style="color:#888;">Class Name:</span> <strong><?= esc_html( $teacher['class_name'] ) ?></strong></div>
-                        <div><span style="color:#888;">Phone:</span> <strong><?= esc_html( $teacher['phone'] ) ?></strong></div>
-                        <div><span style="color:#888;">Principal:</span> <strong><?= esc_html( $teacher['principal_name'] ) ?></strong></div>
-                        <div><span style="color:#888;">Principal Contact:</span> <strong><?= esc_html( $teacher['principal_contact'] ) ?></strong></div>
-                        <div><span style="color:#888;">Red Gem Stipend:</span> <strong><?= esc_html( $teacher['red_gem_stipend'] ) ?></strong></div>
-                        <div><span style="color:#888;">Registered:</span> <strong><?= esc_html( substr( $teacher['registered'], 0, 10 ) ) ?></strong></div>
-                        <div><span style="color:#888;">User ID:</span> <strong><?= esc_html( $teacher['user_id'] ) ?></strong></div>
+                    <!-- Teacher Settings (editable) -->
+                    <?php $t_avatar = (int) get_user_meta( $teacher['user_id'], 'knowly_avatar_index', true ) ?: 1; ?>
+                    <div style="margin-bottom:14px;">
+                        <strong style="font-size:13px;display:block;margin-bottom:8px;">Settings</strong>
+                        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;font-size:12px;">
+                            <div>
+                                <label style="display:block;font-weight:600;margin-bottom:3px;">First Name</label>
+                                <input type="text" id="teacher-fn-<?= (int) $teacher['user_id'] ?>"
+                                    value="<?= esc_attr( $teacher['first_name'] ) ?>"
+                                    style="width:100%;height:28px;font-size:12px;">
+                            </div>
+                            <div>
+                                <label style="display:block;font-weight:600;margin-bottom:3px;">Last Name</label>
+                                <input type="text" id="teacher-ln-<?= (int) $teacher['user_id'] ?>"
+                                    value="<?= esc_attr( $teacher['last_name'] ) ?>"
+                                    style="width:100%;height:28px;font-size:12px;">
+                            </div>
+                            <div>
+                                <label style="display:block;font-weight:600;margin-bottom:3px;">School</label>
+                                <input type="text" id="teacher-school-<?= (int) $teacher['user_id'] ?>"
+                                    value="<?= esc_attr( $teacher['school_name'] ) ?>"
+                                    style="width:100%;height:28px;font-size:12px;">
+                            </div>
+                            <div>
+                                <label style="display:block;font-weight:600;margin-bottom:3px;">Class / Level</label>
+                                <input type="text" id="teacher-classname-<?= (int) $teacher['user_id'] ?>"
+                                    value="<?= esc_attr( $teacher['class_name'] ) ?>"
+                                    placeholder="e.g. 4B / Standard 4"
+                                    style="width:100%;height:28px;font-size:12px;">
+                            </div>
+                            <div>
+                                <label style="display:block;font-weight:600;margin-bottom:3px;">Avatar (1–10)</label>
+                                <input type="number" min="1" max="10" id="teacher-avatar-<?= (int) $teacher['user_id'] ?>"
+                                    value="<?= esc_attr( $t_avatar ) ?>"
+                                    style="width:100%;height:28px;font-size:12px;">
+                            </div>
+                        </div>
+                        <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                            <button class="button button-small button-primary"
+                                onclick="knowlyTeacherAdmin.saveSettings(<?= (int) $teacher['user_id'] ?>, '<?= esc_js( $nonce ) ?>', this)">
+                                Save Settings
+                            </button>
+                            <span class="teacher-settings-status-<?= (int) $teacher['user_id'] ?>" style="font-size:11px;"></span>
+                        </div>
+                    </div>
+
+                    <!-- Read-only info -->
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin-bottom:14px;font-size:12px;color:#555;">
+                        <div><span style="color:#888;">Phone:</span> <?= esc_html( $teacher['phone'] ) ?></div>
+                        <div><span style="color:#888;">Principal:</span> <?= esc_html( $teacher['principal_name'] ) ?></div>
+                        <div><span style="color:#888;">Principal Contact:</span> <?= esc_html( $teacher['principal_contact'] ) ?></div>
+                        <div><span style="color:#888;">Red Gem Stipend:</span> <?= esc_html( $teacher['red_gem_stipend'] ) ?></div>
+                        <div><span style="color:#888;">Registered:</span> <?= esc_html( substr( $teacher['registered'], 0, 10 ) ) ?></div>
+                        <div><span style="color:#888;">User ID:</span> <?= esc_html( $teacher['user_id'] ) ?></div>
                     </div>
 
                     <!-- ID Document -->
@@ -307,6 +350,30 @@ class Knowly_Admin_Teachers {
         });
 
         const knowlyTeacherAdmin = {
+            saveSettings(teacherId, nonce, btn) {
+                const first     = jQuery('#teacher-fn-'        + teacherId).val().trim();
+                const last      = jQuery('#teacher-ln-'        + teacherId).val().trim();
+                const school    = jQuery('#teacher-school-'    + teacherId).val().trim();
+                const className = jQuery('#teacher-classname-' + teacherId).val().trim();
+                const avatar    = jQuery('#teacher-avatar-'    + teacherId).val();
+                const $s        = jQuery('.teacher-settings-status-' + teacherId);
+                btn.disabled = true;
+                jQuery.post(ajaxurl, {
+                    action:      'knowly_teacher_update_settings',
+                    nonce:       nonce,
+                    teacher_id:  teacherId,
+                    first_name:  first,
+                    last_name:   last,
+                    school_name: school,
+                    class_name:  className,
+                    avatar_index: avatar,
+                }, r => {
+                    btn.disabled = false;
+                    $s.text(r.success ? '✓ Saved' : (r.data?.message || 'Error'))
+                      .css('color', r.success ? '#16a34a' : '#dc2626');
+                    setTimeout(() => $s.text(''), 3000);
+                });
+            },
             uploadIdDoc(teacherId, input, nonce) {
                 const file = input.files[0];
                 if (!file) return;
@@ -525,6 +592,46 @@ class Knowly_Admin_Teachers {
 
         Knowly_Debug::log( 'admin.teachers', 'Class disbanded via admin', [
             'class_id' => $class_id,
+        ], null, 'info' );
+
+        wp_send_json_success();
+    }
+
+    // ── AJAX: Update teacher settings ─────────────────────────────────────────
+
+    public static function ajax_update_settings(): void {
+        check_ajax_referer( 'knowly_teacher_action', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $teacher_id  = (int) ( $_POST['teacher_id']  ?? 0 );
+        $first_name  = sanitize_text_field( $_POST['first_name']  ?? '' );
+        $last_name   = sanitize_text_field( $_POST['last_name']   ?? '' );
+        $school_name = sanitize_text_field( $_POST['school_name'] ?? '' );
+        $class_name  = sanitize_text_field( $_POST['class_name']  ?? '' );
+        $avatar      = max( 1, min( 10, (int) ( $_POST['avatar_index'] ?? 1 ) ) );
+
+        if ( ! $teacher_id || ! get_userdata( $teacher_id ) ) {
+            wp_send_json_error( [ 'message' => 'Invalid teacher.' ] );
+        }
+
+        // Update WP user core fields
+        $update_data = [ 'ID' => $teacher_id ];
+        if ( $first_name !== '' ) $update_data['first_name']   = $first_name;
+        if ( $last_name  !== '' ) $update_data['last_name']    = $last_name;
+        if ( $first_name !== '' || $last_name !== '' ) {
+            $fn = $first_name ?: get_user_meta( $teacher_id, 'first_name', true );
+            $ln = $last_name  ?: get_user_meta( $teacher_id, 'last_name',  true );
+            $update_data['display_name'] = trim( $fn . ' ' . $ln );
+        }
+        wp_update_user( $update_data );
+
+        // Update teacher-specific meta
+        if ( $school_name !== '' ) update_user_meta( $teacher_id, 'knowly_school_name', $school_name );
+        if ( $class_name  !== '' ) update_user_meta( $teacher_id, 'knowly_class_name',  $class_name );
+        update_user_meta( $teacher_id, 'knowly_avatar_index', $avatar );
+
+        Knowly_Debug::log( 'admin.teachers', 'Teacher settings updated via admin', [
+            'teacher_id' => $teacher_id,
         ], null, 'info' );
 
         wp_send_json_success();

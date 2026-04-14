@@ -2,8 +2,8 @@
 /**
  * Knowly_Admin_Users — Users module admin page.
  *
- * Consolidates Parents, Teachers, and Children management.
- * Tabs: Parents | Teachers | Children | Unit Tests
+ * Tabs: Parents | Children | Unit Tests
+ * (Teachers tab removed — use Admin › Teachers instead)
  *
  * @package KnowlyAPI
  */
@@ -13,8 +13,8 @@ defined( 'ABSPATH' ) || exit;
 class Knowly_Admin_Users {
 
     public static function boot(): void {
-        // Delegate to existing AJAX handlers (already registered by Member/Teacher boot)
-        // No new AJAX needed — we re-use the AJAX from Knowly_Admin_Members and Knowly_Admin_Teachers
+        add_action( 'wp_ajax_knowly_admin_update_child',  [ __CLASS__, 'ajax_update_child' ] );
+        add_action( 'wp_ajax_knowly_admin_update_parent', [ __CLASS__, 'ajax_update_parent' ] );
     }
 
     public static function render(): void {
@@ -23,7 +23,6 @@ class Knowly_Admin_Users {
         $tab = sanitize_key( $_GET['tab'] ?? 'parents' );
         $tabs = [
             'parents'  => 'Parents',
-            'teachers' => 'Teachers',
             'children' => 'Children',
             'tests'    => 'Unit Tests',
         ];
@@ -40,7 +39,6 @@ class Knowly_Admin_Users {
                 <?php
                 match ( $tab ) {
                     'parents'  => self::render_parents(),
-                    'teachers' => self::render_teachers(),
                     'children' => self::render_children(),
                     'tests'    => self::render_tests(),
                     default    => self::render_parents(),
@@ -54,9 +52,25 @@ class Knowly_Admin_Users {
     // ── Parents ───────────────────────────────────────────────────────────────
 
     private static function render_parents(): void {
+        global $wpdb;
         $parents = get_users( [ 'role' => 'knowly_parent', 'orderby' => 'registered', 'order' => 'DESC' ] );
         $total_children = (int) ( new WP_User_Query( [ 'role' => 'knowly_child', 'count_total' => true, 'number' => 0 ] ) )->get_total();
         $nonce = wp_create_nonce( 'knowly_admin_nonce' );
+
+        // Batch-load all children from DB to avoid N+1 queries
+        $all_children_rows = $wpdb->get_results(
+            "SELECT c.parent_id, c.child_id, c.display_name, c.level, c.period, c.avatar_index,
+                    um.meta_value AS nickname
+             FROM {$wpdb->prefix}knowly_children c
+             LEFT JOIN {$wpdb->usermeta} um ON um.user_id = c.child_id AND um.meta_key = 'knowly_nickname'
+             ORDER BY c.child_row_id ASC",
+            ARRAY_A
+        ) ?: [];
+
+        $children_by_parent = [];
+        foreach ( $all_children_rows as $row ) {
+            $children_by_parent[ (int) $row['parent_id'] ][] = $row;
+        }
         ?>
         <div class="knowly-stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;">
             <div class="knowly-stat-card">
@@ -77,36 +91,42 @@ class Knowly_Admin_Users {
         </p>
 
         <div id="knowly-parents-list">
-        <?php foreach ( $parents as $parent ) : ?>
-        <?php
-        $gem_balance = (int) get_user_meta( $parent->ID, 'knowly_gem_balance', true );
-        $has_pin     = (bool) get_user_meta( $parent->ID, 'knowly_pin_hash', true );
-        $child_ids   = get_user_meta( $parent->ID, 'knowly_children', true ) ?: [];
-        $child_count = count( $child_ids );
-        $is_test     = get_user_meta( $parent->ID, 'knowly_is_test_account', true );
+        <?php foreach ( $parents as $parent ) :
+            $gem_balance    = (int) get_user_meta( $parent->ID, 'knowly_gem_balance', true );
+            $has_pin        = (bool) get_user_meta( $parent->ID, 'knowly_pin_hash', true );
+            $is_test        = (bool) get_user_meta( $parent->ID, 'knowly_is_test_account', true );
+            $first_name     = get_user_meta( $parent->ID, 'first_name', true );
+            $last_name      = get_user_meta( $parent->ID, 'last_name', true );
+            $children_data  = $children_by_parent[ $parent->ID ] ?? [];
+            $child_count    = count( $children_data );
         ?>
         <div class="knowly-parent-card"
              style="border:1px solid #c3c4c7;border-radius:4px;margin-bottom:8px;background:#fff;"
-             data-search="<?= esc_attr( strtolower( $parent->display_name . ' ' . $parent->user_email ) ) ?>">
+             data-search="<?= esc_attr( strtolower( $parent->display_name . ' ' . $parent->user_email . ' ' . $first_name . ' ' . $last_name ) ) ?>">
 
+            <!-- Parent header row -->
             <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;flex-wrap:wrap;">
                 <div style="flex:1;min-width:200px;">
                     <strong>#<?= esc_html( $parent->ID ) ?> <?= esc_html( $parent->display_name ) ?></strong>
                     <?php if ( $is_test ) : ?><span class="knowly-badge warn" style="margin-left:6px;">test</span><?php endif; ?>
                     <div style="font-size:12px;color:#666;margin-top:2px;"><?= esc_html( $parent->user_email ) ?></div>
                 </div>
-                <div style="display:flex;gap:16px;align-items:center;font-size:13px;">
-                    <span title="Gem balance"><span id="parent-gem-<?= (int) $parent->ID ?>"><?= esc_html( $gem_balance ) ?></span> 💎</span>
+                <div style="display:flex;gap:16px;align-items:center;font-size:13px;flex-wrap:wrap;">
+                    <span><span id="parent-gem-<?= (int) $parent->ID ?>"><?= esc_html( $gem_balance ) ?></span> 💎</span>
                     <span><?= esc_html( $child_count ) ?> child<?= $child_count !== 1 ? 'ren' : '' ?></span>
                     <span><?= $has_pin ? '<span class="knowly-badge ok" style="font-size:11px;">PIN Set</span>' : '<span class="knowly-badge" style="font-size:11px;">No PIN</span>' ?></span>
                     <span style="color:#888;font-size:11px;"><?= esc_html( substr( $parent->user_registered, 0, 10 ) ) ?></span>
                 </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                    <a href="<?= esc_url( admin_url( 'user-edit.php?user_id=' . $parent->ID ) ) ?>" class="button button-small">Edit</a>
+                <div style="display:flex;gap:5px;flex-wrap:wrap;">
                     <button class="button button-small"
                         onclick="knowlyParents.resetPin(<?= (int) $parent->ID ?>)">Reset PIN</button>
                     <button class="button button-small"
                         onclick="knowlyParents.creditGems(<?= (int) $parent->ID ?>, '<?= esc_js( $parent->display_name ) ?>')">+ Gems</button>
+                    <button class="button button-small knowly-toggle-parent-edit"
+                        data-parent-id="<?= (int) $parent->ID ?>"
+                        style="color:#6366f1;border-color:#6366f1;">
+                        Settings ▾
+                    </button>
                     <?php if ( $child_count > 0 ) : ?>
                     <button class="button button-small knowly-toggle-children"
                         data-parent-id="<?= (int) $parent->ID ?>"
@@ -117,27 +137,47 @@ class Knowly_Admin_Users {
                 </div>
             </div>
 
+            <!-- Parent settings panel -->
+            <div class="knowly-parent-edit-panel" id="parent-edit-<?= (int) $parent->ID ?>"
+                 style="display:none;border-top:1px solid #e5e7eb;background:#f0f4ff;padding:10px 14px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:500px;font-size:13px;">
+                    <div>
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">First Name</label>
+                        <input type="text" class="regular-text" id="parent-firstname-<?= (int) $parent->ID ?>"
+                            value="<?= esc_attr( $first_name ) ?>" style="width:100%;height:28px;font-size:12px;">
+                    </div>
+                    <div>
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">Last Name</label>
+                        <input type="text" class="regular-text" id="parent-lastname-<?= (int) $parent->ID ?>"
+                            value="<?= esc_attr( $last_name ) ?>" style="width:100%;height:28px;font-size:12px;">
+                    </div>
+                </div>
+                <div style="margin-top:8px;">
+                    <button class="button button-small button-primary"
+                        onclick="knowlyParents.saveSettings(<?= (int) $parent->ID ?>, this)">Save</button>
+                    <span class="parent-save-status-<?= (int) $parent->ID ?>" style="margin-left:8px;font-size:11px;"></span>
+                </div>
+            </div>
+
+            <!-- Children hierarchy panel -->
             <?php if ( $child_count > 0 ) : ?>
             <div class="knowly-children-panel" id="children-panel-<?= (int) $parent->ID ?>"
                  style="display:none;border-top:1px solid #e5e7eb;background:#f9fafb;padding:10px 14px;">
-                <?php
-                // Render children inline
-                $children_data = Knowly_Children_Service::list_children( $parent->ID );
-                foreach ( $children_data as $child ) :
-                    $child_gem_balance = Knowly_Gem_Service::get_balance( $child['child_id'] );
-                    $child_user        = get_userdata( $child['child_id'] );
-                    $nickname          = get_user_meta( $child['child_id'], 'knowly_nickname', true );
+                <?php foreach ( $children_data as $child ) :
+                    $child_gem_balance = Knowly_Gem_Service::get_balance( (int) $child['child_id'] );
+                    $level_label = $child['level'] ? strtoupper( $child['level'] ) : 'SEA';
+                    $period_label = $child['period'] ? strtoupper( str_replace( '_', ' ', $child['period'] ) ) : '';
                 ?>
-                <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #e5e7eb;flex-wrap:wrap;"
+                <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #e5e7eb;flex-wrap:wrap;"
                      data-child-id="<?= (int) $child['child_id'] ?>">
                     <div style="flex:1;min-width:180px;">
                         <strong style="font-size:13px;"><?= esc_html( $child['display_name'] ) ?></strong>
-                        <?php if ( $nickname ) : ?>
-                            <span style="font-size:11px;color:#6366f1;margin-left:4px;">@<?= esc_html( $nickname ) ?></span>
+                        <?php if ( $child['nickname'] ) : ?>
+                            <span style="font-size:11px;color:#6366f1;margin-left:4px;">@<?= esc_html( $child['nickname'] ) ?></span>
                         <?php endif; ?>
                         <div style="font-size:11px;color:#666;">
-                            ID <?= esc_html( $child['child_id'] ) ?> · <?= esc_html( strtoupper( $child['level'] ) ) ?>
-                            <?= $child['period'] ? ' · ' . esc_html( strtoupper( str_replace( '_', ' ', $child['period'] ) ) ) : ' · SEA' ?>
+                            #<?= esc_html( $child['child_id'] ) ?> · <?= esc_html( $level_label ) ?>
+                            <?= $period_label ? ' · ' . esc_html( $period_label ) : '' ?>
                         </div>
                     </div>
                     <span style="font-size:13px;">
@@ -187,23 +227,50 @@ class Knowly_Admin_Users {
             });
         });
 
+        document.querySelectorAll('.knowly-toggle-parent-edit').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var panel = document.getElementById('parent-edit-' + this.dataset.parentId);
+                if (!panel) return;
+                var open = panel.style.display !== 'none';
+                panel.style.display = open ? 'none' : 'block';
+                this.textContent = open ? 'Settings ▾' : 'Settings ▴';
+            });
+        });
+
         const knowlyParents = {
             resetPin(userId) {
                 if (!confirm('Reset PIN for user ' + userId + '?')) return;
-                jQuery.post(ajaxurl, { action: 'knowly_members_reset_pin', nonce: KnowlyAdmin.nonce, user_id: userId }, r => {
+                jQuery.post(ajaxurl, { action: 'knowly_members_reset_pin', nonce: _parentNonce, user_id: userId }, r => {
                     alert(r.success ? 'PIN reset.' : (r.data?.message || 'Error'));
                 });
             },
             creditGems(userId, name) {
                 var amount = parseInt(prompt('Credit how many gems to ' + name + '?'), 10);
                 if (!amount || amount <= 0) return;
-                jQuery.post(ajaxurl, { action: 'knowly_members_credit_tokens', nonce: KnowlyAdmin.nonce, parent_id: userId, amount: amount }, r => {
+                jQuery.post(ajaxurl, { action: 'knowly_members_credit_tokens', nonce: _parentNonce, parent_id: userId, amount: amount }, r => {
                     if (r.success) {
                         document.getElementById('parent-gem-' + userId).textContent = r.data.balance_after;
                         alert('Credited ' + amount + ' gems.');
                     } else {
                         alert(r.data?.message || 'Error');
                     }
+                });
+            },
+            saveSettings(userId, btn) {
+                var first = document.getElementById('parent-firstname-' + userId).value.trim();
+                var last  = document.getElementById('parent-lastname-' + userId).value.trim();
+                var $s    = jQuery('.parent-save-status-' + userId);
+                btn.disabled = true;
+                jQuery.post(ajaxurl, {
+                    action: 'knowly_admin_update_parent',
+                    nonce: _parentNonce,
+                    user_id: userId,
+                    first_name: first,
+                    last_name: last,
+                }, r => {
+                    btn.disabled = false;
+                    $s.text(r.success ? '✓ Saved' : (r.data?.message || 'Error')).css('color', r.success ? '#16a34a' : '#dc2626');
+                    setTimeout(() => $s.text(''), 3000);
                 });
             },
             addGemsToChild(parentId, childId, childName) {
@@ -218,9 +285,7 @@ class Knowly_Admin_Users {
                 }, r => {
                     if (r.success) {
                         document.getElementById('parent-gem-' + parentId).textContent = r.data.parent_balance;
-                        document.querySelectorAll('.child-gem-balance[data-child-id="' + childId + '"]').forEach(el => {
-                            el.textContent = r.data.child_balance;
-                        });
+                        document.querySelectorAll('.child-gem-balance[data-child-id="' + childId + '"]').forEach(el => el.textContent = r.data.child_balance);
                         alert('Transferred ' + amount + ' gems to ' + childName + '.');
                     } else {
                         alert(r.data?.message || 'Error');
@@ -239,114 +304,11 @@ class Knowly_Admin_Users {
                 }, r => {
                     if (r.success) {
                         document.getElementById('parent-gem-' + parentId).textContent = r.data.parent_balance;
-                        document.querySelectorAll('.child-gem-balance[data-child-id="' + childId + '"]').forEach(el => {
-                            el.textContent = r.data.child_balance;
-                        });
+                        document.querySelectorAll('.child-gem-balance[data-child-id="' + childId + '"]').forEach(el => el.textContent = r.data.child_balance);
                         alert('Reclaimed ' + amount + ' gems from ' + childName + '.');
                     } else {
                         alert(r.data?.message || 'Error');
                     }
-                });
-            },
-        };
-        </script>
-        <?php
-    }
-
-    // ── Teachers ──────────────────────────────────────────────────────────────
-
-    private static function render_teachers(): void {
-        $all_teachers = Knowly_Teacher_Service::list_teachers();
-        $pending      = array_values( array_filter( $all_teachers, fn( $t ) => $t['approval_status'] === 'pending_approval' ) );
-        $approved     = array_values( array_filter( $all_teachers, fn( $t ) => $t['approval_status'] === 'approved' ) );
-        $suspended    = array_values( array_filter( $all_teachers, fn( $t ) => $t['approval_status'] === 'suspended' ) );
-        ?>
-        <div class="knowly-stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;">
-            <div class="knowly-stat-card" style="<?= count( $pending ) ? 'border-color:#d63638;' : '' ?>">
-                <div class="knowly-stat-number" style="<?= count( $pending ) ? 'color:#d63638;' : '' ?>"><?= count( $pending ) ?></div>
-                <div class="knowly-stat-label">Pending Approval</div>
-            </div>
-            <div class="knowly-stat-card">
-                <div class="knowly-stat-number" style="color:#00a32a;"><?= count( $approved ) ?></div>
-                <div class="knowly-stat-label">Approved</div>
-            </div>
-            <div class="knowly-stat-card">
-                <div class="knowly-stat-number" style="color:#888;"><?= count( $suspended ) ?></div>
-                <div class="knowly-stat-label">Suspended</div>
-            </div>
-        </div>
-
-        <?php if ( ! empty( $pending ) ) : ?>
-        <h3 style="color:#d63638;">Pending Approval</h3>
-        <?php self::render_teacher_table( $pending, true ); ?>
-        <hr>
-        <?php endif; ?>
-
-        <h3>All Teachers</h3>
-        <?php self::render_teacher_table( array_merge( $approved, $suspended ), false ); ?>
-        <?php
-    }
-
-    private static function render_teacher_table( array $teachers, bool $show_approve_button ): void {
-        if ( empty( $teachers ) ) {
-            echo '<p style="color:#888;">None.</p>';
-            return;
-        }
-        ?>
-        <table class="knowly-table widefat">
-            <thead>
-                <tr><th>Name</th><th>Email</th><th>School</th><th>Status</th><th>Red Gems</th><th>Actions</th></tr>
-            </thead>
-            <tbody>
-                <?php foreach ( $teachers as $t ) : ?>
-                <tr id="teacher-row-<?= esc_attr( $t['user_id'] ) ?>">
-                    <td><strong><?= esc_html( $t['display_name'] ) ?></strong></td>
-                    <td><?= esc_html( $t['email'] ) ?></td>
-                    <td><?= esc_html( $t['school_name'] ?? '—' ) ?></td>
-                    <td>
-                        <?php
-                        $s = $t['approval_status'];
-                        $badge_color = $s === 'approved' ? 'ok' : ( $s === 'pending_approval' ? 'warn' : '' );
-                        ?>
-                        <span class="knowly-badge <?= esc_attr( $badge_color ) ?>"><?= esc_html( $s ) ?></span>
-                    </td>
-                    <td><?= esc_html( $t['red_gem_balance'] ?? 0 ) ?> 🔴</td>
-                    <td style="white-space:nowrap;">
-                        <?php if ( $show_approve_button || $t['approval_status'] !== 'approved' ) : ?>
-                        <button class="button button-small" style="color:#00a32a;"
-                            onclick="knowlyTeachers.approve(<?= (int) $t['user_id'] ?>)">Approve</button>
-                        <?php endif; ?>
-                        <?php if ( $t['approval_status'] === 'approved' ) : ?>
-                        <button class="button button-small" style="color:#d63638;"
-                            onclick="knowlyTeachers.suspend(<?= (int) $t['user_id'] ?>)">Suspend</button>
-                        <?php endif; ?>
-                        <button class="button button-small"
-                            onclick="knowlyTeachers.adjustGems(<?= (int) $t['user_id'] ?>, '<?= esc_js( $t['display_name'] ) ?>')">Adj Gems</button>
-                        <a href="<?= esc_url( admin_url( 'user-edit.php?user_id=' . $t['user_id'] ) ) ?>" class="button button-small">Edit</a>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-        <script>
-        const knowlyTeachers = {
-            approve(userId) {
-                if (!confirm('Approve teacher ' + userId + '?')) return;
-                jQuery.post(ajaxurl, { action: 'knowly_teacher_approve', nonce: KnowlyAdmin.nonce, user_id: userId }, r => {
-                    if (r.success) { location.reload(); } else { alert(r.data?.message || 'Error'); }
-                });
-            },
-            suspend(userId) {
-                if (!confirm('Suspend teacher ' + userId + '?')) return;
-                jQuery.post(ajaxurl, { action: 'knowly_teacher_suspend', nonce: KnowlyAdmin.nonce, user_id: userId }, r => {
-                    if (r.success) { location.reload(); } else { alert(r.data?.message || 'Error'); }
-                });
-            },
-            adjustGems(userId, name) {
-                var amount = parseInt(prompt('Adjust red gems for ' + name + ' (negative to deduct):'), 10);
-                if (!amount) return;
-                jQuery.post(ajaxurl, { action: 'knowly_teacher_adjust_gems', nonce: KnowlyAdmin.nonce, user_id: userId, amount: amount }, r => {
-                    if (r.success) { alert('Adjusted.'); location.reload(); } else { alert(r.data?.message || 'Error'); }
                 });
             },
         };
@@ -359,32 +321,52 @@ class Knowly_Admin_Users {
     private static function render_children(): void {
         global $wpdb;
         $children = get_users( [ 'role' => 'knowly_child', 'orderby' => 'registered', 'order' => 'DESC', 'number' => 200 ] );
-        $nonce = wp_create_nonce( 'knowly_admin_nonce' );
+        $nonce    = wp_create_nonce( 'knowly_admin_nonce' );
+
+        // Batch-load level/period/avatar from the knowly_children DB table (NOT user meta)
+        $child_db_rows = $wpdb->get_results(
+            "SELECT child_id, level, period, avatar_index FROM {$wpdb->prefix}knowly_children",
+            ARRAY_A
+        ) ?: [];
+        $child_db = [];
+        foreach ( $child_db_rows as $row ) {
+            $child_db[ (int) $row['child_id'] ] = $row;
+        }
         ?>
         <p style="margin-bottom:10px;">
             <input type="search" id="knowly-child-search" placeholder="Filter children…" class="regular-text" style="height:30px;">
         </p>
 
         <div id="knowly-children-list">
-        <?php foreach ( $children as $child ) : ?>
-        <?php
-        $nickname    = get_user_meta( $child->ID, 'knowly_nickname',   true );
-        $level       = get_user_meta( $child->ID, 'knowly_level',      true );
-        $period      = get_user_meta( $child->ID, 'knowly_period',     true );
-        $gem_balance = (int) get_user_meta( $child->ID, 'knowly_gem_balance', true );
-        $parent_id   = (int) get_user_meta( $child->ID, 'knowly_parent_id',  true );
-        $parent      = $parent_id ? get_userdata( $parent_id ) : null;
-        $is_test     = get_user_meta( $child->ID, 'knowly_is_test_account', true );
-        $trial_count = (int) $wpdb->get_var( $wpdb->prepare(
-            "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_sessions WHERE child_id = %d", $child->ID
-        ) );
-        $earned_badges = json_decode( get_user_meta( $child->ID, 'knowly_earned_badges', true ) ?: '[]', true );
-        $quest_count   = is_array( $earned_badges ) ? count( $earned_badges ) : 0;
+        <?php foreach ( $children as $child ) :
+            $nickname    = get_user_meta( $child->ID, 'knowly_nickname', true );
+            $gem_balance = (int) get_user_meta( $child->ID, 'knowly_gem_balance', true );
+            $parent_id   = (int) get_user_meta( $child->ID, 'knowly_parent_id', true );
+            $is_test     = (bool) get_user_meta( $child->ID, 'knowly_is_test_account', true );
+            $parent      = $parent_id ? get_userdata( $parent_id ) : null;
+            $first_name  = get_user_meta( $child->ID, 'first_name', true );
+            $last_name   = get_user_meta( $child->ID, 'last_name', true );
+
+            // Level/period come from knowly_children DB table
+            $db      = $child_db[ $child->ID ] ?? [];
+            $level   = $db['level'] ?? '';
+            $period  = $db['period'] ?? '';
+            $avatar  = (int) ( $db['avatar_index'] ?? 1 );
+
+            $level_label  = $level ? strtoupper( $level ) : 'SEA';
+            $period_label = $period ? strtoupper( str_replace( '_', ' ', $period ) ) : '';
+
+            $trial_count = (int) $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_sessions WHERE child_id = %d", $child->ID
+            ) );
+            $earned_badges = json_decode( get_user_meta( $child->ID, 'knowly_earned_badges', true ) ?: '[]', true );
+            $quest_count   = is_array( $earned_badges ) ? count( $earned_badges ) : 0;
         ?>
         <div class="knowly-child-entry"
              style="border:1px solid #c3c4c7;border-radius:4px;margin-bottom:6px;background:#fff;"
-             data-search="<?= esc_attr( strtolower( $child->display_name . ' ' . ( $nickname ?? '' ) . ' ' . $child->user_email ) ) ?>">
+             data-search="<?= esc_attr( strtolower( $child->display_name . ' ' . $first_name . ' ' . $last_name . ' ' . ( $nickname ?? '' ) ) ) ?>">
 
+            <!-- Child header -->
             <div style="display:flex;align-items:center;gap:12px;padding:8px 14px;flex-wrap:wrap;">
                 <div style="flex:1;min-width:200px;">
                     <strong>#<?= esc_html( $child->ID ) ?> <?= esc_html( $child->display_name ) ?></strong>
@@ -393,9 +375,8 @@ class Knowly_Admin_Users {
                     <?php endif; ?>
                     <?php if ( $is_test ) : ?><span class="knowly-badge warn" style="margin-left:4px;">test</span><?php endif; ?>
                     <div style="font-size:11px;color:#666;margin-top:2px;">
-                        <?= esc_html( strtoupper( $level ?? '—' ) ) ?>
-                        <?= $period ? ' · ' . esc_html( strtoupper( str_replace( '_', ' ', $period ) ) ) : ' · SEA' ?>
-                        · <?= $parent ? esc_html( $parent->display_name ) : 'No parent' ?>
+                        <?= esc_html( $level_label ) ?><?= $period_label ? ' · ' . esc_html( $period_label ) : '' ?>
+                        · <?= $parent ? esc_html( $parent->display_name ) : '<em>No parent</em>' ?>
                     </div>
                 </div>
                 <div style="display:flex;gap:14px;align-items:center;font-size:13px;flex-wrap:wrap;">
@@ -404,7 +385,11 @@ class Knowly_Admin_Users {
                     <span style="color:#666;"><?= esc_html( $quest_count ) ?> quest<?= $quest_count !== 1 ? 's' : '' ?></span>
                 </div>
                 <div style="display:flex;gap:5px;flex-wrap:wrap;">
-                    <a href="<?= esc_url( admin_url( 'user-edit.php?user_id=' . $child->ID ) ) ?>" class="button button-small">Edit</a>
+                    <button class="button button-small knowly-toggle-child-edit"
+                        data-child-id="<?= (int) $child->ID ?>"
+                        style="color:#6366f1;border-color:#6366f1;">
+                        Settings ▾
+                    </button>
                     <?php if ( $trial_count > 0 || $quest_count > 0 ) : ?>
                     <button class="button button-small knowly-toggle-child-history"
                         data-child-id="<?= (int) $child->ID ?>"
@@ -415,6 +400,55 @@ class Knowly_Admin_Users {
                 </div>
             </div>
 
+            <!-- Child settings panel -->
+            <div class="knowly-child-edit-panel" id="child-edit-<?= (int) $child->ID ?>"
+                 style="display:none;border-top:1px solid #e5e7eb;background:#f0f4ff;padding:10px 14px;">
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;font-size:12px;">
+                    <div>
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">Nickname <span style="color:#888;font-weight:400;">(read-only)</span></label>
+                        <input type="text" value="<?= esc_attr( $nickname ) ?>" disabled style="width:100%;height:28px;font-size:12px;background:#f3f4f6;">
+                    </div>
+                    <div>
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">First Name</label>
+                        <input type="text" class="regular-text" id="child-fn-<?= (int) $child->ID ?>"
+                            value="<?= esc_attr( $first_name ) ?>" style="width:100%;height:28px;font-size:12px;">
+                    </div>
+                    <div>
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">Last Name</label>
+                        <input type="text" class="regular-text" id="child-ln-<?= (int) $child->ID ?>"
+                            value="<?= esc_attr( $last_name ) ?>" style="width:100%;height:28px;font-size:12px;">
+                    </div>
+                    <div>
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">Standard (Level)</label>
+                        <select id="child-level-<?= (int) $child->ID ?>" style="width:100%;height:28px;font-size:12px;">
+                            <?php foreach ( [ 'std_1' => 'Standard 1', 'std_2' => 'Standard 2', 'std_3' => 'Standard 3', 'std_4' => 'Standard 4', 'std_5' => 'Standard 5' ] as $v => $l ) : ?>
+                            <option value="<?= esc_attr( $v ) ?>" <?= $level === $v ? 'selected' : '' ?>><?= esc_html( $l ) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">Term (Period)</label>
+                        <select id="child-period-<?= (int) $child->ID ?>" style="width:100%;height:28px;font-size:12px;">
+                            <option value="" <?= $period === '' ? 'selected' : '' ?>>SEA (No Term)</option>
+                            <option value="term_1" <?= $period === 'term_1' ? 'selected' : '' ?>>Term 1</option>
+                            <option value="term_2" <?= $period === 'term_2' ? 'selected' : '' ?>>Term 2</option>
+                            <option value="term_3" <?= $period === 'term_3' ? 'selected' : '' ?>>Term 3</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">Avatar (1–5)</label>
+                        <input type="number" min="1" max="5" id="child-avatar-<?= (int) $child->ID ?>"
+                            value="<?= esc_attr( $avatar ) ?>" style="width:100%;height:28px;font-size:12px;">
+                    </div>
+                </div>
+                <div style="margin-top:8px;">
+                    <button class="button button-small button-primary"
+                        onclick="knowlyChildren.saveSettings(<?= (int) $child->ID ?>, this)">Save</button>
+                    <span class="child-save-status-<?= (int) $child->ID ?>" style="margin-left:8px;font-size:11px;"></span>
+                </div>
+            </div>
+
+            <!-- History panel -->
             <?php if ( $trial_count > 0 || $quest_count > 0 ) : ?>
             <div class="knowly-child-history-panel" id="child-history-<?= (int) $child->ID ?>"
                  style="display:none;border-top:1px solid #e5e7eb;background:#f9fafb;padding:10px 14px;">
@@ -422,11 +456,8 @@ class Knowly_Admin_Users {
                 <?php if ( $trial_count > 0 ) : ?>
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
                     <strong style="font-size:13px;">Trial History (<?= esc_html( $trial_count ) ?>)</strong>
-                    <button class="button button-small"
-                        style="color:#dc2626;border-color:#dc2626;"
-                        onclick="knowlyChildren.deleteHistory(<?= (int) $child->ID ?>, 'trials', this)">
-                        Remove All Trials
-                    </button>
+                    <button class="button button-small" style="color:#dc2626;border-color:#dc2626;"
+                        onclick="knowlyChildren.deleteHistory(<?= (int) $child->ID ?>, 'trials', this)">Remove All Trials</button>
                 </div>
                 <?php
                 $sessions = $wpdb->get_results( $wpdb->prepare(
@@ -438,11 +469,9 @@ class Knowly_Admin_Users {
                 ?>
                 <table class="knowly-table" style="font-size:12px;margin-bottom:12px;">
                     <thead>
-                        <tr>
-                            <th>Subject</th><th>Level</th><th>Type</th>
-                            <th style="text-align:center;">Score</th><th style="text-align:center;">%</th>
-                            <th>Status</th><th>Date</th>
-                        </tr>
+                        <tr><th>Subject</th><th>Level</th><th>Type</th>
+                        <th style="text-align:center;">Score</th><th style="text-align:center;">%</th>
+                        <th>Status</th><th>Date</th></tr>
                     </thead>
                     <tbody>
                     <?php foreach ( $sessions as $s ) :
@@ -450,7 +479,7 @@ class Knowly_Admin_Users {
                     ?>
                     <tr>
                         <td><strong><?= esc_html( $s['subject'] ) ?></strong></td>
-                        <td><?= esc_html( strtoupper( $s['level'] ?? '' ) ) ?> <?= $s['period'] ? esc_html( strtoupper( str_replace( '_', ' ', $s['period'] ) ) ) : 'SEA' ?></td>
+                        <td><?= esc_html( strtoupper( $s['level'] ?? '' ) ) ?><?= ( $s['period'] ?? '' ) ? ' · ' . esc_html( strtoupper( str_replace( '_', ' ', $s['period'] ) ) ) : ' · SEA' ?></td>
                         <td><?= esc_html( ucfirst( $s['trial_type'] ?? 'practice' ) ) ?></td>
                         <td style="text-align:center;"><?= $s['state'] === 'completed' ? esc_html( $s['score'] . '/' . $s['total'] ) : '—' ?></td>
                         <td style="text-align:center;font-weight:700;color:<?= $s['state'] === 'completed' ? $pct_color : '#9ca3af' ?>;">
@@ -466,17 +495,12 @@ class Knowly_Admin_Users {
 
                 <?php if ( $quest_count > 0 ) : ?>
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                    <strong style="font-size:13px;">Quest History (<?= esc_html( $quest_count ) ?> completed)</strong>
-                    <button class="button button-small"
-                        style="color:#dc2626;border-color:#dc2626;"
-                        onclick="knowlyChildren.deleteHistory(<?= (int) $child->ID ?>, 'quests', this)">
-                        Remove All Quests
-                    </button>
+                    <strong style="font-size:13px;">Quest Badges (<?= esc_html( $quest_count ) ?>)</strong>
+                    <button class="button button-small" style="color:#dc2626;border-color:#dc2626;"
+                        onclick="knowlyChildren.deleteHistory(<?= (int) $child->ID ?>, 'quests', this)">Remove All Quests</button>
                 </div>
                 <table class="knowly-table" style="font-size:12px;margin-bottom:12px;">
-                    <thead>
-                        <tr><th>Quest ID</th><th>Badge ID</th><th>Awarded At</th></tr>
-                    </thead>
+                    <thead><tr><th>Quest ID</th><th>Badge ID</th><th>Awarded</th></tr></thead>
                     <tbody>
                     <?php foreach ( $earned_badges as $badge ) : ?>
                     <tr>
@@ -502,7 +526,15 @@ class Knowly_Admin_Users {
                 c.style.display = (!q || c.dataset.search.includes(q)) ? '' : 'none';
             });
         });
-
+        document.querySelectorAll('.knowly-toggle-child-edit').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var panel = document.getElementById('child-edit-' + this.dataset.childId);
+                if (!panel) return;
+                var open = panel.style.display !== 'none';
+                panel.style.display = open ? 'none' : 'block';
+                this.textContent = open ? 'Settings ▾' : 'Settings ▴';
+            });
+        });
         document.querySelectorAll('.knowly-toggle-child-history').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 var panel = document.getElementById('child-history-' + this.dataset.childId);
@@ -512,25 +544,39 @@ class Knowly_Admin_Users {
                 this.textContent = open ? 'History ▾' : 'History ▴';
             });
         });
-
         const knowlyChildren = {
+            saveSettings(childId, btn) {
+                var $s = jQuery('.child-save-status-' + childId);
+                btn.disabled = true;
+                jQuery.post(ajaxurl, {
+                    action:       'knowly_admin_update_child',
+                    nonce:        _childNonce,
+                    child_id:     childId,
+                    first_name:   jQuery('#child-fn-'     + childId).val().trim(),
+                    last_name:    jQuery('#child-ln-'     + childId).val().trim(),
+                    level:        jQuery('#child-level-'  + childId).val(),
+                    period:       jQuery('#child-period-' + childId).val(),
+                    avatar_index: jQuery('#child-avatar-' + childId).val(),
+                }, r => {
+                    btn.disabled = false;
+                    $s.text(r.success ? '✓ Saved' : (r.data?.message || 'Error')).css('color', r.success ? '#16a34a' : '#dc2626');
+                    setTimeout(() => $s.text(''), 3000);
+                    if (r.success) location.reload();
+                });
+            },
             deleteHistory(childId, type, btn) {
                 var label = type === 'quests' ? 'quest badges' : 'trial sessions';
                 if (!confirm('Delete all ' + label + ' for this child? This cannot be undone.')) return;
                 btn.disabled = true;
                 jQuery.post(ajaxurl, {
-                    action: 'knowly_admin_delete_child_history',
-                    nonce: _childNonce,
+                    action:   'knowly_admin_delete_child_history',
+                    nonce:    _childNonce,
                     child_id: childId,
-                    type: type,
+                    type:     type,
                 }, r => {
                     btn.disabled = false;
-                    if (r.success) {
-                        alert('History removed.');
-                        location.reload();
-                    } else {
-                        alert(r.data?.message || 'Error');
-                    }
+                    if (r.success) { alert('History removed.'); location.reload(); }
+                    else { alert(r.data?.message || 'Error'); }
                 });
             },
         };
@@ -549,5 +595,98 @@ class Knowly_Admin_Users {
             'children',
             'block2_teacher',
         ] );
+    }
+
+    // ── AJAX: Update child ────────────────────────────────────────────────────
+
+    public static function ajax_update_child(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $child_id    = (int) ( $_POST['child_id']    ?? 0 );
+        $first_name  = sanitize_text_field( $_POST['first_name']  ?? '' );
+        $last_name   = sanitize_text_field( $_POST['last_name']   ?? '' );
+        $level       = sanitize_text_field( $_POST['level']       ?? '' );
+        $period      = sanitize_text_field( $_POST['period']      ?? '' );
+        $avatar      = max( 1, min( 5, (int) ( $_POST['avatar_index'] ?? 1 ) ) );
+
+        if ( ! $child_id || ! get_userdata( $child_id ) ) {
+            wp_send_json_error( [ 'message' => 'Invalid child.' ] );
+        }
+
+        $allowed_levels  = [ 'std_1', 'std_2', 'std_3', 'std_4', 'std_5' ];
+        $allowed_periods = [ '', 'term_1', 'term_2', 'term_3' ];
+
+        if ( $level && ! in_array( $level, $allowed_levels, true ) ) {
+            wp_send_json_error( [ 'message' => 'Invalid level.' ] );
+        }
+        if ( ! in_array( $period, $allowed_periods, true ) ) {
+            wp_send_json_error( [ 'message' => 'Invalid period.' ] );
+        }
+
+        // Update WP user fields
+        $update_data = [ 'ID' => $child_id ];
+        if ( $first_name ) {
+            $update_data['first_name']    = $first_name;
+            $update_data['display_name']  = $first_name;
+        }
+        if ( $last_name !== '' ) {
+            $update_data['last_name'] = $last_name;
+        }
+        wp_update_user( $update_data );
+
+        // Update avatar in user meta
+        update_user_meta( $child_id, 'knowly_avatar_index', $avatar );
+
+        // Update level/period/avatar in knowly_children table
+        global $wpdb;
+        $wpdb->update(
+            $wpdb->prefix . 'knowly_children',
+            [
+                'display_name' => $first_name ?: get_user_meta( $child_id, 'first_name', true ),
+                'level'        => $level,
+                'period'       => $period,
+                'avatar_index' => $avatar,
+            ],
+            [ 'child_id' => $child_id ]
+        );
+
+        Knowly_Debug::log( 'admin.users', 'Child updated via admin', [
+            'child_id' => $child_id,
+            'level'    => $level,
+            'period'   => $period,
+        ], null, 'info' );
+
+        wp_send_json_success();
+    }
+
+    // ── AJAX: Update parent ───────────────────────────────────────────────────
+
+    public static function ajax_update_parent(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $user_id    = (int) ( $_POST['user_id']    ?? 0 );
+        $first_name = sanitize_text_field( $_POST['first_name'] ?? '' );
+        $last_name  = sanitize_text_field( $_POST['last_name']  ?? '' );
+
+        if ( ! $user_id || ! get_userdata( $user_id ) ) {
+            wp_send_json_error( [ 'message' => 'Invalid user.' ] );
+        }
+
+        $update_data = [ 'ID' => $user_id ];
+        if ( $first_name ) $update_data['first_name'] = $first_name;
+        if ( $last_name !== '' )  $update_data['last_name']  = $last_name;
+        if ( $first_name || $last_name ) {
+            $fn = $first_name ?: get_user_meta( $user_id, 'first_name', true );
+            $ln = $last_name  ?: get_user_meta( $user_id, 'last_name',  true );
+            $update_data['display_name'] = trim( $fn . ' ' . $ln );
+        }
+
+        wp_update_user( $update_data );
+
+        Knowly_Debug::log( 'admin.users', 'Parent updated via admin', [ 'user_id' => $user_id ], null, 'info' );
+
+        wp_send_json_success();
     }
 }
