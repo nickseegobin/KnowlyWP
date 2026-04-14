@@ -28,6 +28,7 @@ class Knowly_Admin_Teachers {
         add_action( 'wp_ajax_knowly_teacher_update_settings',    [ __CLASS__, 'ajax_update_settings' ] );
         add_action( 'wp_ajax_knowly_teacher_add_gems',           [ __CLASS__, 'ajax_add_gems' ] );
         add_action( 'wp_ajax_knowly_teacher_remove_gems',        [ __CLASS__, 'ajax_remove_gems' ] );
+        add_action( 'wp_ajax_knowly_teacher_get_classes',        [ __CLASS__, 'ajax_get_teacher_classes' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -106,14 +107,6 @@ class Knowly_Admin_Teachers {
             <h2>✅ Approved Teachers</h2>
             <?php if ( ! empty( $approved ) ) : ?>
             <?php foreach ( $approved as $teacher ) :
-                global $wpdb;
-                $teacher_classes = $wpdb->get_results( $wpdb->prepare(
-                    "SELECT id, name, level, status,
-                            (SELECT COUNT(*) FROM {$wpdb->prefix}knowly_class_members m WHERE m.class_id = c.id AND m.status='active') AS member_count
-                     FROM {$wpdb->prefix}knowly_classes c
-                     WHERE teacher_user_id = %d ORDER BY created_at DESC",
-                    $teacher['user_id']
-                ) ) ?: [];
                 $id_doc_id  = (int) get_user_meta( $teacher['user_id'], 'knowly_id_document', true );
                 $id_doc_url = $id_doc_id ? wp_get_attachment_url( $id_doc_id ) : '';
                 $nonce = wp_create_nonce( 'knowly_teacher_action' );
@@ -230,41 +223,21 @@ class Knowly_Admin_Teachers {
                         </div>
                     </div>
 
-                    <!-- Classes hierarchy -->
+                    <!-- Classes hierarchy — loaded fresh via AJAX on panel open -->
                     <div>
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                            <strong style="font-size:13px;">Classes (<?= count( $teacher_classes ) ?>)</strong>
+                            <strong style="font-size:13px;">Classes (<span id="teacher-classes-count-<?= (int) $teacher['user_id'] ?>">…</span>)</strong>
                             <button class="button button-small"
                                 style="color:#16a34a;border-color:#16a34a;"
                                 onclick="knowlyTeacherAdmin.createClass(<?= (int) $teacher['user_id'] ?>, '<?= esc_js( $nonce ) ?>')">
                                 + New Class
                             </button>
                         </div>
-                        <?php if ( empty( $teacher_classes ) ) : ?>
-                            <p style="color:#888;font-size:12px;">No classes yet.</p>
-                        <?php else : ?>
-                        <div id="teacher-classes-<?= (int) $teacher['user_id'] ?>">
-                        <?php foreach ( $teacher_classes as $cls ) : ?>
-                        <div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #e5e7eb;font-size:12px;"
-                             id="class-row-<?= (int) $cls->id ?>">
-                            <div style="flex:1;">
-                                <strong><?= esc_html( $cls->name ) ?></strong>
-                                <?php if ( $cls->level ) : ?><span style="color:#888;margin-left:4px;">(<?= esc_html( $cls->level ) ?>)</span><?php endif; ?>
-                                <span style="margin-left:8px;color:#888;"><?= esc_html( $cls->member_count ) ?> student<?= $cls->member_count != 1 ? 's' : '' ?></span>
-                            </div>
-                            <span class="knowly-badge <?= $cls->status === 'active' ? 'ok' : '' ?>" style="font-size:10px;"><?= esc_html( $cls->status ) ?></span>
-                            <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-classes&tab=detail&class_id=' . $cls->id ) ) ?>"
-                               class="button button-small">View</a>
-                            <?php if ( $cls->status === 'active' ) : ?>
-                            <button class="button button-small" style="color:#dc2626;border-color:#dc2626;"
-                                onclick="knowlyTeacherAdmin.disbandClass(<?= (int) $cls->id ?>, '<?= esc_js( $nonce ) ?>')">
-                                Disband
-                            </button>
-                            <?php endif; ?>
+                        <div id="teacher-classes-wrapper-<?= (int) $teacher['user_id'] ?>"
+                             data-teacher-id="<?= (int) $teacher['user_id'] ?>"
+                             data-nonce="<?= esc_attr( $nonce ) ?>">
+                            <p style="color:#888;font-size:12px;">Opening panel loads classes…</p>
                         </div>
-                        <?php endforeach; ?>
-                        </div>
-                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -335,6 +308,12 @@ class Knowly_Admin_Teachers {
                 const open = panel.style.display !== 'none';
                 panel.style.display = open ? 'none' : 'block';
                 $(this).text(open ? 'Details ▾' : 'Details ▴');
+                if (!open) {
+                    // Refresh classes fresh from DB every time the panel opens
+                    const wrapper = document.getElementById('teacher-classes-wrapper-' + id);
+                    const nonce   = wrapper ? wrapper.dataset.nonce : '';
+                    if (nonce) knowlyTeacherAdmin.refreshClasses(id, nonce);
+                }
             });
         });
 
@@ -415,6 +394,45 @@ class Knowly_Admin_Teachers {
                     error() { $status.text('Upload error').css('color', '#dc2626'); }
                 });
             },
+            refreshClasses(teacherId, nonce) {
+                const wrapper = document.getElementById('teacher-classes-wrapper-' + teacherId);
+                const counter = document.getElementById('teacher-classes-count-' + teacherId);
+                if (!wrapper) return;
+                wrapper.innerHTML = '<p style="color:#888;font-size:12px;">Loading…</p>';
+                const detailBase = '<?= esc_js( admin_url( "admin.php?page=knowly-classes&tab=detail&class_id=" ) ) ?>';
+                jQuery.post(ajaxurl, {
+                    action: 'knowly_teacher_get_classes',
+                    nonce: nonce,
+                    teacher_id: teacherId,
+                }, r => {
+                    if (!r.success) {
+                        wrapper.innerHTML = '<p style="color:#dc2626;font-size:12px;">Failed to load classes.</p>';
+                        return;
+                    }
+                    const classes = r.data.classes;
+                    if (counter) counter.textContent = classes.length;
+                    if (!classes.length) {
+                        wrapper.innerHTML = '<p style="color:#888;font-size:12px;">No classes yet.</p>';
+                        return;
+                    }
+                    let html = '';
+                    classes.forEach(cls => {
+                        html += '<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #e5e7eb;font-size:12px;" id="class-row-' + cls.id + '">';
+                        html += '<div style="flex:1;"><strong>' + jQuery('<span>').text(cls.name).html() + '</strong>';
+                        if (cls.level) html += '<span style="color:#888;margin-left:4px;">(' + jQuery('<span>').text(cls.level).html() + ')</span>';
+                        html += '<span style="margin-left:8px;color:#888;">' + cls.member_count + ' student' + (cls.member_count != 1 ? 's' : '') + '</span>';
+                        html += '</div>';
+                        html += '<span class="knowly-badge ' + (cls.status === 'active' ? 'ok' : '') + '" style="font-size:10px;">' + cls.status + '</span>';
+                        html += '<a href="' + detailBase + cls.id + '" class="button button-small">View</a>';
+                        if (cls.status === 'active') {
+                            html += '<button class="button button-small" style="color:#dc2626;border-color:#dc2626;" '
+                                  + 'onclick="knowlyTeacherAdmin.disbandClass(' + cls.id + ', ' + teacherId + ', \'' + nonce + '\')">Disband</button>';
+                        }
+                        html += '</div>';
+                    });
+                    wrapper.innerHTML = html;
+                });
+            },
             createClass(teacherId, nonce) {
                 const name = prompt('New class name:');
                 if (!name || !name.trim()) return;
@@ -427,14 +445,13 @@ class Knowly_Admin_Teachers {
                     level: level.trim(),
                 }, r => {
                     if (r.success) {
-                        alert('Class created.');
-                        location.reload();
+                        knowlyTeacherAdmin.refreshClasses(teacherId, nonce);
                     } else {
                         alert(r.data?.message || 'Error creating class.');
                     }
                 });
             },
-            disbandClass(classId, nonce) {
+            disbandClass(classId, teacherId, nonce) {
                 if (!confirm('Disband this class? All members will be removed.')) return;
                 jQuery.post(ajaxurl, {
                     action: 'knowly_teacher_disband_class',
@@ -442,8 +459,7 @@ class Knowly_Admin_Teachers {
                     class_id: classId,
                 }, r => {
                     if (r.success) {
-                        alert('Class disbanded.');
-                        location.reload();
+                        knowlyTeacherAdmin.refreshClasses(teacherId, nonce);
                     } else {
                         alert(r.data?.message || 'Error.');
                     }
@@ -611,6 +627,34 @@ class Knowly_Admin_Teachers {
         ], null, 'info' );
 
         wp_send_json_success();
+    }
+
+    // ── AJAX: Get teacher classes (fresh from DB) ─────────────────────────────
+
+    public static function ajax_get_teacher_classes(): void {
+        check_ajax_referer( 'knowly_teacher_action', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $teacher_id = (int) ( $_POST['teacher_id'] ?? 0 );
+        if ( ! $teacher_id ) {
+            wp_send_json_error( [ 'message' => 'Invalid teacher ID.' ] );
+        }
+
+        global $wpdb;
+
+        // Suppress object cache to ensure fresh data
+        wp_cache_delete( $teacher_id, 'user_meta' );
+
+        $classes = $wpdb->get_results( $wpdb->prepare(
+            "SELECT id, name, level, status,
+                    (SELECT COUNT(*) FROM {$wpdb->prefix}knowly_class_members m WHERE m.class_id = c.id AND m.status='active') AS member_count
+             FROM {$wpdb->prefix}knowly_classes c
+             WHERE teacher_user_id = %d
+             ORDER BY created_at DESC",
+            $teacher_id
+        ), ARRAY_A ) ?: [];
+
+        wp_send_json_success( [ 'classes' => $classes, 'teacher_id' => $teacher_id ] );
     }
 
     // ── AJAX: Add red gems to teacher ─────────────────────────────────────────
