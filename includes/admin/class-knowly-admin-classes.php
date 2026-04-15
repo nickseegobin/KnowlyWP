@@ -24,6 +24,7 @@ class Knowly_Admin_Classes {
         add_action( 'wp_ajax_knowly_class_search_members',   [ __CLASS__, 'ajax_search_members' ] );
         add_action( 'wp_ajax_knowly_class_assign_task',      [ __CLASS__, 'ajax_assign_task' ] );
         add_action( 'wp_ajax_knowly_class_delete_task',      [ __CLASS__, 'ajax_delete_task' ] );
+        add_action( 'wp_ajax_knowly_class_get_content_pool', [ __CLASS__, 'ajax_get_content_pool' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -355,33 +356,82 @@ class Knowly_Admin_Classes {
             <!-- Assign new task form -->
             <div style="background:#f0fff4;border:1px solid #c3c4c7;border-radius:4px;padding:12px;margin-bottom:12px;">
                 <strong style="font-size:13px;display:block;margin-bottom:8px;">Assign Task to Class</strong>
-                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;font-size:12px;">
+
+                <!-- Step 1: Type + filter -->
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;font-size:12px;margin-bottom:8px;">
                     <div>
                         <label style="display:block;font-weight:600;margin-bottom:3px;">Type *</label>
-                        <select id="task-type" style="width:100%;height:28px;font-size:12px;">
+                        <select id="task-type" onchange="knowlyClassDetail.onTypeChange(<?= $class_id ?>, '<?= esc_js( $nonce ) ?>')"
+                                style="width:100%;height:28px;font-size:12px;">
                             <option value="trial">Trial (Practice)</option>
                             <option value="quest">Quest</option>
                         </select>
                     </div>
                     <div>
-                        <label style="display:block;font-weight:600;margin-bottom:3px;">Title *</label>
-                        <input type="text" id="task-title" placeholder="e.g. Week 3 Fractions"
-                               style="width:100%;height:28px;font-size:12px;">
-                    </div>
-                    <div>
-                        <label style="display:block;font-weight:600;margin-bottom:3px;">Subject</label>
-                        <input type="text" id="task-subject" placeholder="e.g. Mathematics"
-                               style="width:100%;height:28px;font-size:12px;">
-                    </div>
-                    <div>
-                        <label style="display:block;font-weight:600;margin-bottom:3px;">Difficulty</label>
-                        <select id="task-difficulty" style="width:100%;height:28px;font-size:12px;">
-                            <option value="">Any</option>
-                            <option value="easy">Easy</option>
-                            <option value="medium">Medium</option>
-                            <option value="hard">Hard</option>
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">Level</label>
+                        <select id="task-level" onchange="knowlyClassDetail.onFilterChange(<?= $class_id ?>, '<?= esc_js( $nonce ) ?>')"
+                                style="width:100%;height:28px;font-size:12px;">
+                            <option value="std_4" <?= esc_attr( $cls->level ) === 'std_4' ? 'selected' : '' ?>>Standard 4</option>
+                            <option value="std_5" <?= esc_attr( $cls->level ) === 'std_5' ? 'selected' : '' ?>>Standard 5</option>
                         </select>
                     </div>
+                    <div>
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">Period</label>
+                        <select id="task-period" onchange="knowlyClassDetail.onFilterChange(<?= $class_id ?>, '<?= esc_js( $nonce ) ?>')"
+                                style="width:100%;height:28px;font-size:12px;">
+                            <option value="term_1">Term 1</option>
+                            <option value="term_2">Term 2</option>
+                            <option value="term_3">Term 3</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;align-items:flex-end;">
+                        <button class="button button-small" id="task-load-btn"
+                            onclick="knowlyClassDetail.loadContentPool(<?= $class_id ?>, '<?= esc_js( $nonce ) ?>', this)"
+                            style="width:100%;height:28px;font-size:12px;">
+                            Load Content
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Content picker (shown after loading) -->
+                <div id="task-content-picker" style="display:none;margin-bottom:8px;font-size:12px;">
+                    <!-- Quest picker -->
+                    <div id="task-quest-picker" style="display:none;">
+                        <label style="display:block;font-weight:600;margin-bottom:3px;">Select Quest *</label>
+                        <select id="task-quest-select" onchange="knowlyClassDetail.onQuestSelect()"
+                                style="width:100%;height:28px;font-size:12px;">
+                            <option value="">— Choose a quest —</option>
+                        </select>
+                    </div>
+                    <!-- Trial picker -->
+                    <div id="task-trial-picker" style="display:none;">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                            <div>
+                                <label style="display:block;font-weight:600;margin-bottom:3px;">Subject *</label>
+                                <input type="text" id="task-subject" placeholder="e.g. Mathematics"
+                                       style="width:100%;height:28px;font-size:12px;">
+                            </div>
+                            <div>
+                                <label style="display:block;font-weight:600;margin-bottom:3px;">Difficulty</label>
+                                <select id="task-difficulty" style="width:100%;height:28px;font-size:12px;">
+                                    <option value="">Any</option>
+                                    <option value="easy">Easy</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="hard">Hard</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hidden fields auto-filled from content picker -->
+                <input type="hidden" id="task-title" value="">
+                <input type="hidden" id="task-reference-id" value="">
+                <input type="hidden" id="task-auto-subject" value="">
+                <input type="hidden" id="task-auto-difficulty" value="">
+
+                <!-- Step 3: Expiry + reward (always shown) -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:8px;">
                     <div>
                         <label style="display:block;font-weight:600;margin-bottom:3px;">Expiry Date *</label>
                         <input type="date" id="task-expiry" min="<?= esc_attr( date( 'Y-m-d' ) ) ?>"
@@ -393,16 +443,20 @@ class Knowly_Admin_Classes {
                                style="width:100%;height:28px;font-size:12px;">
                     </div>
                 </div>
+
+                <div id="task-selected-preview" style="display:none;background:#fff;border:1px solid #d1fae5;border-radius:4px;padding:8px;margin-bottom:8px;font-size:12px;">
+                    <strong>Selected:</strong> <span id="task-preview-text"></span>
+                </div>
+
                 <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
-                    <button class="button button-primary button-small"
+                    <button class="button button-primary button-small" id="task-assign-btn" disabled
                         onclick="knowlyClassDetail.assignTask(<?= $class_id ?>, <?= (int) $cls->teacher_user_id ?>, '<?= esc_js( $nonce ) ?>', this)">
                         Assign Task
                     </button>
                     <span id="task-assign-status" style="font-size:11px;"></span>
                 </div>
                 <p style="font-size:11px;color:#888;margin:6px 0 0;">
-                    Teacher-assigned tasks are free for students (no blue gems). Students can retry until completed.
-                    Tasks expire on the expiry date.
+                    Load content to pick from available quests or specify trial subject. Assigned tasks are free for students (no blue gems) and expire on the set date.
                 </p>
             </div>
 
@@ -543,21 +597,137 @@ class Knowly_Admin_Classes {
                     } else { alert(r.data?.message || 'Error.'); }
                 });
             },
+            onTypeChange(classId, nonce) {
+                // Reset content picker state when type changes
+                document.getElementById('task-content-picker').style.display = 'none';
+                document.getElementById('task-quest-picker').style.display   = 'none';
+                document.getElementById('task-trial-picker').style.display   = 'none';
+                document.getElementById('task-selected-preview').style.display = 'none';
+                document.getElementById('task-assign-btn').disabled = true;
+                document.getElementById('task-title').value        = '';
+                document.getElementById('task-reference-id').value = '';
+            },
+            onFilterChange(classId, nonce) {
+                // Reset selection when level/period changes
+                document.getElementById('task-content-picker').style.display = 'none';
+                document.getElementById('task-quest-picker').style.display   = 'none';
+                document.getElementById('task-trial-picker').style.display   = 'none';
+                document.getElementById('task-selected-preview').style.display = 'none';
+                document.getElementById('task-assign-btn').disabled = true;
+                document.getElementById('task-title').value        = '';
+                document.getElementById('task-reference-id').value = '';
+            },
+            loadContentPool(classId, nonce, btn) {
+                var type   = document.getElementById('task-type').value;
+                var level  = document.getElementById('task-level').value;
+                var period = document.getElementById('task-period').value;
+                var $s     = document.getElementById('task-assign-status');
+                btn.disabled = true;
+                btn.textContent = 'Loading…';
+
+                jQuery.post(ajaxurl, {
+                    action: 'knowly_class_get_content_pool', nonce,
+                    type, level, period,
+                }, r => {
+                    btn.disabled = false;
+                    btn.textContent = 'Load Content';
+                    if (!r.success) {
+                        $s.textContent = r.data?.message || 'Failed to load content.';
+                        $s.style.color = '#dc2626';
+                        setTimeout(() => $s.textContent = '', 4000);
+                        return;
+                    }
+
+                    document.getElementById('task-content-picker').style.display = 'block';
+                    document.getElementById('task-selected-preview').style.display = 'none';
+                    document.getElementById('task-assign-btn').disabled = true;
+                    document.getElementById('task-title').value        = '';
+                    document.getElementById('task-reference-id').value = '';
+
+                    if (type === 'quest') {
+                        var questPicker  = document.getElementById('task-quest-picker');
+                        var questSelect  = document.getElementById('task-quest-select');
+                        var trialPicker  = document.getElementById('task-trial-picker');
+                        trialPicker.style.display = 'none';
+                        questPicker.style.display = 'block';
+
+                        questSelect.innerHTML = '<option value="">— Choose a quest —</option>';
+                        var quests = r.data.items || [];
+                        if (!quests.length) {
+                            questSelect.innerHTML = '<option value="">No quests available for this level/period</option>';
+                        } else {
+                            quests.forEach(q => {
+                                var opt = document.createElement('option');
+                                opt.value = JSON.stringify(q);
+                                var label = q.title || q.id;
+                                if (q.subject)    label += ' — ' + q.subject;
+                                if (q.difficulty) label += ' (' + q.difficulty + ')';
+                                opt.textContent = label;
+                                questSelect.appendChild(opt);
+                            });
+                        }
+                    } else {
+                        document.getElementById('task-quest-picker').style.display = 'none';
+                        document.getElementById('task-trial-picker').style.display = 'block';
+                        // Trials don't have a catalogue dropdown — user fills subject/difficulty
+                        document.getElementById('task-assign-btn').disabled = false;
+                    }
+                });
+            },
+            onQuestSelect() {
+                var sel = document.getElementById('task-quest-select').value;
+                var preview = document.getElementById('task-selected-preview');
+                var btn     = document.getElementById('task-assign-btn');
+                if (!sel) {
+                    preview.style.display = 'none';
+                    btn.disabled = true;
+                    document.getElementById('task-title').value        = '';
+                    document.getElementById('task-reference-id').value = '';
+                    return;
+                }
+                var q = JSON.parse(sel);
+                document.getElementById('task-title').value        = q.title || q.id || '';
+                document.getElementById('task-reference-id').value = q.id    || '';
+                document.getElementById('task-auto-subject').value    = q.subject    || '';
+                document.getElementById('task-auto-difficulty').value = q.difficulty || '';
+                var label = q.title || q.id;
+                if (q.subject)    label += ' — ' + q.subject;
+                if (q.difficulty) label += ' (' + q.difficulty + ')';
+                document.getElementById('task-preview-text').textContent = label;
+                preview.style.display = 'block';
+                btn.disabled = false;
+            },
             assignTask(classId, teacherId, nonce, btn) {
-                var type    = document.getElementById('task-type').value;
-                var title   = document.getElementById('task-title').value.trim();
-                var subject = document.getElementById('task-subject').value.trim();
-                var diff    = document.getElementById('task-difficulty').value;
-                var expiry  = document.getElementById('task-expiry').value;
-                var reward  = parseInt(document.getElementById('task-gem-reward').value, 10) || 0;
-                var $s      = document.getElementById('task-assign-status');
-                if (!title) { alert('Task title is required.'); return; }
+                var type   = document.getElementById('task-type').value;
+                var expiry = document.getElementById('task-expiry').value;
+                var reward = parseInt(document.getElementById('task-gem-reward').value, 10) || 0;
+                var $s     = document.getElementById('task-assign-status');
+
+                var title, subject, diff, refId;
+
+                if (type === 'quest') {
+                    title   = document.getElementById('task-title').value.trim();
+                    subject = document.getElementById('task-auto-subject').value.trim();
+                    diff    = document.getElementById('task-auto-difficulty').value.trim();
+                    refId   = document.getElementById('task-reference-id').value.trim();
+                    if (!title || !refId) { alert('Please select a quest from the content picker.'); return; }
+                } else {
+                    subject = document.getElementById('task-subject').value.trim();
+                    diff    = document.getElementById('task-difficulty').value;
+                    if (!subject) { alert('Subject is required for trials.'); return; }
+                    var level  = document.getElementById('task-level').value;
+                    var period = document.getElementById('task-period').value;
+                    title  = (subject || 'Trial') + ' — ' + (level ? level.replace('std_', 'Standard ') : '') + ' ' + (period ? period.replace('term_', 'Term ') : '');
+                    refId  = '';
+                }
+
                 if (!expiry) { alert('Expiry date is required.'); return; }
                 btn.disabled = true;
                 jQuery.post(ajaxurl, {
                     action: 'knowly_class_assign_task', nonce,
                     class_id: classId, teacher_id: teacherId,
-                    type, title, subject, difficulty: diff, due_date: expiry, gem_reward: reward,
+                    type, title, subject, difficulty: diff, reference_id: refId,
+                    due_date: expiry, gem_reward: reward,
                 }, r => {
                     btn.disabled = false;
                     if (r.success) {
@@ -859,23 +1029,29 @@ class Knowly_Admin_Classes {
         check_ajax_referer( 'knowly_class_admin', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        $class_id   = (int) ( $_POST['class_id']   ?? 0 );
-        $teacher_id = (int) ( $_POST['teacher_id'] ?? 0 );
-        $title      = sanitize_text_field( $_POST['title']      ?? '' );
-        $type       = sanitize_text_field( $_POST['type']       ?? 'trial' );
-        $subject    = sanitize_text_field( $_POST['subject']    ?? '' );
-        $difficulty = sanitize_text_field( $_POST['difficulty'] ?? '' );
-        $due_date   = sanitize_text_field( $_POST['due_date']   ?? '' );
-        $gem_reward = max( 0, (int) ( $_POST['gem_reward'] ?? 0 ) );
+        $class_id    = (int) ( $_POST['class_id']     ?? 0 );
+        $teacher_id  = (int) ( $_POST['teacher_id']   ?? 0 );
+        $title       = sanitize_text_field( $_POST['title']        ?? '' );
+        $type        = sanitize_text_field( $_POST['type']         ?? 'trial' );
+        $subject     = sanitize_text_field( $_POST['subject']      ?? '' );
+        $difficulty  = sanitize_text_field( $_POST['difficulty']   ?? '' );
+        $due_date    = sanitize_text_field( $_POST['due_date']     ?? '' );
+        $reference_id = sanitize_text_field( $_POST['reference_id'] ?? '' );
+        $gem_reward  = max( 0, (int) ( $_POST['gem_reward'] ?? 0 ) );
 
         if ( ! $class_id || ! $title || ! $due_date ) {
             wp_send_json_error( [ 'message' => 'Class, title, and expiry date are required.' ] );
         }
 
-        $allowed_types       = [ 'trial', 'quest' ];
+        $allowed_types        = [ 'trial', 'quest' ];
         $allowed_difficulties = [ '', 'easy', 'medium', 'hard' ];
         if ( ! in_array( $type, $allowed_types, true ) ) $type = 'trial';
         if ( ! in_array( $difficulty, $allowed_difficulties, true ) ) $difficulty = '';
+
+        // Quest type requires a reference_id
+        if ( $type === 'quest' && ! $reference_id ) {
+            wp_send_json_error( [ 'message' => 'Quest tasks require a content reference. Please pick a quest from the content pool.' ] );
+        }
 
         $parsed = date_create( $due_date );
         if ( ! $parsed ) {
@@ -889,7 +1065,7 @@ class Knowly_Admin_Classes {
                 'class_id'        => $class_id,
                 'teacher_user_id' => $teacher_id,
                 'type'            => $type,
-                'reference_id'    => null,
+                'reference_id'    => $reference_id ?: null,
                 'title'           => $title,
                 'description'     => null,
                 'subject'         => $subject ?: null,
@@ -909,12 +1085,54 @@ class Knowly_Admin_Classes {
         $task_id = (int) $wpdb->insert_id;
 
         Knowly_Debug::log( 'admin.classes', 'Task assigned via admin', [
-            'class_id' => $class_id,
-            'task_id'  => $task_id,
-            'type'     => $type,
-            'title'    => $title,
+            'class_id'     => $class_id,
+            'task_id'      => $task_id,
+            'type'         => $type,
+            'title'        => $title,
+            'reference_id' => $reference_id ?: null,
         ], null, 'info' );
 
         wp_send_json_success( [ 'task_id' => $task_id ] );
+    }
+
+    // ── AJAX: Get available content pool for a given type/level/period ────────
+
+    public static function ajax_get_content_pool(): void {
+        check_ajax_referer( 'knowly_class_admin', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $type   = sanitize_text_field( $_POST['type']   ?? 'quest' );
+        $level  = sanitize_text_field( $_POST['level']  ?? '' );
+        $period = sanitize_text_field( $_POST['period'] ?? '' );
+
+        if ( ! $level ) {
+            wp_send_json_error( [ 'message' => 'Level is required.' ] );
+        }
+
+        if ( $type === 'quest' ) {
+            $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
+            $result     = Knowly_Quest_Service::get_catalogue( $level, $period, $curriculum );
+
+            if ( is_wp_error( $result ) ) {
+                wp_send_json_error( [ 'message' => 'Could not load quests: ' . $result->get_error_message() ] );
+            }
+
+            // Normalise fields — Railway may return snake_case or camelCase
+            $items = array_map( function( $q ) {
+                return [
+                    'id'         => $q['id']         ?? $q['quest_id'] ?? $q['_id'] ?? '',
+                    'title'      => $q['title']       ?? $q['name']     ?? '',
+                    'subject'    => $q['subject']     ?? '',
+                    'difficulty' => $q['difficulty']  ?? '',
+                ];
+            }, (array) $result );
+
+            wp_send_json_success( [ 'type' => 'quest', 'items' => $items, 'count' => count( $items ) ] );
+
+        } else {
+            // Trial — no fixed catalogue; Railway generates on demand.
+            // Return empty items so the JS shows the manual subject/difficulty fields.
+            wp_send_json_success( [ 'type' => 'trial', 'items' => [], 'count' => 0 ] );
+        }
     }
 }

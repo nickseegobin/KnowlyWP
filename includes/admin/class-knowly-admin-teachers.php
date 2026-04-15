@@ -642,8 +642,8 @@ class Knowly_Admin_Teachers {
 
         global $wpdb;
 
-        // Suppress object cache to ensure fresh data
-        wp_cache_delete( $teacher_id, 'user_meta' );
+        // Flush wpdb query cache to ensure fresh data from DB
+        $wpdb->flush();
 
         $classes = $wpdb->get_results( $wpdb->prepare(
             "SELECT id, name, level, status,

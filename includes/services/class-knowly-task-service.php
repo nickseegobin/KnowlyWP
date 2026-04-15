@@ -118,6 +118,32 @@ class Knowly_Task_Service {
         return $task_id;
     }
 
+    // ── List for Class (Child view) ───────────────────────────────────────────
+
+    /**
+     * List active, non-expired tasks for a class — child-safe view.
+     * Excludes tasks past their due_date and non-active tasks.
+     *
+     * @return array
+     */
+    public static function list_for_class_child( int $class_id ): array {
+        global $wpdb;
+
+        $today = current_time( 'Y-m-d' );
+
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}knowly_tasks
+             WHERE class_id = %d
+               AND status = 'active'
+               AND (due_date IS NULL OR due_date >= %s)
+             ORDER BY created_at DESC",
+            $class_id,
+            $today
+        ), ARRAY_A );
+
+        return array_map( [ __CLASS__, 'format_task' ], $rows ?: [] );
+    }
+
     // ── List for Class ────────────────────────────────────────────────────────
 
     /**

@@ -122,6 +122,16 @@ class Knowly_Classes_API extends Knowly_API_Base {
                 ],
             ],
         ] );
+
+        // Child-accessible: get active tasks for an enrolled class
+        register_rest_route( $ns, '/classes/(?P<id>\d+)/my-tasks', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'my_class_tasks' ],
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'id' => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
+            ],
+        ] );
     }
 
     // ── Handlers ──────────────────────────────────────────────────────────────
@@ -265,15 +275,41 @@ class Knowly_Classes_API extends Knowly_API_Base {
         return $this->success( [ 'tasks' => $tasks, 'count' => count( $tasks ) ] );
     }
 
-    public function my_classes( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-        $user_id = $this->authenticate( $request );
-        if ( is_wp_error( $user_id ) ) return $user_id;
+    public function my_class_tasks( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $ctx = $this->require_child_context( $request );
+        if ( is_wp_error( $ctx ) ) return $ctx;
 
-        if ( ! $this->is_child( $user_id ) ) {
-            return new WP_Error( 'knowly_forbidden', 'Student account required.', [ 'status' => 403 ] );
+        $child_id = $ctx['child_id'];
+        $class_id = (int) $request['id'];
+
+        // Verify the child is a member of this class
+        if ( ! Knowly_Class_Service::child_is_member( $class_id, $child_id ) ) {
+            return new WP_Error( 'knowly_forbidden', 'You are not enrolled in this class.', [ 'status' => 403 ] );
         }
 
-        $classes = Knowly_Class_Service::list_for_child( $user_id );
+        $class = Knowly_Class_Service::get( $class_id );
+        if ( is_wp_error( $class ) ) return $class;
+
+        $tasks = Knowly_Task_Service::list_for_class_child( $class_id );
+
+        return $this->success( [
+            'class' => [
+                'id'           => $class['id'],
+                'name'         => $class['name'],
+                'level'        => $class['level'],
+                'teacher_name' => $class['teacher_name'] ?? null,
+                'school_name'  => $class['school_name'] ?? null,
+            ],
+            'tasks' => $tasks,
+            'count' => count( $tasks ),
+        ] );
+    }
+
+    public function my_classes( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $ctx = $this->require_child_context( $request );
+        if ( is_wp_error( $ctx ) ) return $ctx;
+
+        $classes = Knowly_Class_Service::list_for_child( $ctx['child_id'] );
 
         return $this->success( [ 'classes' => $classes, 'count' => count( $classes ) ] );
     }

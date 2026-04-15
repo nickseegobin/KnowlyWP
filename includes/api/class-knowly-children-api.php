@@ -87,6 +87,21 @@ class Knowly_Children_API extends Knowly_API_Base {
             'permission_callback' => '__return_true',
         ] );
 
+        // Child self-update: children can update their own profile fields
+        register_rest_route( $ns, '/children/me', [
+            'methods'             => 'PATCH',
+            'callback'            => [ $this, 'update_self' ],
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'first_name'   => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'last_name'    => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'level'        => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'period'       => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'age'          => [ 'required' => false, 'type' => 'integer' ],
+                'avatar_index' => [ 'required' => false, 'type' => 'integer' ],
+            ],
+        ] );
+
         // Add this alongside the existing switch-parent route
         //Updated route to match the new v2.1 endpoint structure
         // Was missiong
@@ -177,5 +192,22 @@ class Knowly_Children_API extends Knowly_API_Base {
         return $this->success( Knowly_Children_Service::switch_to_parent( $parent_id ) );
     }
 
-    
+    public function update_self( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        // Accepts both parent tokens (with active_child_id) and direct child tokens
+        $ctx = $this->require_child_context( $request );
+        if ( is_wp_error( $ctx ) ) return $ctx;
+
+        $result = Knowly_Children_Service::update_child( $ctx['parent_id'], $ctx['child_id'], [
+            'first_name'   => $request->get_param( 'first_name' ),
+            'last_name'    => $request->get_param( 'last_name' ),
+            'level'        => $request->get_param( 'level' ),
+            'period'       => $request->get_param( 'period' ),
+            'age'          => $request->get_param( 'age' ),
+            'avatar_index' => $request->get_param( 'avatar_index' ),
+        ] );
+
+        return is_wp_error( $result ) ? $result : $this->success( $result );
+    }
+
+
 }

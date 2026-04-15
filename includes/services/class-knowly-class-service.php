@@ -45,6 +45,7 @@ class Knowly_Class_Service {
                 'name'            => $name,
                 'description'     => sanitize_textarea_field( $data['description'] ?? '' ) ?: null,
                 'level'           => sanitize_text_field( $data['level'] ?? '' ),
+                'status'          => 'active',
                 'created_at'      => current_time( 'mysql', true ),
             ]
         );
@@ -416,6 +417,19 @@ class Knowly_Class_Service {
         return true;
     }
 
+    // ── Membership Guard ──────────────────────────────────────────────────────
+
+    /**
+     * Verify the given child is an active member of the given class.
+     */
+    public static function child_is_member( int $class_id, int $child_id ): bool {
+        global $wpdb;
+        return (bool) $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_class_members WHERE class_id = %d AND child_id = %d AND status = 'active'",
+            $class_id, $child_id
+        ) );
+    }
+
     // ── Ownership Guard ───────────────────────────────────────────────────────
 
     /**
@@ -432,9 +446,16 @@ class Knowly_Class_Service {
     // ── Private Helpers ───────────────────────────────────────────────────────
 
     private static function format_class( array $row ): array {
+        $teacher_id   = (int) $row['teacher_user_id'];
+        $teacher      = get_userdata( $teacher_id );
+        $teacher_name = $teacher ? trim( $teacher->first_name . ' ' . $teacher->last_name ) ?: $teacher->display_name : null;
+        $school_name  = get_user_meta( $teacher_id, 'knowly_school_name', true ) ?: null;
+
         return [
             'id'              => (int) $row['id'],
-            'teacher_user_id' => (int) $row['teacher_user_id'],
+            'teacher_user_id' => $teacher_id,
+            'teacher_name'    => $teacher_name,
+            'school_name'     => $school_name,
             'name'            => $row['name'],
             'description'     => $row['description'],
             'level'           => $row['level'],

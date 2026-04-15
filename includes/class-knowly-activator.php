@@ -60,6 +60,19 @@ class Knowly_Activator {
                 ADD COLUMN trial_type VARCHAR(50) NOT NULL DEFAULT 'practice'
                 AFTER difficulty" );
         }
+
+        // v1.7.2 — add type column to knowly_tasks if missing
+        $col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'type'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_tasks'
+        ) );
+        if ( empty( $col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_tasks
+                ADD COLUMN type ENUM('quest','trial') NOT NULL DEFAULT 'trial'
+                AFTER teacher_user_id" );
+        }
     }
 
     // ── DB Tables ─────────────────────────────────────────────────────────────
