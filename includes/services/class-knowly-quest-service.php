@@ -236,9 +236,21 @@ class Knowly_Quest_Service {
 
     // ── Railway HTTP Helpers ──────────────────────────────────────────────────
 
+    /**
+     * Generate a short-lived JWT for server-to-server Railway calls.
+     * Mirrors the approach used in Knowly_Admin_Pool::ajax_quest_catalogue().
+     */
+    private static function get_railway_token(): string {
+        $admin_ids = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        if ( ! empty( $admin_ids ) ) {
+            return Knowly_JWT::encode( (int) $admin_ids[0] );
+        }
+        // Fallback to stored key if no admin user exists
+        return get_option( 'knowly_railway_api_key', '' );
+    }
+
     private static function railway_get( string $path, array $params = [] ): array|WP_Error {
         $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
-        $api_key  = get_option( 'knowly_railway_api_key', '' );
 
         if ( ! $endpoint ) {
             return new WP_Error( 'knowly_railway_not_configured', 'Railway endpoint not configured.', [ 'status' => 503 ] );
@@ -252,7 +264,7 @@ class Knowly_Quest_Service {
         $response = wp_remote_get( $url, [
             'timeout' => 10,
             'headers' => [
-                'Authorization' => 'Bearer ' . $api_key,
+                'Authorization' => 'Bearer ' . self::get_railway_token(),
                 'Content-Type'  => 'application/json',
             ],
         ] );
@@ -262,7 +274,6 @@ class Knowly_Quest_Service {
 
     private static function railway_post( string $path, array $body ): array|WP_Error {
         $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
-        $api_key    = get_option( 'knowly_railway_api_key', '' );
         $server_key = get_option( 'knowly_railway_server_key', '' );
 
         if ( ! $endpoint ) {
@@ -270,7 +281,7 @@ class Knowly_Quest_Service {
         }
 
         $headers = [
-            'Authorization' => 'Bearer ' . $api_key,
+            'Authorization' => 'Bearer ' . self::get_railway_token(),
             'Content-Type'  => 'application/json',
         ];
         if ( $server_key ) {
