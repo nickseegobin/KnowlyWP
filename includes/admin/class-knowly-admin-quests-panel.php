@@ -4,8 +4,10 @@
  *
  * Tabs: Catalogue | Health Checks | Unit Tests | Simulations
  *
- * Quest catalogue uses Bearer JWT. Generation uses server key.
- * Delegates AJAX to Knowly_Admin_Pool handlers (already registered).
+ * Quest catalogue is served from wp_knowly_quests (WP local store).
+ * Railway is called only for:
+ *   - Sync: pulls approved quests from Railway into wp_knowly_quests
+ *   - Generate: creates new quest in Railway, stores both variants in WP
  *
  * @package KnowlyAPI
  */
@@ -16,6 +18,7 @@ class Knowly_Admin_Quests_Panel {
 
     public static function boot(): void {
         add_action( 'wp_ajax_knowly_quests_panel_health', [ __CLASS__, 'ajax_health' ] );
+        add_action( 'wp_ajax_knowly_quests_sync',         [ __CLASS__, 'ajax_sync' ] );
     }
 
     public static function render(): void {
@@ -64,9 +67,60 @@ class Knowly_Admin_Quests_Panel {
     // ── Catalogue Tab ─────────────────────────────────────────────────────────
 
     private static function render_catalogue( bool $railway_ok, string $server_key, string $nonce ): void {
+        global $wpdb;
+        $local_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_quests WHERE variant='student'" );
+        $approved    = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_quests WHERE variant='student' AND status='approved'" );
+        $pending     = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_quests WHERE variant='student' AND status='pending_review'" );
         ?>
+
+        <!-- ── WP Store Stats ──────────────────────────────────────────────── -->
+        <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;">
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px 18px;text-align:center;">
+                <div style="font-size:22px;font-weight:700;color:#16a34a;"><?= $approved ?></div>
+                <div style="font-size:11px;color:#15803d;">Approved</div>
+            </div>
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px 18px;text-align:center;">
+                <div style="font-size:22px;font-weight:700;color:#d97706;"><?= $pending ?></div>
+                <div style="font-size:11px;color:#b45309;">Pending Review</div>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 18px;text-align:center;">
+                <div style="font-size:22px;font-weight:700;color:#475569;"><?= $local_count ?></div>
+                <div style="font-size:11px;color:#64748b;">Total in WP Store</div>
+            </div>
+        </div>
+
+        <!-- ── Sync from Railway ───────────────────────────────────────────── -->
+        <div style="padding:14px 16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="flex:1;">
+                    <strong style="font-size:13px;">Sync Quests from Railway</strong>
+                    <p style="margin:2px 0 0;font-size:12px;color:#3730a3;">
+                        Pulls all approved quests from Railway and stores them in the WP local store.
+                        Existing records are updated; new ones are inserted as <code>approved</code>.
+                        Run this after generating new quests or to restore the local store.
+                    </p>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                    <select id="qp-sync-level" style="height:30px;">
+                        <option value="">All levels</option>
+                        <option value="std_1">std_1</option>
+                        <option value="std_2">std_2</option>
+                        <option value="std_3">std_3</option>
+                        <option value="std_4">std_4</option>
+                        <option value="std_5">std_5</option>
+                    </select>
+                    <button id="qp-sync" class="button button-primary" <?= $railway_ok ? '' : 'disabled' ?>>
+                        ↻ Sync Quests
+                    </button>
+                </div>
+            </div>
+            <div id="qp-sync-result" style="margin-top:8px;font-size:12px;"></div>
+        </div>
+
+        <!-- ── View Local Store ────────────────────────────────────────────── -->
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
             <select id="qp-level" style="height:30px;">
+                <option value="">All levels</option>
                 <option value="std_1">std_1</option>
                 <option value="std_2">std_2</option>
                 <option value="std_3">std_3</option>
@@ -79,18 +133,29 @@ class Knowly_Admin_Quests_Panel {
                 <option value="term_2">term_2</option>
                 <option value="term_3">term_3</option>
             </select>
-            <button id="qp-load" class="button button-primary" <?= $railway_ok ? '' : 'disabled' ?>>
+            <select id="qp-status-filter" style="height:30px;">
+                <option value="">All statuses</option>
+                <option value="approved">approved</option>
+                <option value="pending_review">pending_review</option>
+                <option value="archived">archived</option>
+                <option value="rejected">rejected</option>
+            </select>
+            <button id="qp-load" class="button button-secondary">
                 ↓ Load Quest Catalogue
             </button>
             <span id="qp-summary" style="color:#666;font-size:13px;"></span>
         </div>
         <div id="qp-results">
-            <p style="color:#888;">Select a level and click "Load Quest Catalogue" to view approved quests from Railway.</p>
+            <p style="color:#888;">Click "Load Quest Catalogue" to view quests from the WP local store.</p>
         </div>
 
+        <!-- ── Generate Quest ─────────────────────────────────────────────── -->
         <div style="margin-top:24px;padding:16px;background:#f6f7f7;border-radius:4px;border:1px solid #e5e7eb;">
-            <h3 style="margin:0 0 12px;">Generate Quest</h3>
-            <p style="font-size:12px;color:#666;margin:0 0 10px;">Generate a new quest and store it as approved in Railway/Supabase.</p>
+            <h3 style="margin:0 0 4px;">Generate Quest</h3>
+            <p style="font-size:12px;color:#666;margin:0 0 10px;">
+                Calls Railway to generate a new quest. Both student and teacher variants are stored in WP as <strong>pending_review</strong>.
+                <em>Generation takes 1–3 minutes</em> — use Sync Quests after generation if the quest does not appear immediately.
+            </p>
             <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
                 <label style="font-size:12px;display:flex;flex-direction:column;gap:4px;min-width:100px;">Level
                     <select id="qp-gen-level" style="height:30px;">
@@ -128,38 +193,150 @@ class Knowly_Admin_Quests_Panel {
         <script>
         (function($) {
             var nonce = '<?= esc_js( $nonce ) ?>';
+
+            // ── Status badge helper ───────────────────────────────────────────
+            function statusBadge(s) {
+                var cfg = {
+                    approved:       { bg:'#dcfce7', color:'#16a34a' },
+                    pending_review: { bg:'#fef3c7', color:'#d97706' },
+                    rejected:       { bg:'#fee2e2', color:'#dc2626' },
+                    archived:       { bg:'#f3f4f6', color:'#6b7280' },
+                };
+                var c = cfg[s] || { bg:'#f3f4f6', color:'#374151' };
+                return '<span style="font-size:11px;background:' + c.bg + ';color:' + c.color + ';padding:2px 6px;border-radius:3px;">' + s + '</span>';
+            }
+
+            // ── Sync quests from Railway ──────────────────────────────────────
+            $('#qp-sync').on('click', function() {
+                var $btn   = $(this).prop('disabled', true).text('Syncing…');
+                var $res   = $('#qp-sync-result');
+                var level  = $('#qp-sync-level').val();
+                $res.html('<em>Fetching quest catalogue from Railway… this may take 30–60 seconds for a full sync.</em>');
+                $.ajax({
+                    url:     ajaxurl,
+                    type:    'POST',
+                    timeout: 120000,
+                    data:    { action: 'knowly_quests_sync', nonce: nonce, level: level },
+                    success: function(res) {
+                        $btn.prop('disabled', false).text('↻ Sync Quests');
+                        if (!res.success) {
+                            $res.html('<span style="color:#dc2626;">✗ Sync failed: ' + (res.data.message || 'Unknown error') + '</span>');
+                            return;
+                        }
+                        var d = res.data;
+                        $res.html(
+                            '<span style="color:#16a34a;">✓ Sync complete — '
+                            + '<strong>' + d.synced + '</strong> synced, '
+                            + '<strong>' + d.skipped + '</strong> skipped (already up to date), '
+                            + '<strong>' + d.failed + '</strong> failed.'
+                            + (d.no_content > 0 ? ' <em>' + d.no_content + ' had no content and were stored as metadata-only.</em>' : '')
+                            + '</span>'
+                        );
+                        // Reload catalogue automatically
+                        $('#qp-load').trigger('click');
+                    },
+                    error: function(xhr, status) {
+                        $btn.prop('disabled', false).text('↻ Sync Quests');
+                        $res.html('<span style="color:#dc2626;">✗ Request timed out or failed (' + status + '). Try syncing a single level at a time.</span>');
+                    }
+                });
+            });
+
+            // ── Load local quest catalogue ────────────────────────────────────
             $('#qp-load').on('click', function() {
                 var $btn = $(this).prop('disabled', true).text('Loading…');
-                var level = $('#qp-level').val(), period = $('#qp-period').val();
-                $.post(ajaxurl, { action: 'knowly_pool_quest_catalogue', nonce: nonce, level: level, period: period }, function(res) {
+                var level  = $('#qp-level').val();
+                var period = $('#qp-period').val();
+                var status = $('#qp-status-filter').val();
+                $.post(ajaxurl, { action: 'knowly_pool_quest_catalogue', nonce: nonce, level: level, period: period, status: status }, function(res) {
                     $btn.prop('disabled', false).text('↓ Load Quest Catalogue');
-                    if (!res.success) { $('#qp-results').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown error') + '</p>'); return; }
+                    if (!res.success) {
+                        $('#qp-results').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown error') + '</p>');
+                        return;
+                    }
                     var quests = res.data.quests || [];
-                    $('#qp-summary').text(quests.length + ' approved quest(s) for ' + level + (period ? '/' + period : ''));
-                    if (!quests.length) { $('#qp-results').html('<p style="color:#666;">No approved quests found for this combination. Use Generate below.</p>'); return; }
-                    var html = '<table class="knowly-table widefat" style="font-size:12px;"><thead><tr><th>Quest ID</th><th>Level</th><th>Period</th><th>Subject</th><th>Module</th><th>Topic</th><th>Generated</th></tr></thead><tbody>';
+                    var label  = (level || 'all levels') + (period ? ' / ' + period : '');
+                    $('#qp-summary').text(quests.length + ' quest(s) — ' + label);
+                    if (!quests.length) {
+                        $('#qp-results').html('<p style="color:#666;">No quests found. Use <strong>Sync Quests</strong> to import from Railway, or generate a new one below.</p>');
+                        return;
+                    }
+                    var html = '<table class="knowly-table widefat" style="font-size:12px;">';
+                    html += '<thead><tr><th>Quest ID</th><th>Level</th><th>Period</th><th>Subject</th><th>Module</th><th>Title / Topic</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
                     $.each(quests, function(i, q) {
-                        html += '<tr><td style="font-family:monospace;">' + q.quest_id + '</td>'
-                            + '<td>' + (q.level||'') + '</td><td>' + (q.period||'<em>capstone</em>') + '</td>'
-                            + '<td><strong>' + (q.subject||'') + '</strong></td><td>' + (q.module_number != null ? q.module_number : '—') + '</td>'
-                            + '<td>' + (q.topic||q.module_title||'—') + '</td>'
-                            + '<td>' + (q.generated_at ? q.generated_at.slice(0,10) : '—') + '</td></tr>';
+                        var rowId  = 'qp-row-' + q.quest_id.replace(/[^a-z0-9]/gi, '_');
+                        var actions = '';
+                        if (q.status === 'pending_review') {
+                            actions = '<button class="button button-small" style="color:#16a34a;margin-right:4px;" onclick="qpQuestAction(\'' + q.quest_id + '\',\'approve\',this)">✓ Approve</button>'
+                                    + '<button class="button button-small" style="color:#dc2626;" onclick="qpQuestAction(\'' + q.quest_id + '\',\'reject\',this)">✗ Reject</button>';
+                        } else if (q.status === 'approved') {
+                            actions = '<button class="button button-small" style="color:#6b7280;" onclick="qpQuestAction(\'' + q.quest_id + '\',\'archive\',this)">Archive</button>';
+                        }
+                        html += '<tr id="' + rowId + '">'
+                            + '<td style="font-family:monospace;font-size:11px;">' + q.quest_id + '</td>'
+                            + '<td>' + (q.level||'') + '</td>'
+                            + '<td>' + (q.period||'<em>capstone</em>') + '</td>'
+                            + '<td><strong>' + (q.subject||'') + '</strong></td>'
+                            + '<td style="text-align:center;">' + (q.module_number != null ? q.module_number : '—') + '</td>'
+                            + '<td>' + (q.module_title||q.topic||'—') + '</td>'
+                            + '<td>' + statusBadge(q.status) + '</td>'
+                            + '<td style="white-space:nowrap;">' + actions + '</td>'
+                            + '</tr>';
                     });
                     html += '</tbody></table>';
                     $('#qp-results').html(html);
                 });
             });
+
+            window.qpQuestAction = function(questId, action, btn) {
+                var labels = { approve: 'Approve', reject: 'Reject', archive: 'Archive' };
+                if (!confirm(labels[action] + ' quest ' + questId + '?')) return;
+                $(btn).prop('disabled', true);
+                $.post(ajaxurl, { action: 'knowly_pool_approve_quest', nonce: nonce, quest_id: questId, quest_action: action }, function(res) {
+                    if (res.success) {
+                        var rowId = '#qp-row-' + questId.replace(/[^a-z0-9]/gi, '_');
+                        $(rowId).find('td:nth-last-child(2)').html(statusBadge(res.data.status));
+                        $(rowId).find('td:last-child').html(
+                            res.data.status === 'approved'
+                                ? '<button class="button button-small" style="color:#6b7280;" onclick="qpQuestAction(\'' + questId + '\',\'archive\',this)">Archive</button>'
+                                : ''
+                        );
+                    } else {
+                        alert('Error: ' + (res.data.message || 'Failed'));
+                        $(btn).prop('disabled', false);
+                    }
+                });
+            };
+
+            // ── Generate Quest ────────────────────────────────────────────────
             $('#qp-generate').on('click', function() {
-                var level = $('#qp-gen-level').val(), period = $('#qp-gen-period').val(),
-                    subject = $('#qp-gen-subject').val(), mi = parseInt($('#qp-gen-module').val(), 10) || 0;
+                var level   = $('#qp-gen-level').val(),
+                    period  = $('#qp-gen-period').val(),
+                    subject = $('#qp-gen-subject').val(),
+                    mi      = parseInt($('#qp-gen-module').val(), 10) || 0;
                 if (!level || !subject) { alert('Level and Subject are required.'); return; }
-                $(this).prop('disabled', true).text('Generating…');
-                var $res = $('#qp-gen-result').html('<em>Generating… this may take 10–20 seconds.</em>');
-                $.post(ajaxurl, { action: 'knowly_pool_generate_quest', nonce: nonce, level: level, period: period, subject: subject, module_index: mi }, function(res) {
-                    $('#qp-generate').prop('disabled', false).text('Generate');
-                    $res.html(res.success
-                        ? '<span style="color:#16a34a;">✓ Generated: <strong>' + res.data.quest_id + '</strong> (' + res.data.status + ')</span>'
-                        : '<span style="color:#dc2626;">✗ ' + (res.data.message || 'Generation failed') + '</span>');
+                var $btn = $(this).prop('disabled', true).text('Generating…');
+                var $res = $('#qp-gen-result').html('<em>Calling Railway… generation takes 1–3 minutes. Please wait.</em>');
+                $.ajax({
+                    url:     ajaxurl,
+                    type:    'POST',
+                    timeout: 240000,
+                    data:    { action: 'knowly_pool_generate_quest', nonce: nonce, level: level, period: period, subject: subject, module_index: mi },
+                    success: function(res) {
+                        $btn.prop('disabled', false).text('Generate');
+                        if (res.success) {
+                            $res.html('<span style="color:#16a34a;">✓ Stored in WP: <strong>' + res.data.quest_id + '</strong> — both variants saved as <strong>pending_review</strong>.'
+                                + (res.data.has_teacher ? '' : ' <em>(No teacher variant returned — student only.)</em>')
+                                + ' Click <strong>Load Quest Catalogue</strong> to review and approve.</span>');
+                            $('#qp-load').trigger('click');
+                        } else {
+                            $res.html('<span style="color:#dc2626;">✗ ' + (res.data.message || 'Generation failed') + '</span>');
+                        }
+                    },
+                    error: function(xhr, status) {
+                        $btn.prop('disabled', false).text('Generate');
+                        $res.html('<span style="color:#d97706;">⚠ Request timed out (' + status + '). Railway may still be generating — use <strong>Sync Quests</strong> in a few minutes to import it.</span>');
+                    }
                 });
             });
         })(jQuery);
@@ -209,13 +386,151 @@ class Knowly_Admin_Quests_Panel {
         <?php
     }
 
+    // ── AJAX: Sync Quests from Railway ────────────────────────────────────────
+
+    public static function ajax_sync(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_quests';
+
+        $sync_level = sanitize_key( $_POST['level'] ?? '' );
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+
+        if ( ! $endpoint ) {
+            wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] );
+        }
+
+        // Generate a short-lived JWT for Railway auth
+        $admin_ids = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        if ( empty( $admin_ids ) ) {
+            wp_send_json_error( [ 'message' => 'No admin user found to generate Railway token.' ] );
+        }
+        $token = Knowly_JWT::encode( (int) $admin_ids[0] );
+
+        // ── Step 1: Fetch catalogue from Railway ─────────────────────────────
+        // Iterate over levels we care about
+        $levels  = $sync_level ? [ $sync_level ] : [ 'std_1', 'std_2', 'std_3', 'std_4', 'std_5' ];
+        $periods = [ 'term_1', 'term_2', 'term_3', '' ]; // '' = capstone
+
+        $all_quests = [];
+
+        foreach ( $levels as $level ) {
+            foreach ( $periods as $period ) {
+                $params = [ 'level' => $level, 'curriculum' => 'tt_primary' ];
+                if ( $period ) $params['period'] = $period;
+
+                $url  = $endpoint . '/api/v1/quest/catalogue?' . http_build_query( $params );
+                $resp = wp_remote_get( $url, [
+                    'timeout' => 20,
+                    'headers' => [
+                        'Authorization' => "Bearer {$token}",
+                        'Content-Type'  => 'application/json',
+                    ],
+                ] );
+
+                if ( is_wp_error( $resp ) || wp_remote_retrieve_response_code( $resp ) !== 200 ) continue;
+
+                $body   = json_decode( wp_remote_retrieve_body( $resp ), true );
+                $quests = $body['quests'] ?? [];
+                foreach ( $quests as $q ) {
+                    $all_quests[] = $q;
+                }
+            }
+        }
+
+        if ( empty( $all_quests ) ) {
+            wp_send_json_success( [
+                'synced'     => 0,
+                'skipped'    => 0,
+                'failed'     => 0,
+                'no_content' => 0,
+                'message'    => 'No approved quests found in Railway for the selected level(s).',
+            ] );
+        }
+
+        // ── Step 2: For each quest, fetch full content and upsert ─────────────
+        $synced     = 0;
+        $skipped    = 0;
+        $failed     = 0;
+        $no_content = 0;
+        $now        = current_time( 'mysql' );
+
+        foreach ( $all_quests as $meta ) {
+            $quest_id = $meta['quest_id'] ?? null;
+            if ( ! $quest_id ) { $failed++; continue; }
+
+            // Fetch full content from Railway
+            $content_url  = $endpoint . '/api/v1/quest/' . rawurlencode( $quest_id );
+            $content_resp = wp_remote_get( $content_url, [
+                'timeout' => 15,
+                'headers' => [
+                    'Authorization' => "Bearer {$token}",
+                    'Content-Type'  => 'application/json',
+                ],
+            ] );
+
+            $content = null;
+            if ( ! is_wp_error( $content_resp ) && wp_remote_retrieve_response_code( $content_resp ) === 200 ) {
+                $content_body = json_decode( wp_remote_retrieve_body( $content_resp ), true );
+                // Railway may return content nested under 'content' or 'student_content'
+                $content = $content_body['student_content'] ?? $content_body['content'] ?? $content_body;
+                if ( empty( $content ) ) $no_content++;
+            } else {
+                $no_content++;
+            }
+
+            $row = [
+                'quest_id'         => $quest_id,
+                'variant'          => 'student',
+                'curriculum'       => $meta['curriculum']    ?? 'tt_primary',
+                'level'            => $meta['level']         ?? '',
+                'period'           => $meta['period']        ?? null,
+                'subject'          => $meta['subject']       ?? '',
+                'topic'            => $meta['topic']         ?? null,
+                'module_number'    => $meta['module_number'] ?? null,
+                'module_title'     => $meta['module_title']  ?? null,
+                'objectives'       => wp_json_encode( $meta['objectives'] ?? [] ),
+                'content'          => $content ? wp_json_encode( $content ) : null,
+                'status'           => 'approved',
+                'railway_quest_id' => $quest_id,
+                'generated_at'     => $meta['generated_at'] ?? $now,
+                'approved_at'      => $now,
+                'approved_by'      => get_current_user_id(),
+                'created_at'       => $now,
+                'updated_at'       => $now,
+            ];
+
+            // Use REPLACE INTO — upserts on (quest_id, variant) unique key
+            $result = $wpdb->replace( $table, $row );
+
+            if ( $result === false ) {
+                $failed++;
+                Knowly_Debug::log( 'admin.sync', 'Failed to upsert quest', [ 'quest_id' => $quest_id, 'error' => $wpdb->last_error ], null, 'error' );
+            } else {
+                $synced++;
+            }
+        }
+
+        Knowly_Debug::log( 'admin.sync', 'Quest sync complete', [
+            'synced'     => $synced,
+            'skipped'    => $skipped,
+            'failed'     => $failed,
+            'no_content' => $no_content,
+        ], null, 'info' );
+
+        wp_send_json_success( compact( 'synced', 'skipped', 'failed', 'no_content' ) );
+    }
+
     // ── AJAX: Health ──────────────────────────────────────────────────────────
 
     public static function ajax_health(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        $checks = [];
+        global $wpdb;
+        $checks     = [];
         $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
         $server_key = get_option( 'knowly_railway_server_key', '' );
 
@@ -228,8 +543,20 @@ class Knowly_Admin_Quests_Panel {
             $checks[] = [ 'label' => 'Railway endpoint', 'status' => 'fail', 'detail' => 'Not configured.' ];
         }
 
-        // 2. Approved quests exist
-        if ( $endpoint && $server_key ) {
+        // 2. WP quest store populated
+        $local_approved = (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_quests WHERE variant='student' AND status='approved'"
+        );
+        $checks[] = [
+            'label'  => 'WP quest store',
+            'status' => $local_approved > 0 ? 'pass' : 'warn',
+            'detail' => $local_approved > 0
+                ? "{$local_approved} approved quest(s) in wp_knowly_quests."
+                : "No approved quests in WP store. Run Sync Quests to import from Railway.",
+        ];
+
+        // 3. Railway quest catalogue reachable (spot check std_4)
+        if ( $endpoint ) {
             $admin_ids = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
             $token     = ! empty( $admin_ids ) ? Knowly_JWT::encode( (int) $admin_ids[0] ) : '';
             if ( $token ) {
@@ -239,22 +566,21 @@ class Knowly_Admin_Quests_Panel {
                 ] );
                 if ( ! is_wp_error( $resp ) && wp_remote_retrieve_response_code( $resp ) === 200 ) {
                     $body  = json_decode( wp_remote_retrieve_body( $resp ), true );
-                    $count = $body['count'] ?? 0;
-                    $checks[] = [ 'label' => 'Approved quests (std_4)', 'status' => $count > 0 ? 'pass' : 'warn', 'detail' => "{$count} approved quest(s) for std_4." ];
+                    $count = $body['count'] ?? count( $body['quests'] ?? [] );
+                    $checks[] = [ 'label' => 'Railway quest catalogue (std_4)', 'status' => $count > 0 ? 'pass' : 'warn', 'detail' => "{$count} approved quest(s) available on Railway for std_4." ];
                 } else {
-                    $checks[] = [ 'label' => 'Approved quests (std_4)', 'status' => 'fail', 'detail' => 'Could not reach quest catalogue.' ];
+                    $checks[] = [ 'label' => 'Railway quest catalogue (std_4)', 'status' => 'fail', 'detail' => 'Could not reach Railway quest catalogue.' ];
                 }
             }
         }
 
-        // 3. knowly_badge CPT registered
+        // 4. Badge CPT registered
         $badge_cpt = post_type_exists( 'knowly_badge' );
         $checks[] = [ 'label' => 'Badge CPT registered', 'status' => $badge_cpt ? 'pass' : 'fail', 'detail' => $badge_cpt ? 'knowly_badge post type exists.' : 'CPT not registered.' ];
 
-        // 4. earned_badges user meta writable (spot check)
+        // 5. Earned badges user meta writable
         $test_child = get_user_by( 'login', 'test.child' );
         if ( $test_child ) {
-            $current = get_user_meta( $test_child->ID, '_knowly_badges_health_check', true );
             update_user_meta( $test_child->ID, '_knowly_badges_health_check', 'ok' );
             $after = get_user_meta( $test_child->ID, '_knowly_badges_health_check', true );
             delete_user_meta( $test_child->ID, '_knowly_badges_health_check' );

@@ -347,7 +347,58 @@ class Knowly_Activator {
             KEY          idx_status (status)
         ) {$charset};" );
 
-        // ── 18. Debug Log ─────────────────────────────────────────────────────────
+        // ── 18. Quest Store (WP local delivery store — both student + teacher variants) ──
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_quests (
+            id               BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            quest_id         VARCHAR(200)        NOT NULL,
+            variant          ENUM('student','teacher') NOT NULL DEFAULT 'student',
+            curriculum       VARCHAR(50)         NOT NULL DEFAULT 'tt_primary',
+            level            VARCHAR(20)         NOT NULL,
+            period           VARCHAR(20)         DEFAULT NULL,
+            subject          VARCHAR(50)         NOT NULL,
+            topic            VARCHAR(200)        DEFAULT NULL,
+            module_number    INT                 DEFAULT NULL,
+            module_title     VARCHAR(200)        DEFAULT NULL,
+            objectives       LONGTEXT            DEFAULT NULL,
+            content          LONGTEXT            DEFAULT NULL,
+            status           VARCHAR(20)         NOT NULL DEFAULT 'pending_review',
+            railway_quest_id VARCHAR(200)        DEFAULT NULL,
+            generated_at     DATETIME            DEFAULT NULL,
+            approved_at      DATETIME            DEFAULT NULL,
+            approved_by      BIGINT(20)          DEFAULT NULL,
+            created_at       DATETIME            NOT NULL,
+            updated_at       DATETIME            NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY quest_variant (quest_id, variant),
+            KEY idx_level_period_subject (level, period, subject),
+            KEY idx_status (status),
+            KEY idx_variant (variant)
+        ) {$charset};" );
+
+        // ── 19. Trial Packages (WP local pool — synced from Railway) ─────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_trial_packages (
+            id           BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            package_id   VARCHAR(200)        NOT NULL,
+            curriculum   VARCHAR(50)         NOT NULL DEFAULT 'tt_primary',
+            level        VARCHAR(20)         NOT NULL,
+            period       VARCHAR(20)         DEFAULT NULL,
+            subject      VARCHAR(50)         NOT NULL,
+            difficulty   VARCHAR(20)         DEFAULT NULL,
+            trial_type   VARCHAR(20)         NOT NULL DEFAULT 'practice',
+            topic        VARCHAR(200)        DEFAULT NULL,
+            questions    LONGTEXT            DEFAULT NULL,
+            answer_sheet LONGTEXT            DEFAULT NULL,
+            meta         LONGTEXT            DEFAULT NULL,
+            status       VARCHAR(20)         NOT NULL DEFAULT 'approved',
+            synced_at    DATETIME            NOT NULL,
+            created_at   DATETIME            NOT NULL,
+            updated_at   DATETIME            NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY package_id (package_id),
+            KEY idx_slot (level, period, subject, difficulty, trial_type, status)
+        ) {$charset};" );
+
+        // ── 20. Debug Log ─────────────────────────────────────────────────────────
         dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_debug_log (
             log_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             level      ENUM('debug','info','warning','error') NOT NULL DEFAULT 'info',

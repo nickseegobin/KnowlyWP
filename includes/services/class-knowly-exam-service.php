@@ -279,14 +279,111 @@ class Knowly_Exam_Service {
         return $rows ?: [];
     }
 
-    // ── Railway API ───────────────────────────────────────────────────────────
+    // ── WP Pool Delivery ──────────────────────────────────────────────────────
 
     /**
-     * Fetch the next Trial package from Railway's sequential pool.
-     * Railway handles all generation — this plugin never waits on Claude directly.
+     * Fetch the next Trial package from the WP local pool (wp_knowly_trial_packages).
      *
-     * Returns WP_Error on connection failure or pool_empty (503).
-     * pool_empty means Railway has triggered background generation — client should retry shortly.
+     * Delivery priority:
+     *  1. Approved package for this slot that this child has never taken.
+     *  2. If all packages exhausted, pick the one served least recently (wrap-around).
+     *
+     * No Railway call is made. Railway is only called during admin Sync.
+     *
+     * @return array|WP_Error  Full package row with questions; answer_sheet stripped before returning.
+     */
+    public static function fetch_from_wp_pool(
+        int    $child_id,
+        string $level,
+        string $period,
+        string $subject,
+        string $difficulty,
+        string $trial_type = 'practice',
+        string $topic = ''
+    ): array|WP_Error {
+        global $wpdb;
+        $table    = $wpdb->prefix . 'knowly_trial_packages';
+        $sessions = $wpdb->prefix . 'knowly_exam_sessions';
+        $subject  = self::normalise_subject( $subject );
+
+        // Build slot conditions
+        $where_args = [ $subject, $level, $trial_type ];
+        $where_sql  = "subject = %s AND level = %s AND trial_type = %s AND status = 'approved'";
+
+        if ( $period !== '' ) {
+            $where_sql   .= ' AND period = %s';
+            $where_args[] = $period;
+        }
+        if ( $difficulty !== '' ) {
+            $where_sql   .= ' AND difficulty = %s';
+            $where_args[] = $difficulty;
+        }
+        if ( $topic !== '' ) {
+            $where_sql   .= ' AND topic = %s';
+            $where_args[] = $topic;
+        }
+
+        // 1. Prefer a package this child has never taken
+        $fresh_args   = array_merge( $where_args, [ $child_id ] );
+        $fresh_sql    = "SELECT * FROM {$table}
+                         WHERE {$where_sql}
+                           AND package_id NOT IN (
+                               SELECT package_id FROM {$sessions} WHERE child_id = %d
+                           )
+                         ORDER BY RAND() LIMIT 1";
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+        $row = $wpdb->get_row( $wpdb->prepare( $fresh_sql, $fresh_args ), ARRAY_A );
+
+        // 2. Wrap-around — serve the oldest-served package for this child
+        if ( ! $row ) {
+            $wrap_sql = "SELECT p.* FROM {$table} p
+                         LEFT JOIN {$sessions} s
+                             ON s.package_id = p.package_id AND s.child_id = %d
+                         WHERE p.{$where_sql}
+                         ORDER BY s.started_at ASC NULLS LAST
+                         LIMIT 1";
+            $wrap_args = array_merge( [ $child_id ], $where_args );
+
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $row = $wpdb->get_row( $wpdb->prepare( $wrap_sql, $wrap_args ), ARRAY_A );
+        }
+
+        if ( ! $row ) {
+            Knowly_Debug::log( 'exam.pool', 'WP pool empty for slot', [
+                'child_id'   => $child_id,
+                'level'      => $level,
+                'period'     => $period,
+                'subject'    => $subject,
+                'difficulty' => $difficulty,
+                'trial_type' => $trial_type,
+            ], null, 'warning' );
+            return new WP_Error(
+                'knowly_pool_empty',
+                'No Trials are available for this subject yet. Please check back soon.',
+                [ 'status' => 503 ]
+            );
+        }
+
+        // Decode JSON columns
+        $package               = json_decode( $row['meta'],   true ) ?? [];
+        $package['package_id'] = $row['package_id'];
+        $package['questions']  = json_decode( $row['questions'], true ) ?? [];
+        // answer_sheet stored separately — do NOT include in the response (security)
+
+        Knowly_Debug::log( 'exam.pool', 'WP pool package served', [
+            'child_id'   => $child_id,
+            'package_id' => $row['package_id'],
+        ], null, 'info' );
+
+        return $package;
+    }
+
+    /**
+     * Keep fetch_from_railway as a legacy alias pointing at fetch_from_wp_pool.
+     * Called by start() — renamed inline below too, but this keeps any external callers safe.
+     *
+     * @deprecated Use fetch_from_wp_pool() directly.
      */
     public static function fetch_from_railway(
         int    $child_id,
@@ -297,88 +394,7 @@ class Knowly_Exam_Service {
         string $trial_type = 'practice',
         string $topic = ''
     ): array|WP_Error {
-        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
-        $api_key    = get_option( 'knowly_railway_api_key', '' );
-        $server_key = get_option( 'knowly_railway_server_key', '' );
-
-        if ( ! $endpoint ) {
-            return new WP_Error( 'knowly_railway_not_configured', 'Railway endpoint not configured.', [ 'status' => 503 ] );
-        }
-
-        $railway_subject = self::normalise_subject( $subject );
-
-        Knowly_Debug::log( 'exam.railway', 'Calling Railway generate-exam', [
-            'child_id'   => $child_id,
-            'level'      => $level,
-            'period'     => $period,
-            'subject'    => $railway_subject,
-            'difficulty' => $difficulty,
-            'trial_type' => $trial_type,
-            'topic'      => $topic,
-        ], null, 'info' );
-
-        $headers = [
-            'Authorization' => "Bearer {$api_key}",
-            'Content-Type'  => 'application/json',
-        ];
-
-        if ( $server_key ) {
-            $headers['X-AEP-Server-Key'] = $server_key;
-        }
-
-        $body_payload = [
-            'user_id'    => (string) $child_id,
-            'curriculum' => get_option( 'knowly_default_curriculum', 'tt_primary' ),
-            'level'      => $level,
-            'period'     => $period ?: null,
-            'subject'    => $railway_subject,
-            'difficulty' => $difficulty,
-            'trial_type' => $trial_type,
-            'topic'      => $topic ?: null,
-            'source'     => 'direct',
-        ];
-
-        $response = wp_remote_post( "{$endpoint}/api/v1/generate-exam", [
-            'timeout' => 15,
-            'headers' => $headers,
-            'body'    => wp_json_encode( $body_payload ),
-        ] );
-
-        if ( is_wp_error( $response ) ) {
-            Knowly_Debug::log( 'exam.railway', 'Railway HTTP error', [
-                'error' => $response->get_error_message(),
-            ], null, 'error' );
-            return new WP_Error( 'knowly_railway_error', 'Failed to connect to Trial service.', [ 'status' => 503 ] );
-        }
-
-        $code = wp_remote_retrieve_response_code( $response );
-        $body = json_decode( wp_remote_retrieve_body( $response ), true );
-
-        // 503 pool_empty — Railway has triggered background generation, client should retry
-        if ( $code === 503 ) {
-            Knowly_Debug::log( 'exam.railway', 'Railway pool empty — background generation triggered', [
-                'level'   => $level,
-                'period'  => $period,
-                'subject' => $railway_subject,
-            ], null, 'info' );
-            return new WP_Error( 'knowly_pool_empty', 'No Trials available right now. Please try again in a moment.', [ 'status' => 503 ] );
-        }
-
-        if ( $code !== 200 || empty( $body ) ) {
-            Knowly_Debug::log( 'exam.railway', 'Railway bad response', [
-                'http_code' => $code,
-                'body'      => $body,
-            ], null, 'error' );
-            return new WP_Error( 'knowly_railway_error', 'Trial service returned an error.', [ 'status' => 503 ] );
-        }
-
-        Knowly_Debug::log( 'exam.railway', 'Railway package received', [
-            'package_id'  => $body['package_id'] ?? 'unknown',
-            'source'      => $body['source'] ?? 'unknown',
-            'has_answers' => isset( $body['answer_sheet'] ),
-        ], null, 'info' );
-
-        return $body;
+        return self::fetch_from_wp_pool( $child_id, $level, $period, $subject, $difficulty, $trial_type, $topic );
     }
 
     /**

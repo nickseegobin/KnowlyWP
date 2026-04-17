@@ -67,15 +67,26 @@ class Knowly_Admin_Trials {
 
     private static function render_packages( bool $railway_ok, string $server_key, string $nonce ): void {
         ?>
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:14px 18px;margin-bottom:18px;">
+            <strong style="font-size:13px;">Trial Pool — WP Local Store</strong>
+            <p style="margin:6px 0 10px;font-size:12px;color:#374151;">
+                Trials are served from <code>wp_knowly_trial_packages</code>. Railway generates packages; use Sync to import them here.
+                Students will receive packages they haven't taken yet; once exhausted the pool wraps around.
+            </p>
+            <button id="knowly-sync-trials" class="button button-primary" <?= $railway_ok ? '' : 'disabled' ?>>
+                ↓ Sync Trials from Railway
+            </button>
+            <span id="knowly-sync-status" style="margin-left:10px;font-size:12px;color:#666;"></span>
+        </div>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-            <button id="knowly-load-trials" class="button button-primary" <?= $railway_ok ? '' : 'disabled' ?>>
-                ↓ Load Trial Pool Inventory
+            <button id="knowly-load-trials" class="button button-secondary">
+                ↺ Refresh
             </button>
             <input type="text" id="knowly-trial-filter" placeholder="Filter by subject…" class="regular-text" style="height:30px;" />
             <span id="knowly-trial-summary-text" style="color:#666;font-size:13px;"></span>
         </div>
         <div id="knowly-trial-results">
-            <p style="color:#888;">Click "Load Trial Pool Inventory" to fetch current stats from Railway.</p>
+            <p style="color:#888;">Loading trial pool inventory…</p>
         </div>
 
         <!-- Package detail modal -->
@@ -91,12 +102,33 @@ class Knowly_Admin_Trials {
         <script>
         (function($) {
             var nonce = '<?= esc_js( $nonce ) ?>';
-            $('#knowly-load-trials').on('click', function() {
-                var $btn = $(this).prop('disabled', true).text('Loading…');
+            function loadTrialInventory() {
+                var $btn = $('#knowly-load-trials').prop('disabled', true).text('Loading…');
+                $('#knowly-trial-results').html('<p style="color:#888;">Loading trial pool inventory…</p>');
                 $.post(ajaxurl, { action: 'knowly_pool_trial_summary', nonce: nonce }, function(res) {
-                    $btn.prop('disabled', false).text('↓ Load Trial Pool Inventory');
+                    $btn.prop('disabled', false).text('↺ Refresh');
                     if (!res.success) { $('#knowly-trial-results').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown error') + '</p>'); return; }
                     renderTrialTable(res.data);
+                });
+            }
+            $('#knowly-load-trials').on('click', loadTrialInventory);
+            loadTrialInventory();
+
+            $('#knowly-sync-trials').on('click', function() {
+                var $btn = $(this).prop('disabled', true).text('Syncing…');
+                $('#knowly-sync-status').text('').css('color','#666');
+                $.post(ajaxurl, { action: 'knowly_pool_sync_trials', nonce: nonce }, function(res) {
+                    $btn.prop('disabled', false).text('↓ Sync Trials from Railway');
+                    if (!res.success) {
+                        $('#knowly-sync-status').text('Error: ' + (res.data.message || 'Failed')).css('color','#dc2626');
+                        return;
+                    }
+                    var d = res.data;
+                    $('#knowly-sync-status').text('✓ ' + d.synced + ' synced, ' + d.skipped + ' already in pool' + (d.failed > 0 ? ', ' + d.failed + ' failed' : '')).css('color','#16a34a');
+                    loadTrialInventory(); // refresh the table
+                }).fail(function() {
+                    $btn.prop('disabled', false).text('↓ Sync Trials from Railway');
+                    $('#knowly-sync-status').text('Request failed — check server logs').css('color','#dc2626');
                 });
             });
             $('#knowly-trial-filter').on('input', function() {

@@ -2,15 +2,17 @@
 /**
  * Knowly_Quest_Service — Quest delivery and Railway integration.
  *
- * Flow:
- *  1. get_catalogue()    — calls Railway GET /api/v1/quest/catalogue
- *  2. get_quest()        — calls Railway GET /api/v1/quest/:quest_id
+ * Delivery flow (no Railway call):
+ *  1. get_catalogue() — queries wp_knowly_quests WHERE variant=student AND status=approved
+ *  2. get_quest()     — queries wp_knowly_quests by quest_id, variant=student, status=approved
+ *
+ * Session flow (proxies to Railway):
  *  3. start()            — checks attempt count → deducts gems → calls Railway start
  *  4. section_complete() — proxies to Railway POST /api/v1/quest/section-complete
  *  5. complete()         — proxies to Railway POST /api/v1/quest/complete
  *                          → if badge_awarded: true, calls Knowly_Badge_Service::award()
  *
- * Gem costs (Section 4.10 — read from WP options, never hardcoded):
+ * Gem costs (read from WP options, never hardcoded):
  *   First attempt : knowly_gem_cost_quest_first_{curriculum}  (default 3)
  *   Retake        : knowly_gem_cost_quest_retake_{curriculum} (default 1)
  *   Via assignment: 0 — hardcoded by design
@@ -39,7 +41,10 @@ class Knowly_Quest_Service {
     // ── Catalogue ─────────────────────────────────────────────────────────────
 
     /**
-     * Fetch the Quest catalogue for a given level and period from Railway.
+     * Fetch the approved student quest catalogue from the WP local store.
+     *
+     * Queries wp_knowly_quests WHERE variant='student' AND status='approved'.
+     * No Railway call is made.
      *
      * @param  string $level       e.g. 'std_4'
      * @param  string $period      e.g. 'term_1' — empty string for capstone
@@ -53,25 +58,78 @@ class Knowly_Quest_Service {
         string $curriculum = 'tt_primary',
         string $subject    = ''
     ): array|WP_Error {
-        $params = [ 'curriculum' => $curriculum, 'level' => $level ];
-        if ( $period )  $params['period']  = $period;
-        if ( $subject ) $params['subject'] = $subject;
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_quests';
 
-        $response = self::railway_get( '/api/v1/quest/catalogue', $params );
-        if ( is_wp_error( $response ) ) return $response;
+        $sql  = "SELECT quest_id, module_number, module_title, topic, subject, objectives, status
+                 FROM {$table}
+                 WHERE variant = 'student'
+                   AND status  = 'approved'
+                   AND curriculum = %s
+                   AND level      = %s";
+        $args = [ $curriculum, $level ];
 
-        return $response['quests'] ?? [];
+        if ( $period !== '' ) {
+            $sql  .= ' AND period = %s';
+            $args[] = $period;
+        }
+        if ( $subject !== '' ) {
+            $sql  .= ' AND subject = %s';
+            $args[] = $subject;
+        }
+
+        $sql .= ' ORDER BY module_number ASC';
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+        $rows = $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A );
+
+        if ( $rows === null ) {
+            Knowly_Debug::log( 'quest.catalogue', 'DB error fetching catalogue', [ 'last_error' => $wpdb->last_error ], null, 'error' );
+            return new WP_Error( 'knowly_db_error', 'Failed to query quest catalogue.', [ 'status' => 500 ] );
+        }
+
+        foreach ( $rows as &$row ) {
+            if ( ! empty( $row['objectives'] ) ) {
+                $row['objectives'] = json_decode( $row['objectives'], true ) ?? [];
+            }
+        }
+
+        return $rows;
     }
 
     // ── Fetch Quest Content ───────────────────────────────────────────────────
 
     /**
-     * Fetch full Quest content from Railway.
+     * Fetch full Quest content from the WP local store.
+     *
+     * Queries wp_knowly_quests by quest_id, variant='student', status='approved'.
+     * No Railway call is made.
      *
      * @return array|WP_Error
      */
     public static function get_quest( string $quest_id ): array|WP_Error {
-        return self::railway_get( '/api/v1/quest/' . rawurlencode( $quest_id ) );
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_quests';
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$table}
+                 WHERE quest_id = %s
+                   AND variant  = 'student'
+                   AND status   = 'approved'",
+                $quest_id
+            ),
+            ARRAY_A
+        );
+
+        if ( ! $row ) {
+            return new WP_Error( 'knowly_not_found', 'Quest not found.', [ 'status' => 404 ] );
+        }
+
+        $row['content']    = ! empty( $row['content'] )    ? json_decode( $row['content'],    true ) : null;
+        $row['objectives'] = ! empty( $row['objectives'] ) ? json_decode( $row['objectives'], true ) : [];
+
+        return $row;
     }
 
     // ── Start ─────────────────────────────────────────────────────────────────
@@ -123,7 +181,7 @@ class Knowly_Quest_Service {
 
         if ( is_wp_error( $response ) ) return $response;
 
-        $session_id     = $response['session_id']     ?? null;
+        $session_id       = $response['session_id']       ?? null;
         $is_first_attempt = $response['is_first_attempt'] ?? true;
 
         if ( ! $session_id ) {
@@ -147,12 +205,12 @@ class Knowly_Quest_Service {
         }
 
         Knowly_Debug::log( 'quest.start', 'Quest session started', [
-            'child_id'        => $child_id,
-            'quest_id'        => $quest_id,
-            'session_id'      => $session_id,
-            'gem_cost'        => $gem_cost,
+            'child_id'         => $child_id,
+            'quest_id'         => $quest_id,
+            'session_id'       => $session_id,
+            'gem_cost'         => $gem_cost,
             'is_first_attempt' => $is_first_attempt,
-            'source'          => $source,
+            'source'           => $source,
         ], $child_id, 'info' );
 
         return [
@@ -238,14 +296,13 @@ class Knowly_Quest_Service {
 
     /**
      * Generate a short-lived JWT for server-to-server Railway calls.
-     * Mirrors the approach used in Knowly_Admin_Pool::ajax_quest_catalogue().
+     * Uses an admin WP user so Railway's authenticateToken middleware accepts it.
      */
     private static function get_railway_token(): string {
         $admin_ids = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
         if ( ! empty( $admin_ids ) ) {
             return Knowly_JWT::encode( (int) $admin_ids[0] );
         }
-        // Fallback to stored key if no admin user exists
         return get_option( 'knowly_railway_api_key', '' );
     }
 

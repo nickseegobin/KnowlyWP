@@ -2,20 +2,21 @@
 /**
  * Knowly_Admin_Pool — Pool Manager admin page.
  *
- * All pool data is sourced from Railway (Supabase) — there is no WP-local pool table.
- * Data is loaded on-demand via AJAX to avoid slow page loads from Railway calls.
+ * Trial data is sourced from Railway (Supabase).
+ * Quest data is sourced from wp_knowly_quests (WP local store).
  *
  * Tabs:
  *   Trial Packages  — inventory per slot (level/period/subject/difficulty) from Railway
- *   Quest Catalogue — approved quests per level/subject from Railway
+ *   Quest Catalogue — quests stored in wp_knowly_quests (all statuses)
  *   Review Queue    — pending_review trial packages awaiting admin approval
  *
- * Railway endpoints used:
+ * Railway endpoints used (quests — generation only):
+ *   POST /api/v1/quest/generate          (X-AEP-Server-Key) → WP stores both variants
+ *
+ * Railway endpoints used (trials):
  *   GET  /api/v1/pool/summary            (X-AEP-Server-Key)
  *   GET  /api/v1/pool                    (X-AEP-Server-Key, filtered)
- *   GET  /api/v1/quest/catalogue         (Bearer JWT)
  *   POST /api/v1/generate-exam           (X-AEP-Server-Key, force_generate:true)
- *   POST /api/v1/quest/generate          (X-AEP-Server-Key)
  *   PATCH /api/v1/pool/approve           (X-AEP-Server-Key)
  *
  * @package KnowlyAPI
@@ -35,6 +36,8 @@ class Knowly_Admin_Pool {
         add_action( 'wp_ajax_knowly_pool_generate_trial', [ __CLASS__, 'ajax_generate_trial' ] );
         add_action( 'wp_ajax_knowly_pool_generate_quest', [ __CLASS__, 'ajax_generate_quest' ] );
         add_action( 'wp_ajax_knowly_pool_approve_package', [ __CLASS__, 'ajax_approve_package' ] );
+        add_action( 'wp_ajax_knowly_pool_approve_quest',  [ __CLASS__, 'ajax_approve_quest' ] );
+        add_action( 'wp_ajax_knowly_pool_sync_trials',    [ __CLASS__, 'ajax_sync_trials' ] );
 
         // Legacy handlers referenced elsewhere — re-route to new implementations
         add_action( 'wp_ajax_knowly_pool_packages',      [ __CLASS__, 'ajax_trial_packages' ] );
@@ -97,8 +100,10 @@ class Knowly_Admin_Pool {
 
             <!-- ── QUEST CATALOGUE ────────────────────────────────────────── -->
             <div id="knowly-tab-quests" class="knowly-pool-panel" style="display:none;border:1px solid #c3c4c7;border-top:none;padding:20px;background:#fff;">
+                <p style="font-size:12px;color:#666;margin:0 0 12px;">Quest data is served from the <strong>WP local store</strong> (wp_knowly_quests). Railway is only called to generate new quests.</p>
                 <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
                     <select id="knowly-quest-level" style="height:30px;">
+                        <option value="">All levels</option>
                         <option value="std_1">std_1</option>
                         <option value="std_2">std_2</option>
                         <option value="std_3">std_3</option>
@@ -111,17 +116,24 @@ class Knowly_Admin_Pool {
                         <option value="term_2">term_2</option>
                         <option value="term_3">term_3</option>
                     </select>
-                    <button id="knowly-load-quests" class="button button-primary" <?= $railway_ok ? '' : 'disabled' ?>>
+                    <select id="knowly-quest-status-filter" style="height:30px;">
+                        <option value="">All statuses</option>
+                        <option value="pending_review">pending_review</option>
+                        <option value="approved">approved</option>
+                        <option value="archived">archived</option>
+                        <option value="rejected">rejected</option>
+                    </select>
+                    <button id="knowly-load-quests" class="button button-primary">
                         ↓ Load Quest Catalogue
                     </button>
                     <span id="knowly-quest-summary-text" style="color:#666;font-size:13px;"></span>
                 </div>
                 <div id="knowly-quest-results">
-                    <p style="color:#888;">Click "Load Quest Catalogue" to fetch approved quests from Railway.</p>
+                    <p style="color:#888;">Click "Load Quest Catalogue" to fetch quests from the WP local store.</p>
                 </div>
                 <div style="margin-top:20px;padding:16px;background:#f6f7f7;border-radius:4px;border:1px solid #e5e7eb;">
                     <h3 style="margin:0 0 12px;">Generate Quest</h3>
-                    <p style="font-size:12px;color:#666;margin:0 0 10px;">Generate a new quest and store it as approved. Requires Railway server key.</p>
+                    <p style="font-size:12px;color:#666;margin:0 0 10px;">Calls Railway to generate a quest, then stores both student and teacher variants in WP as <strong>pending_review</strong>. Requires Railway server key.</p>
                     <div style="display:grid;grid-template-columns:repeat(4,1fr) auto;gap:8px;align-items:end;">
                         <label style="font-size:12px;">Level<br><input type="text" id="gen-quest-level" class="regular-text" placeholder="std_4" style="margin-top:4px;" /></label>
                         <label style="font-size:12px;">Period<br><input type="text" id="gen-quest-period" class="regular-text" placeholder="term_1 or blank" style="margin-top:4px;" /></label>
@@ -255,36 +267,77 @@ class Knowly_Admin_Pool {
                 var $btn = $(this).prop('disabled', true).text('Loading…');
                 var level  = $('#knowly-quest-level').val();
                 var period = $('#knowly-quest-period-filter').val();
-                $.post(ajaxUrl, { action: 'knowly_pool_quest_catalogue', nonce: nonce, level: level, period: period }, function(res) {
+                var status = $('#knowly-quest-status-filter').val();
+                $.post(ajaxUrl, { action: 'knowly_pool_quest_catalogue', nonce: nonce, level: level, period: period, status: status }, function(res) {
                     $btn.prop('disabled', false).text('↓ Load Quest Catalogue');
                     if (!res.success) { $('#knowly-quest-results').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown error') + '</p>'); return; }
                     renderQuestTable(res.data);
                 });
             });
 
+            function statusBadge(s) {
+                var cfg = {
+                    approved:       { bg:'#dcfce7', color:'#16a34a' },
+                    pending_review: { bg:'#fef3c7', color:'#d97706' },
+                    rejected:       { bg:'#fee2e2', color:'#dc2626' },
+                    archived:       { bg:'#f3f4f6', color:'#6b7280' },
+                };
+                var c = cfg[s] || { bg:'#f3f4f6', color:'#374151' };
+                return '<span style="font-size:11px;background:' + c.bg + ';color:' + c.color + ';padding:2px 6px;border-radius:3px;">' + s + '</span>';
+            }
+
             function renderQuestTable(data) {
                 var quests = data.quests || [];
-                $('#knowly-quest-summary-text').text(quests.length + ' approved quest(s)');
+                $('#knowly-quest-summary-text').text(quests.length + ' quest(s)');
                 if (!quests.length) {
-                    $('#knowly-quest-results').html('<p style="color:#666;">No approved quests found. Generate some using the form below.</p>');
+                    $('#knowly-quest-results').html('<p style="color:#666;">No quests found. Generate some using the form below.</p>');
                     return;
                 }
                 var html = '<table class="knowly-table widefat" style="font-size:12px;">';
-                html += '<thead><tr><th>Quest ID</th><th>Level</th><th>Period</th><th>Subject</th><th>Module</th><th>Topic</th><th>Generated</th></tr></thead><tbody>';
+                html += '<thead><tr><th>Quest ID</th><th>Level</th><th>Period</th><th>Subject</th><th>Module</th><th>Title / Topic</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
                 $.each(quests, function(i, q) {
-                    html += '<tr>'
-                        + '<td style="font-family:monospace;">' + q.quest_id + '</td>'
+                    var rowId = 'quest-row-' + q.quest_id.replace(/[^a-z0-9]/gi, '_');
+                    var actions = '';
+                    if (q.status === 'pending_review') {
+                        actions = '<button class="button button-small" style="color:#16a34a;margin-right:4px;" onclick="knowlyQuestAction(\'' + q.quest_id + '\',\'approve\',this)">✓ Approve</button>'
+                                + '<button class="button button-small" style="color:#dc2626;" onclick="knowlyQuestAction(\'' + q.quest_id + '\',\'reject\',this)">✗ Reject</button>';
+                    } else if (q.status === 'approved') {
+                        actions = '<button class="button button-small" style="color:#6b7280;" onclick="knowlyQuestAction(\'' + q.quest_id + '\',\'archive\',this)">Archive</button>';
+                    }
+                    html += '<tr id="' + rowId + '">'
+                        + '<td style="font-family:monospace;font-size:11px;">' + q.quest_id + '</td>'
                         + '<td>' + (q.level||'') + '</td>'
                         + '<td>' + (q.period||'<em>capstone</em>') + '</td>'
                         + '<td><strong>' + (q.subject||'') + '</strong></td>'
-                        + '<td>' + (q.module_number != null ? q.module_number : '—') + '</td>'
-                        + '<td>' + (q.topic||q.module_title||'—') + '</td>'
-                        + '<td>' + (q.generated_at ? q.generated_at.slice(0,10) : '—') + '</td>'
+                        + '<td style="text-align:center;">' + (q.module_number != null ? q.module_number : '—') + '</td>'
+                        + '<td>' + (q.module_title||q.topic||'—') + '</td>'
+                        + '<td>' + statusBadge(q.status) + '</td>'
+                        + '<td style="white-space:nowrap;">' + actions + '</td>'
                         + '</tr>';
                 });
                 html += '</tbody></table>';
                 $('#knowly-quest-results').html(html);
             }
+
+            window.knowlyQuestAction = function(questId, action, btn) {
+                var labels = { approve: 'Approve', reject: 'Reject', archive: 'Archive' };
+                if (!confirm(labels[action] + ' quest ' + questId + '?')) return;
+                $(btn).prop('disabled', true);
+                $.post(ajaxUrl, { action: 'knowly_pool_approve_quest', nonce: nonce, quest_id: questId, quest_action: action }, function(res) {
+                    if (res.success) {
+                        var rowId = '#quest-row-' + questId.replace(/[^a-z0-9]/gi, '_');
+                        $(rowId).find('td:nth-last-child(2)').html(statusBadge(res.data.status));
+                        $(rowId).find('td:last-child').html(
+                            res.data.status === 'approved'
+                                ? '<button class="button button-small" style="color:#6b7280;" onclick="knowlyQuestAction(\'' + questId + '\',\'archive\',this)">Archive</button>'
+                                : ''
+                        );
+                    } else {
+                        alert('Error: ' + (res.data.message || 'Failed'));
+                        $(btn).prop('disabled', false);
+                    }
+                });
+            };
 
             $('#knowly-generate-quest').on('click', function() {
                 var level = $('#gen-quest-level').val().trim();
@@ -303,7 +356,7 @@ class Knowly_Admin_Pool {
                 }, function(res) {
                     $btn.prop('disabled', false).text('Generate');
                     if (res.success) {
-                        $result.html('<span style="color:#16a34a;">✓ Generated: <strong>' + res.data.quest_id + '</strong> (status: ' + res.data.status + ')</span>');
+                        $result.html('<span style="color:#16a34a;">✓ Stored in WP: <strong>' + res.data.quest_id + '</strong> — both variants saved as <strong>' + res.data.status + '</strong>. Load Quest Catalogue to review.</span>');
                     } else {
                         $result.html('<span style="color:#dc2626;">✗ ' + (res.data.message || 'Generation failed') + '</span>');
                     }
@@ -381,60 +434,81 @@ class Knowly_Admin_Pool {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        $data = self::railway_get( '/api/v1/pool/summary', [ 'status' => 'approved' ] );
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_trial_packages';
 
-        if ( is_wp_error( $data ) ) {
-            Knowly_Debug::log( 'admin.pool', 'ajax_trial_summary failed', [ 'error' => $data->get_error_message() ], null, 'error' );
-            wp_send_json_error( [ 'message' => $data->get_error_message() ] );
+        $slots = $wpdb->get_results(
+            "SELECT level, period, subject, difficulty, trial_type,
+                    COUNT(*) AS count,
+                    SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved_count
+             FROM {$table}
+             GROUP BY level, period, subject, difficulty, trial_type
+             ORDER BY level, period, subject, difficulty",
+            ARRAY_A
+        );
+
+        if ( $slots === null ) {
+            wp_send_json_error( [ 'message' => 'Database error: ' . $wpdb->last_error ] );
         }
 
-        Knowly_Debug::log( 'admin.pool', 'Trial summary loaded', [ 'total' => $data['total_packages'] ?? 0 ], null, 'info' );
-        wp_send_json_success( $data );
+        $total = array_sum( array_column( $slots ?? [], 'approved_count' ) );
+
+        // Reshape to match the shape the JS renderTrialTable() expects
+        $shaped = array_map( function( $s ) {
+            return [
+                'level'       => $s['level'],
+                'period'      => $s['period'],
+                'subject'     => $s['subject'],
+                'difficulty'  => $s['difficulty'],
+                'trial_type'  => $s['trial_type'],
+                'count'       => (int) $s['approved_count'],
+                'total_served'=> 0,
+            ];
+        }, $slots );
+
+        Knowly_Debug::log( 'admin.pool', 'Trial summary loaded from WP', [ 'total' => $total ], null, 'info' );
+        wp_send_json_success( [
+            'slots'          => $shaped,
+            'slot_count'     => count( $shaped ),
+            'total_packages' => (int) $total,
+        ] );
     }
 
-    // ── AJAX: Trial Packages (detail view for a slot) ─────────────────────────
+    // ── AJAX: Trial Packages (detail view for a slot — reads WP DB) ───────────
 
     public static function ajax_trial_packages(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_trial_packages';
 
         $level      = sanitize_text_field( $_POST['level']      ?? '' );
         $period     = sanitize_text_field( $_POST['period']     ?? '' );
         $subject    = sanitize_text_field( $_POST['subject']    ?? '' );
         $difficulty = sanitize_text_field( $_POST['difficulty'] ?? '' );
 
-        $params = [ 'status' => 'approved', 'limit' => 20 ];
-        if ( $level )      $params['level']      = $level;
-        if ( $period )     $params['period']     = $period;
-        if ( $subject )    $params['subject']    = $subject;
-        if ( $difficulty ) $params['difficulty'] = $difficulty;
+        $sql  = "SELECT package_id, subject, level, period, difficulty, trial_type, topic, questions, answer_sheet, status, synced_at FROM {$table} WHERE status = 'approved'";
+        $args = [];
+        if ( $level )      { $sql .= ' AND level = %s';      $args[] = $level; }
+        if ( $period )     { $sql .= ' AND period = %s';     $args[] = $period; }
+        if ( $subject )    { $sql .= ' AND subject = %s';    $args[] = $subject; }
+        if ( $difficulty ) { $sql .= ' AND difficulty = %s'; $args[] = $difficulty; }
+        $sql .= ' ORDER BY synced_at DESC LIMIT 20';
 
-        // GET /api/v1/pool requires Bearer JWT (authenticateToken middleware)
-        $admin_ids = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
-        $token     = ! empty( $admin_ids ) ? Knowly_JWT::encode( (int) $admin_ids[0] ) : '';
-
-        if ( ! $token ) {
-            wp_send_json_error( [ 'message' => 'Could not generate admin JWT.' ] );
-        }
-
-        $data = self::railway_get_token( '/api/v1/pool', $params, $token );
-
-        if ( is_wp_error( $data ) ) {
-            Knowly_Debug::log( 'admin.pool', 'ajax_trial_packages failed', [ 'params' => $params, 'error' => $data->get_error_message() ], null, 'error' );
-            wp_send_json_error( [ 'message' => $data->get_error_message() ] );
-        }
-
-        $packages = $data['packages'] ?? [];
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+        $rows = empty( $args )
+            ? $wpdb->get_results( $sql, ARRAY_A )
+            : $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A );
 
         ob_start();
-        if ( empty( $packages ) ) {
-            echo '<p style="color:#666;">No packages found for this slot.</p>';
+        if ( empty( $rows ) ) {
+            echo '<p style="color:#666;">No packages found for this slot. Use Sync Trials to pull from Railway.</p>';
         } else {
-            foreach ( $packages as $pkg ) {
-                $pid      = esc_html( $pkg['package_id'] ?? '—' );
-                $meta     = $pkg['meta'] ?? [];
-                $q_count  = count( $pkg['questions'] ?? [] );
-                $has_ans  = ! empty( $pkg['answer_sheet'] );
+            foreach ( $rows as $row ) {
+                $pid     = esc_html( $row['package_id'] );
+                $q_count = count( json_decode( $row['questions'] ?? '[]', true ) );
+                $has_ans = ! empty( $row['answer_sheet'] );
                 ?>
                 <div style="border:1px solid #e5e7eb;border-radius:4px;padding:12px 16px;margin-bottom:10px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -449,12 +523,12 @@ class Knowly_Admin_Pool {
                         </div>
                     </div>
                     <table style="width:100%;font-size:11px;border-collapse:collapse;">
-                        <tr><td style="padding:2px 8px 2px 0;color:#888;">Subject</td><td style="font-weight:600;"><?= esc_html( $meta['subject'] ?? '—' ) ?></td>
-                            <td style="padding:2px 8px;color:#888;">Level</td><td><?= esc_html( $meta['level'] ?? '—' ) ?></td>
-                            <td style="padding:2px 8px;color:#888;">Period</td><td><?= esc_html( $meta['period'] ?? 'SEA' ) ?></td></tr>
-                        <tr><td style="padding:2px 8px 2px 0;color:#888;">Difficulty</td><td><?= esc_html( $meta['difficulty'] ?? '—' ) ?></td>
-                            <td style="padding:2px 8px;color:#888;">Type</td><td><?= esc_html( $meta['trial_type'] ?? 'practice' ) ?></td>
-                            <td style="padding:2px 8px;color:#888;">Topic</td><td><?= esc_html( $meta['topic'] ?? '—' ) ?></td></tr>
+                        <tr><td style="padding:2px 8px 2px 0;color:#888;">Subject</td><td style="font-weight:600;"><?= esc_html( $row['subject'] ) ?></td>
+                            <td style="padding:2px 8px;color:#888;">Level</td><td><?= esc_html( $row['level'] ) ?></td>
+                            <td style="padding:2px 8px;color:#888;">Period</td><td><?= esc_html( $row['period'] ?: 'SEA' ) ?></td></tr>
+                        <tr><td style="padding:2px 8px 2px 0;color:#888;">Difficulty</td><td><?= esc_html( $row['difficulty'] ?: '—' ) ?></td>
+                            <td style="padding:2px 8px;color:#888;">Type</td><td><?= esc_html( $row['trial_type'] ) ?></td>
+                            <td style="padding:2px 8px;color:#888;">Synced</td><td><?= esc_html( $row['synced_at'] ) ?></td></tr>
                     </table>
                 </div>
                 <?php
@@ -462,63 +536,155 @@ class Knowly_Admin_Pool {
         }
         $html = ob_get_clean();
 
-        wp_send_json_success( [ 'html' => $html, 'count' => count( $packages ), 'total' => $data['total'] ?? count( $packages ) ] );
+        wp_send_json_success( [ 'html' => $html, 'count' => count( $rows ?? [] ) ] );
     }
 
-    // ── AJAX: Quest Catalogue ─────────────────────────────────────────────────
+    // ── AJAX: Sync Trials from Railway ────────────────────────────────────────
 
-    public static function ajax_quest_catalogue(): void {
+    /**
+     * Pull approved packages from Railway's pool into wp_knowly_trial_packages.
+     * Uses ?exclude= to only fetch packages WP doesn't already have (incremental).
+     */
+    public static function ajax_sync_trials(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        $level  = sanitize_key( $_POST['level']  ?? 'std_4' );
-        $period = sanitize_key( $_POST['period'] ?? '' );
+        @set_time_limit( 300 );
 
-        if ( ! $level ) {
-            wp_send_json_error( [ 'message' => 'level is required.' ] );
-        }
+        global $wpdb;
+        $table      = $wpdb->prefix . 'knowly_trial_packages';
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
 
-        $admin_id = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
-        $token    = ! empty( $admin_id ) ? Knowly_JWT::encode( (int) $admin_id[0] ) : '';
-
-        if ( ! $token ) {
-            wp_send_json_error( [ 'message' => 'Could not generate admin token for Railway auth.' ] );
-        }
-
-        $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
         if ( ! $endpoint ) {
             wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] );
         }
+        if ( ! $server_key ) {
+            wp_send_json_error( [ 'message' => 'Railway server key not configured.' ] );
+        }
 
-        $params = [ 'level' => $level ];
-        if ( $period ) $params['period'] = $period;
+        // Get existing package IDs to skip
+        $existing_ids = $wpdb->get_col( "SELECT package_id FROM {$table}" );
+        $exclude_param = ! empty( $existing_ids ) ? implode( ',', $existing_ids ) : '';
 
-        // Quest catalogue uses Bearer JWT auth (not server key)
-        $response = wp_remote_get( $endpoint . '/api/v1/quest/catalogue?' . http_build_query( $params ), [
-            'timeout' => 15,
+        $params = [ 'status' => 'approved', 'limit' => 200 ];
+        if ( $exclude_param ) $params['exclude'] = $exclude_param;
+
+        $url = $endpoint . '/api/v1/pool?' . http_build_query( $params );
+
+        // GET /api/v1/pool requires Bearer JWT + server key for answer_sheet inclusion
+        $admin_ids = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        $jwt       = ! empty( $admin_ids ) ? Knowly_JWT::encode( (int) $admin_ids[0] ) : '';
+
+        $response = wp_remote_get( $url, [
+            'timeout' => 60,
             'headers' => [
-                'Authorization' => "Bearer {$token}",
-                'Content-Type'  => 'application/json',
+                'Authorization'   => 'Bearer ' . $jwt,
+                'X-AEP-Server-Key' => $server_key,
             ],
         ] );
 
         if ( is_wp_error( $response ) ) {
-            Knowly_Debug::log( 'admin.pool', 'ajax_quest_catalogue HTTP error', [ 'error' => $response->get_error_message(), 'params' => $params ], null, 'error' );
-            wp_send_json_error( [ 'message' => $response->get_error_message() ] );
+            wp_send_json_error( [ 'message' => 'Railway connection failed: ' . $response->get_error_message() ] );
         }
 
         $code = wp_remote_retrieve_response_code( $response );
         $body = json_decode( wp_remote_retrieve_body( $response ), true );
 
-        if ( $code !== 200 ) {
-            Knowly_Debug::log( 'admin.pool', 'ajax_quest_catalogue non-200', [ 'code' => $code, 'body' => $body, 'params' => $params ], null, 'warning' );
-            wp_send_json_error( [ 'message' => "Railway returned HTTP {$code}: " . ( $body['error'] ?? '' ) ] );
+        if ( $code !== 200 || empty( $body['packages'] ) ) {
+            if ( $code === 200 && isset( $body['packages'] ) && count( $body['packages'] ) === 0 ) {
+                wp_send_json_success( [ 'synced' => 0, 'skipped' => count( $existing_ids ), 'message' => 'WP pool is already up to date.' ] );
+            }
+            wp_send_json_error( [ 'message' => 'Railway returned HTTP ' . $code . ': ' . ( $body['error'] ?? 'Unknown error' ) ] );
         }
 
-        Knowly_Debug::log( 'admin.pool', 'Quest catalogue loaded', [ 'level' => $level, 'period' => $period, 'count' => $body['count'] ?? 0 ], null, 'info' );
+        $synced = 0;
+        $failed = 0;
+        $now    = current_time( 'mysql', true );
+
+        foreach ( $body['packages'] as $pkg ) {
+            $package_id = $pkg['package_id'] ?? null;
+            if ( ! $package_id ) { $failed++; continue; }
+
+            $meta = $pkg['meta'] ?? [];
+
+            $inserted = $wpdb->replace(
+                $table,
+                [
+                    'package_id'   => $package_id,
+                    'curriculum'   => $meta['curriculum'] ?? get_option( 'knowly_default_curriculum', 'tt_primary' ),
+                    'level'        => $meta['level']       ?? '',
+                    'period'       => $meta['period']      ?? null,
+                    'subject'      => $meta['subject']     ?? '',
+                    'difficulty'   => $meta['difficulty']  ?? null,
+                    'trial_type'   => $meta['trial_type']  ?? 'practice',
+                    'topic'        => $meta['topic']       ?? null,
+                    'questions'    => wp_json_encode( $pkg['questions'] ?? [] ),
+                    'answer_sheet' => isset( $pkg['answer_sheet'] ) ? wp_json_encode( $pkg['answer_sheet'] ) : null,
+                    'meta'         => wp_json_encode( $meta ),
+                    'status'       => 'approved',
+                    'synced_at'    => $now,
+                    'created_at'   => $now,
+                    'updated_at'   => $now,
+                ],
+                [ '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
+            );
+
+            if ( $inserted === false ) { $failed++; } else { $synced++; }
+        }
+
+        Knowly_Debug::log( 'admin.pool', 'Trial sync complete', [
+            'synced'  => $synced,
+            'skipped' => count( $existing_ids ),
+            'failed'  => $failed,
+        ], null, 'info' );
+
         wp_send_json_success( [
-            'quests' => $body['quests'] ?? [],
-            'count'  => $body['count']  ?? 0,
+            'synced'  => $synced,
+            'skipped' => count( $existing_ids ),
+            'failed'  => $failed,
+            'message' => "{$synced} package(s) synced, " . count( $existing_ids ) . " already in WP pool.",
+        ] );
+    }
+
+    // ── AJAX: Quest Catalogue (reads from wp_knowly_quests) ───────────────────
+
+    public static function ajax_quest_catalogue(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_quests';
+
+        $level  = sanitize_key( $_POST['level']  ?? '' );
+        $period = sanitize_key( $_POST['period'] ?? '' );
+        $status = sanitize_key( $_POST['status'] ?? '' );
+
+        $sql  = "SELECT quest_id, level, period, subject, module_number, module_title, topic, status, generated_at, approved_at
+                 FROM {$table}
+                 WHERE variant = 'student'";
+        $args = [];
+
+        if ( $level )  { $sql .= ' AND level = %s';  $args[] = $level; }
+        if ( $period ) { $sql .= ' AND period = %s'; $args[] = $period; }
+        if ( $status ) { $sql .= ' AND status = %s'; $args[] = $status; }
+
+        $sql .= ' ORDER BY level ASC, period ASC, subject ASC, module_number ASC';
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+        $rows = empty( $args )
+            ? $wpdb->get_results( $sql, ARRAY_A )
+            : $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A );
+
+        if ( $rows === null ) {
+            Knowly_Debug::log( 'admin.pool', 'ajax_quest_catalogue DB error', [ 'error' => $wpdb->last_error ], null, 'error' );
+            wp_send_json_error( [ 'message' => 'Database error: ' . $wpdb->last_error ] );
+        }
+
+        Knowly_Debug::log( 'admin.pool', 'Quest catalogue loaded from WP', [ 'count' => count( $rows ) ], null, 'info' );
+        wp_send_json_success( [
+            'quests' => $rows,
+            'count'  => count( $rows ),
         ] );
     }
 
@@ -593,6 +759,9 @@ class Knowly_Admin_Pool {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_quests';
+
         $level        = sanitize_text_field( $_POST['level']        ?? '' );
         $period       = sanitize_text_field( $_POST['period']       ?? '' );
         $subject      = sanitize_text_field( $_POST['subject']      ?? '' );
@@ -602,22 +771,69 @@ class Knowly_Admin_Pool {
             wp_send_json_error( [ 'message' => 'level and subject are required.' ] );
         }
 
-        $data = self::railway_post( '/api/v1/quest/generate', [
+        // ── Call Railway to generate ──────────────────────────────────────────
+        $railway_data = self::railway_post( '/api/v1/quest/generate', [
             'curriculum'   => 'tt_primary',
             'level'        => $level,
             'period'       => $period ?: null,
             'subject'      => $subject,
             'module_index' => $module_index,
-            'status'       => 'approved',
         ] );
 
-        if ( is_wp_error( $data ) ) {
-            wp_send_json_error( [ 'message' => $data->get_error_message() ] );
+        if ( is_wp_error( $railway_data ) ) {
+            wp_send_json_error( [ 'message' => $railway_data->get_error_message() ] );
         }
 
+        $quest_id       = $railway_data['quest_id']       ?? null;
+        $student_content = $railway_data['student_content'] ?? $railway_data['content'] ?? null;
+        $teacher_content = $railway_data['teacher_content'] ?? null;
+
+        if ( ! $quest_id ) {
+            wp_send_json_error( [ 'message' => 'Railway did not return a quest_id.' ] );
+        }
+
+        // ── Store both variants in wp_knowly_quests ───────────────────────────
+        $now      = current_time( 'mysql' );
+        $base_row = [
+            'quest_id'         => $quest_id,
+            'curriculum'       => $railway_data['curriculum']    ?? 'tt_primary',
+            'level'            => $railway_data['level']         ?? $level,
+            'period'           => $railway_data['period']        ?? ( $period ?: null ),
+            'subject'          => $railway_data['subject']       ?? $subject,
+            'topic'            => $railway_data['topic']         ?? null,
+            'module_number'    => $railway_data['module_number'] ?? null,
+            'module_title'     => $railway_data['module_title']  ?? null,
+            'objectives'       => wp_json_encode( $railway_data['objectives'] ?? [] ),
+            'status'           => 'pending_review',
+            'railway_quest_id' => $quest_id,
+            'generated_at'     => $railway_data['generated_at'] ?? $now,
+            'created_at'       => $now,
+            'updated_at'       => $now,
+        ];
+
+        // Student variant (always present)
+        $wpdb->replace( $table, array_merge( $base_row, [
+            'variant' => 'student',
+            'content' => wp_json_encode( $student_content ),
+        ] ) );
+
+        // Teacher variant (if Railway returned it)
+        if ( $teacher_content !== null ) {
+            $wpdb->replace( $table, array_merge( $base_row, [
+                'variant' => 'teacher',
+                'content' => wp_json_encode( $teacher_content ),
+            ] ) );
+        }
+
+        Knowly_Debug::log( 'admin.pool', 'Quest generated and stored in WP', [
+            'quest_id'        => $quest_id,
+            'has_teacher'     => $teacher_content !== null,
+        ], null, 'info' );
+
         wp_send_json_success( [
-            'quest_id' => $data['quest_id'] ?? '—',
-            'status'   => $data['status']   ?? 'approved',
+            'quest_id'    => $quest_id,
+            'status'      => 'pending_review',
+            'has_teacher' => $teacher_content !== null,
         ] );
     }
 
@@ -649,6 +865,58 @@ class Knowly_Admin_Pool {
         ], null, 'info' );
 
         wp_send_json_success( [ 'package_id' => $package_id, 'status' => $data['status'] ?? $approve_action . 'd' ] );
+    }
+
+    // ── AJAX: Approve / Reject / Archive Quest ────────────────────────────────
+
+    public static function ajax_approve_quest(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_quests';
+
+        $quest_id    = sanitize_text_field( $_POST['quest_id']    ?? '' );
+        $quest_action = sanitize_key( $_POST['quest_action'] ?? '' );
+
+        if ( ! $quest_id || ! in_array( $quest_action, [ 'approve', 'reject', 'archive' ], true ) ) {
+            wp_send_json_error( [ 'message' => 'quest_id and quest_action (approve|reject|archive) are required.' ] );
+        }
+
+        $status_map = [
+            'approve' => 'approved',
+            'reject'  => 'rejected',
+            'archive' => 'archived',
+        ];
+        $new_status = $status_map[ $quest_action ];
+
+        $update = [ 'status' => $new_status, 'updated_at' => current_time( 'mysql' ) ];
+
+        if ( $new_status === 'approved' ) {
+            $update['approved_at'] = current_time( 'mysql' );
+            $update['approved_by'] = get_current_user_id();
+        }
+
+        // Update both student and teacher variants atomically
+        $rows_updated = $wpdb->update(
+            $table,
+            $update,
+            [ 'quest_id' => $quest_id ],
+            [ '%s', '%s' ],
+            [ '%s' ]
+        );
+
+        if ( $rows_updated === false ) {
+            wp_send_json_error( [ 'message' => 'DB error: ' . $wpdb->last_error ] );
+        }
+
+        Knowly_Debug::log( 'admin.pool', 'Quest status updated', [
+            'quest_id'   => $quest_id,
+            'new_status' => $new_status,
+            'rows'       => $rows_updated,
+        ], null, 'info' );
+
+        wp_send_json_success( [ 'quest_id' => $quest_id, 'status' => $new_status ] );
     }
 
     // ── Railway HTTP Helpers ──────────────────────────────────────────────────

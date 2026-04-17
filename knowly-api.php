@@ -3,7 +3,7 @@
  * Plugin Name:  KnowlyAPI
  * Plugin URI:   https://knowly.app
  * Description:  Unified REST API for the Knowly learning platform. React / Next.js interface only — no WP front-end output.
- * Version:      1.7.2
+ * Version:      1.9.0
  * Author:       Knowly
  * Requires PHP: 8.0
  * Requires at least: 6.3
@@ -14,8 +14,8 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ────────────────────────────────────────────────────────────────
-define( 'KNOWLY_VERSION',            '1.7.2' );
-define( 'KNOWLY_DB_VERSION',         '1.7.2' );
+define( 'KNOWLY_VERSION',            '1.9.0' );
+define( 'KNOWLY_DB_VERSION',         '1.9.0' );
 define( 'KNOWLY_PLUGIN_FILE',        __FILE__ );
 define( 'KNOWLY_PLUGIN_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'KNOWLY_PLUGIN_URL',         plugin_dir_url( __FILE__ ) );
