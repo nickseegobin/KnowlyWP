@@ -73,6 +73,41 @@ class Knowly_Activator {
                 ADD COLUMN type ENUM('quest','trial') NOT NULL DEFAULT 'trial'
                 AFTER teacher_user_id" );
         }
+
+        // v1.9.3 — levels and periods now stored as {value,label} objects so the
+        // Editor dropdowns can display human-readable names (Standard 4, Term 1, etc.)
+        // Only active curricula included — future curricula removed until data exists.
+        // Always overwrites so all existing installs get the corrected structure.
+        update_option( 'knowly_curriculum_subjects', [
+            'tt_primary' => [
+                'display_name'          => 'T&T Primary (SEA)',
+                'level_label'           => 'Standard',
+                'period_label'          => 'Term',
+                'levels'                => [
+                    [ 'value' => 'std_4', 'label' => 'Standard 4', 'is_capstone' => false ],
+                    [ 'value' => 'std_5', 'label' => 'Standard 5', 'is_capstone' => true  ],
+                ],
+                'periods'               => [
+                    [ 'value' => 'term_1', 'label' => 'Term 1' ],
+                    [ 'value' => 'term_2', 'label' => 'Term 2' ],
+                    [ 'value' => 'term_3', 'label' => 'Term 3' ],
+                ],
+                'standard_difficulties' => [
+                    [ 'value' => 'easy',   'label' => 'Easy'   ],
+                    [ 'value' => 'medium', 'label' => 'Medium' ],
+                    [ 'value' => 'hard',   'label' => 'Hard'   ],
+                ],
+                'capstone_difficulties' => [
+                    [ 'value' => 'sea_paper', 'label' => 'SEA Paper' ],
+                ],
+                'subjects'              => [
+                    [ 'value' => 'math',          'label' => 'Mathematics'        ],
+                    [ 'value' => 'english',       'label' => 'English Language Arts' ],
+                    [ 'value' => 'science',       'label' => 'Science'            ],
+                    [ 'value' => 'social_studies','label' => 'Social Studies'     ],
+                ],
+            ],
+        ] );
     }
 
     // ── DB Tables ─────────────────────────────────────────────────────────────
@@ -468,6 +503,38 @@ class Knowly_Activator {
             'knowly_gem_cost_quest_retake_tt_primary' => 1,
             // Block 8 — Sign-off gate
             'knowly_signoff_status'                   => 'blocked',
+            // Curriculum subject registry — mirrors Railway taxonomy.js CURRICULUM_CONFIG
+            // Each entry: { display_name, levels, periods, standard_difficulties, capstone_difficulties, subjects }
+            'knowly_curriculum_subjects'              => [
+                'tt_primary' => [
+                    'display_name'          => 'T&T Primary (SEA)',
+                    'level_label'           => 'Standard',
+                    'period_label'          => 'Term',
+                    'levels'                => [
+                        [ 'value' => 'std_4', 'label' => 'Standard 4', 'is_capstone' => false ],
+                        [ 'value' => 'std_5', 'label' => 'Standard 5', 'is_capstone' => true  ],
+                    ],
+                    'periods'               => [
+                        [ 'value' => 'term_1', 'label' => 'Term 1' ],
+                        [ 'value' => 'term_2', 'label' => 'Term 2' ],
+                        [ 'value' => 'term_3', 'label' => 'Term 3' ],
+                    ],
+                    'standard_difficulties' => [
+                        [ 'value' => 'easy',   'label' => 'Easy'   ],
+                        [ 'value' => 'medium', 'label' => 'Medium' ],
+                        [ 'value' => 'hard',   'label' => 'Hard'   ],
+                    ],
+                    'capstone_difficulties' => [
+                        [ 'value' => 'sea_paper', 'label' => 'SEA Paper' ],
+                    ],
+                    'subjects'              => [
+                        [ 'value' => 'math',          'label' => 'Mathematics'           ],
+                        [ 'value' => 'english',       'label' => 'English Language Arts' ],
+                        [ 'value' => 'science',       'label' => 'Science'               ],
+                        [ 'value' => 'social_studies','label' => 'Social Studies'        ],
+                    ],
+                ],
+            ],
         ];
 
         foreach ( $defaults as $key => $value ) {

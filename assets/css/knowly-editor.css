@@ -1,0 +1,406 @@
+/* =============================================================================
+   Knowly Editor — Admin Panel Styles
+   ============================================================================= */
+
+/* Shell */
+.knowly-editor-shell {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-top: none;
+    padding: 20px;
+}
+
+/* Toolbar */
+.knowly-editor-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.knowly-editor-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.knowly-filter-select {
+    min-width: 140px;
+}
+
+/* Status bar */
+.knowly-editor-status {
+    padding: 6px 10px;
+    margin-bottom: 12px;
+    border-radius: 3px;
+    font-size: 13px;
+    display: none;
+}
+
+.knowly-editor-status.ok {
+    display: block;
+    background: #d1fae5;
+    border-left: 4px solid #10b981;
+    color: #065f46;
+}
+
+.knowly-editor-status.error {
+    display: block;
+    background: #fee2e2;
+    border-left: 4px solid #ef4444;
+    color: #7f1d1d;
+}
+
+/* Table */
+.knowly-editor-table {
+    width: 100%;
+    font-size: 13px;
+}
+
+.knowly-editor-table th {
+    background: #f6f7f7;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.knowly-editor-table td.knowly-actions {
+    white-space: nowrap;
+}
+
+.knowly-editor-table td.knowly-preview {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: #555;
+}
+
+.knowly-loading,
+.knowly-empty,
+.knowly-error {
+    text-align: center;
+    padding: 24px;
+    color: #777;
+    font-style: italic;
+}
+
+.knowly-error {
+    color: #d63638;
+    font-style: normal;
+}
+
+/* Badges */
+.knowly-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.knowly-badge.ok  { background: #d1fae5; color: #065f46; }
+.knowly-badge.warn { background: #fef3c7; color: #92400e; }
+.knowly-badge.err  { background: #fee2e2; color: #7f1d1d; }
+
+/* Action buttons */
+.knowly-danger-btn {
+    color: #d63638 !important;
+    border-color: #d63638 !important;
+}
+.knowly-danger-btn:hover {
+    background: #d63638 !important;
+    color: #fff !important;
+}
+
+.knowly-ok-btn {
+    color: #00a32a !important;
+    border-color: #00a32a !important;
+}
+.knowly-ok-btn:hover {
+    background: #00a32a !important;
+    color: #fff !important;
+}
+
+/* Pagination */
+.knowly-pagination {
+    margin-top: 12px;
+}
+
+.knowly-pager {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+}
+
+.knowly-pager span {
+    color: #555;
+}
+
+/* =============================================================================
+   Modal
+   ============================================================================= */
+
+.knowly-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: rgba(0, 0, 0, 0.55);
+    justify-content: center;
+    align-items: flex-start;
+    padding: 40px 20px;
+    overflow-y: auto;
+}
+
+.knowly-modal-content {
+    background: #fff;
+    border-radius: 4px;
+    width: 100%;
+    max-width: 680px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+}
+
+.knowly-modal-wide .knowly-modal-content {
+    max-width: 960px;
+}
+
+.knowly-modal-sm .knowly-modal-content {
+    max-width: 440px;
+}
+
+.knowly-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e0e0e0;
+    flex-shrink: 0;
+}
+
+.knowly-modal-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.knowly-modal-close {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: #777;
+    line-height: 1;
+    padding: 0;
+}
+
+.knowly-modal-close:hover { color: #000; }
+
+.knowly-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.knowly-modal-footer {
+    padding: 14px 20px;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* =============================================================================
+   Form elements inside modal
+   ============================================================================= */
+
+.knowly-form-row {
+    margin-bottom: 14px;
+}
+
+.knowly-form-row label {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 4px;
+    color: #1e1e1e;
+}
+
+.knowly-optional {
+    font-weight: 400;
+    color: #999;
+}
+
+.knowly-form-input,
+.knowly-form-select,
+.knowly-form-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 13px;
+    padding: 6px 8px;
+    border: 1px solid #8c8f94;
+    border-radius: 3px;
+    background: #fff;
+}
+
+.knowly-form-textarea {
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+    line-height: 1.5;
+}
+
+/* Inline status inside modal footer */
+.knowly-inline-status {
+    font-size: 12px;
+    margin-left: 4px;
+}
+
+.knowly-inline-status.ok      { color: #00a32a; }
+.knowly-inline-status.error   { color: #d63638; }
+.knowly-inline-status.loading { color: #007cba; }
+
+/* =============================================================================
+   Trial / Quest view layouts
+   ============================================================================= */
+
+.knowly-meta-sidebar {
+    background: #f6f7f7;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    padding: 12px 14px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    line-height: 2;
+}
+
+.knowly-meta-sidebar code {
+    background: #eee;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-size: 12px;
+}
+
+/* Questions list */
+.knowly-questions-list,
+.knowly-sections-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.knowly-question-card,
+.knowly-section-card {
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 14px;
+    background: #fafafa;
+}
+
+.knowly-q-number {
+    font-weight: 700;
+    font-size: 12px;
+    color: #007cba;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.knowly-q-body p {
+    margin: 0 0 10px;
+    line-height: 1.6;
+}
+
+.knowly-options-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin: 10px 0;
+}
+
+.knowly-option {
+    padding: 6px 10px;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    font-size: 13px;
+    background: #fff;
+}
+
+.knowly-option-correct {
+    border-color: #00a32a;
+    background: #d1fae5;
+    color: #065f46;
+    font-weight: 600;
+}
+
+.knowly-option-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+
+.knowly-option-label input {
+    flex: 1;
+}
+
+.knowly-answer-row {
+    font-size: 13px;
+    margin-top: 10px;
+    padding: 8px;
+    background: #f0f6fc;
+    border-radius: 3px;
+    border-left: 3px solid #007cba;
+    line-height: 1.6;
+}
+
+/* Knowledge check within quest */
+.knowly-kc-card {
+    padding: 10px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    margin-bottom: 8px;
+}
+
+.knowly-kc-card p {
+    margin: 0 0 8px;
+    font-size: 13px;
+}
+
+/* Section cards */
+.knowly-section-card h3 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e1e1e;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 6px;
+}
+
+.knowly-section-card p {
+    margin: 0 0 10px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #333;
+}
+
+.knowly-section-card h4 {
+    margin: 14px 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}

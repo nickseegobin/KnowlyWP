@@ -3,7 +3,7 @@
  * Plugin Name:  KnowlyAPI
  * Plugin URI:   https://knowly.app
  * Description:  Unified REST API for the Knowly learning platform. React / Next.js interface only — no WP front-end output.
- * Version:      1.9.0
+ * Version:      1.9.2
  * Author:       Knowly
  * Requires PHP: 8.0
  * Requires at least: 6.3
@@ -14,8 +14,8 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ────────────────────────────────────────────────────────────────
-define( 'KNOWLY_VERSION',            '1.9.0' );
-define( 'KNOWLY_DB_VERSION',         '1.9.0' );
+define( 'KNOWLY_VERSION',            '1.9.3' );
+define( 'KNOWLY_DB_VERSION',         '1.9.3' );
 define( 'KNOWLY_PLUGIN_FILE',        __FILE__ );
 define( 'KNOWLY_PLUGIN_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'KNOWLY_PLUGIN_URL',         plugin_dir_url( __FILE__ ) );
@@ -108,6 +108,9 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Admin_Quests_Panel'           => 'includes/admin/class-knowly-admin-quests-panel.php',
         'Knowly_Admin_Notifications_Panel'    => 'includes/admin/class-knowly-admin-notifications-panel.php',
         'Knowly_Admin_System'                 => 'includes/admin/class-knowly-admin-system.php',
+        // Editor
+        'Knowly_Editor_API'                   => 'includes/api/class-knowly-editor-api.php',
+        'Knowly_Admin_Editor'                 => 'includes/admin/class-knowly-admin-editor.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {

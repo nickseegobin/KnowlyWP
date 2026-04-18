@@ -42,6 +42,8 @@ class Knowly_Admin {
         // Sign-off + Training (AJAX used by System page)
         Knowly_Admin_Signoff::boot();
         Knowly_Admin_Training::boot();
+        // Editor
+        Knowly_Admin_Editor::boot();
     }
 
     // ── Menu Registration ─────────────────────────────────────────────────────
@@ -67,6 +69,7 @@ class Knowly_Admin {
         add_submenu_page( 'knowly-api', 'Classes',        'Classes',        'manage_options', 'knowly-classes',               [ 'Knowly_Admin_Classes',            'render' ] );
         add_submenu_page( 'knowly-api', 'Trials',         'Trials',         'manage_options', 'knowly-trials',                [ 'Knowly_Admin_Trials',             'render' ] );
         add_submenu_page( 'knowly-api', 'Quests',         'Quests',         'manage_options', 'knowly-quests-panel',          [ 'Knowly_Admin_Quests_Panel',       'render' ] );
+        add_submenu_page( 'knowly-api', 'Editor',         'Editor',         'manage_options', 'knowly-editor',                [ 'Knowly_Admin_Editor',             'render' ] );
         add_submenu_page( 'knowly-api', 'Leaderboards',   'Leaderboards',   'manage_options', 'knowly-leaderboard',            [ 'Knowly_Admin_Leaderboard',        'render' ] );
         add_submenu_page( 'knowly-api', 'Notifications',  'Notifications',  'manage_options', 'knowly-notifications-panel',   [ 'Knowly_Admin_Notifications_Panel','render' ] );
         add_submenu_page( 'knowly-api', 'Analytics',      'Analytics',      'manage_options', 'knowly-analytics',             [ 'Knowly_Admin_Analytics',          'render' ] );
@@ -102,6 +105,24 @@ class Knowly_Admin {
             'version'   => KNOWLY_VERSION,
             'debugMode' => Knowly_Debug::is_enabled() ? '1' : '0',
         ] );
+
+        // Editor assets — only on the Editor page
+        if ( strpos( $hook, 'knowly-editor' ) !== false ) {
+            wp_enqueue_style(
+                'knowly-editor',
+                KNOWLY_PLUGIN_URL . 'assets/css/knowly-editor.css',
+                [ 'knowly-admin' ],
+                KNOWLY_VERSION
+            );
+
+            wp_enqueue_script(
+                'knowly-editor',
+                KNOWLY_PLUGIN_URL . 'assets/js/knowly-editor.js',
+                [],
+                KNOWLY_VERSION,
+                true
+            );
+        }
     }
 
     // ── Dashboard ─────────────────────────────────────────────────────────────
