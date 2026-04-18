@@ -333,20 +333,36 @@ class Knowly_Exam_Service {
                          ORDER BY RAND() LIMIT 1";
 
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-        $row = $wpdb->get_row( $wpdb->prepare( $fresh_sql, $fresh_args ), ARRAY_A );
+        $row = $wpdb->get_row( $wpdb->prepare( $fresh_sql, ...$fresh_args ), ARRAY_A );
 
         // 2. Wrap-around — serve the oldest-served package for this child
         if ( ! $row ) {
-            $wrap_sql = "SELECT p.* FROM {$table} p
-                         LEFT JOIN {$sessions} s
-                             ON s.package_id = p.package_id AND s.child_id = %d
-                         WHERE p.{$where_sql}
-                         ORDER BY s.started_at ASC NULLS LAST
-                         LIMIT 1";
-            $wrap_args = array_merge( [ $child_id ], $where_args );
+            // ISNULL() returns 1 for NULL → ORDER BY ASC puts non-NULL (already-served) first,
+            // then NULL (never served by anyone) last. Effectively serves least-recently-used.
+            $wrap_sql  = "SELECT p.* FROM {$table} p
+                          LEFT JOIN {$sessions} s
+                              ON s.package_id = p.package_id AND s.child_id = %d
+                          WHERE p.subject = %s AND p.level = %s AND p.trial_type = %s
+                            AND p.status = 'approved'";
+            $wrap_args = [ $child_id, $subject, $level, $trial_type ];
+
+            if ( $period !== '' ) {
+                $wrap_sql   .= ' AND p.period = %s';
+                $wrap_args[] = $period;
+            }
+            if ( $difficulty !== '' ) {
+                $wrap_sql   .= ' AND p.difficulty = %s';
+                $wrap_args[] = $difficulty;
+            }
+            if ( $topic !== '' ) {
+                $wrap_sql   .= ' AND p.topic = %s';
+                $wrap_args[] = $topic;
+            }
+
+            $wrap_sql .= ' ORDER BY ISNULL(s.started_at) DESC, s.started_at ASC LIMIT 1';
 
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-            $row = $wpdb->get_row( $wpdb->prepare( $wrap_sql, $wrap_args ), ARRAY_A );
+            $row = $wpdb->get_row( $wpdb->prepare( $wrap_sql, ...$wrap_args ), ARRAY_A );
         }
 
         if ( ! $row ) {

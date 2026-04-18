@@ -24,7 +24,8 @@ class Knowly_Admin_Classes {
         add_action( 'wp_ajax_knowly_class_search_members',   [ __CLASS__, 'ajax_search_members' ] );
         add_action( 'wp_ajax_knowly_class_assign_task',      [ __CLASS__, 'ajax_assign_task' ] );
         add_action( 'wp_ajax_knowly_class_delete_task',      [ __CLASS__, 'ajax_delete_task' ] );
-        add_action( 'wp_ajax_knowly_class_get_content_pool', [ __CLASS__, 'ajax_get_content_pool' ] );
+        add_action( 'wp_ajax_knowly_class_get_content_pool',    [ __CLASS__, 'ajax_get_content_pool' ] );
+        add_action( 'wp_ajax_knowly_class_get_trial_subjects', [ __CLASS__, 'ajax_get_trial_subjects' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -408,8 +409,10 @@ class Knowly_Admin_Classes {
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
                             <div>
                                 <label style="display:block;font-weight:600;margin-bottom:3px;">Subject *</label>
-                                <input type="text" id="task-subject" placeholder="e.g. Mathematics"
-                                       style="width:100%;height:28px;font-size:12px;">
+                                <select id="task-subject" style="width:100%;height:28px;font-size:12px;">
+                                    <option value="">— Click Load Content to see available subjects —</option>
+                                </select>
+                                <span id="task-subject-hint" style="font-size:11px;color:#888;"></span>
                             </div>
                             <div>
                                 <label style="display:block;font-weight:600;margin-bottom:3px;">Difficulty</label>
@@ -669,8 +672,34 @@ class Knowly_Admin_Classes {
                     } else {
                         document.getElementById('task-quest-picker').style.display = 'none';
                         document.getElementById('task-trial-picker').style.display = 'block';
-                        // Trials don't have a catalogue dropdown — user fills subject/difficulty
-                        document.getElementById('task-assign-btn').disabled = false;
+
+                        // Load available subjects from WP local trial pool
+                        var $subjectSel  = document.getElementById('task-subject');
+                        var $subjectHint = document.getElementById('task-subject-hint');
+                        $subjectSel.innerHTML = '<option value="">Loading subjects…</option>';
+                        $subjectSel.disabled  = true;
+                        document.getElementById('task-assign-btn').disabled = true;
+
+                        jQuery.post(ajaxurl, {
+                            action: 'knowly_class_get_trial_subjects', nonce,
+                            level, period,
+                        }, sr => {
+                            if (!sr.success || !sr.data.subjects.length) {
+                                $subjectSel.innerHTML = '<option value="">No subjects available — Sync Trials first</option>';
+                                $subjectHint.textContent = 'Go to Trials admin → Sync Trials from Railway to populate the pool.';
+                            } else {
+                                $subjectSel.innerHTML = '<option value="">— Select a subject —</option>';
+                                sr.data.subjects.forEach(s => {
+                                    var opt = document.createElement('option');
+                                    opt.value       = s.value;
+                                    opt.textContent = s.label + ' (' + s.count + ' packages)';
+                                    $subjectSel.appendChild(opt);
+                                });
+                                $subjectHint.textContent = sr.data.subjects.length + ' subject(s) available in pool';
+                                document.getElementById('task-assign-btn').disabled = false;
+                            }
+                            $subjectSel.disabled = false;
+                        });
                     }
                 });
             },
@@ -712,9 +741,9 @@ class Knowly_Admin_Classes {
                     refId   = document.getElementById('task-reference-id').value.trim();
                     if (!title || !refId) { alert('Please select a quest from the content picker.'); return; }
                 } else {
-                    subject = document.getElementById('task-subject').value.trim();
+                    subject = document.getElementById('task-subject').value;
                     diff    = document.getElementById('task-difficulty').value;
-                    if (!subject) { alert('Subject is required for trials.'); return; }
+                    if (!subject) { alert('Please select a subject for the trial.'); return; }
                     var level  = document.getElementById('task-level').value;
                     var period = document.getElementById('task-period').value;
                     title  = (subject || 'Trial') + ' — ' + (level ? level.replace('std_', 'Standard ') : '') + ' ' + (period ? period.replace('term_', 'Term ') : '');
@@ -1130,9 +1159,73 @@ class Knowly_Admin_Classes {
             wp_send_json_success( [ 'type' => 'quest', 'items' => $items, 'count' => count( $items ) ] );
 
         } else {
-            // Trial — no fixed catalogue; Railway generates on demand.
-            // Return empty items so the JS shows the manual subject/difficulty fields.
+            // Trial — subjects loaded separately via knowly_class_get_trial_subjects.
             wp_send_json_success( [ 'type' => 'trial', 'items' => [], 'count' => 0 ] );
         }
+    }
+
+    // ── AJAX: Get available trial subjects from WP local pool ─────────────────
+
+    /**
+     * Returns distinct subjects available in wp_knowly_trial_packages for a
+     * given level/period/curriculum. Used to populate the subject dropdown in
+     * the task assignment form — no Railway call needed.
+     */
+    public static function ajax_get_trial_subjects(): void {
+        check_ajax_referer( 'knowly_class_admin', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_trial_packages';
+
+        $level      = sanitize_text_field( $_POST['level']  ?? '' );
+        $period     = sanitize_text_field( $_POST['period'] ?? '' );
+        $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
+
+        // ── 1. Full subject list from curriculum config (source of truth) ─────
+        $all_curricula = get_option( 'knowly_curriculum_subjects', [] );
+        $curriculum_cfg = $all_curricula[ $curriculum ] ?? null;
+
+        if ( ! $curriculum_cfg ) {
+            wp_send_json_error( [ 'message' => "No subject config found for curriculum '{$curriculum}'. Check Settings." ] );
+        }
+
+        $defined_subjects = $curriculum_cfg['subjects'] ?? [];
+
+        // ── 2. Pool counts for this level/period (what's actually synced) ─────
+        $sql  = "SELECT subject, COUNT(*) AS package_count
+                 FROM {$table}
+                 WHERE status = 'approved' AND curriculum = %s";
+        $args = [ $curriculum ];
+
+        if ( $level )  { $sql .= ' AND level = %s';  $args[] = $level; }
+        if ( $period ) { $sql .= ' AND period = %s'; $args[] = $period; }
+
+        $sql .= ' GROUP BY subject';
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+        $pool_rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
+        $pool_counts = [];
+        foreach ( $pool_rows ?? [] as $row ) {
+            $pool_counts[ $row['subject'] ] = (int) $row['package_count'];
+        }
+
+        // ── 3. Merge: all curriculum subjects + pool counts ───────────────────
+        $subjects = array_map( function( $s ) use ( $pool_counts ) {
+            $count = $pool_counts[ $s['value'] ] ?? 0;
+            return [
+                'value' => $s['value'],
+                'label' => $s['label'],
+                'count' => $count,
+                'ready' => $count > 0,
+            ];
+        }, $defined_subjects );
+
+        wp_send_json_success( [
+            'subjects'       => $subjects,
+            'total'          => count( $subjects ),
+            'curriculum'     => $curriculum,
+            'curriculum_name'=> $curriculum_cfg['display_name'] ?? $curriculum,
+        ] );
     }
 }

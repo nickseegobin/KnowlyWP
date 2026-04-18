@@ -78,11 +78,20 @@ class Knowly_Admin_Trials {
             </button>
             <span id="knowly-sync-status" style="margin-left:10px;font-size:12px;color:#666;"></span>
         </div>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-            <button id="knowly-load-trials" class="button button-secondary">
-                ↺ Refresh
-            </button>
-            <input type="text" id="knowly-trial-filter" placeholder="Filter by subject…" class="regular-text" style="height:30px;" />
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+            <button id="knowly-load-trials" class="button button-secondary">↺ Refresh</button>
+            <select id="knowly-filter-level" style="height:30px;">
+                <option value="">All Levels</option>
+                <option value="std_4">std_4</option>
+                <option value="std_5">std_5</option>
+            </select>
+            <select id="knowly-filter-period" style="height:30px;">
+                <option value="">All Periods</option>
+                <option value="term_1">Term 1</option>
+                <option value="term_2">Term 2</option>
+                <option value="term_3">Term 3</option>
+                <option value="capstone">Capstone (SEA)</option>
+            </select>
             <span id="knowly-trial-summary-text" style="color:#666;font-size:13px;"></span>
         </div>
         <div id="knowly-trial-results">
@@ -125,35 +134,79 @@ class Knowly_Admin_Trials {
                     }
                     var d = res.data;
                     $('#knowly-sync-status').text('✓ ' + d.synced + ' synced, ' + d.skipped + ' already in pool' + (d.failed > 0 ? ', ' + d.failed + ' failed' : '')).css('color','#16a34a');
-                    loadTrialInventory(); // refresh the table
+                    loadTrialInventory();
                 }).fail(function() {
                     $btn.prop('disabled', false).text('↓ Sync Trials from Railway');
                     $('#knowly-sync-status').text('Request failed — check server logs').css('color','#dc2626');
                 });
             });
-            $('#knowly-trial-filter').on('input', function() {
-                var q = $(this).val().toLowerCase();
+
+            // ── Client-side filters ───────────────────────────────────────────
+            function applyTrialFilters() {
+                var level  = $('#knowly-filter-level').val();
+                var period = $('#knowly-filter-period').val();
                 $('#knowly-trial-results tbody tr').each(function() {
-                    $(this).toggle(!q || $(this).text().toLowerCase().includes(q));
+                    var $tr      = $(this);
+                    var trLevel  = $tr.data('level');
+                    var trPeriod = String($tr.data('period') || ''); // '' = capstone/SEA
+                    var levelOk  = !level || trLevel === level;
+                    var periodOk;
+                    if (!period)              { periodOk = true; }
+                    else if (period === 'capstone') { periodOk = (trPeriod === ''); }
+                    else                      { periodOk = (trPeriod === period); }
+                    $tr.toggle(levelOk && periodOk);
                 });
+                var visible = $('#knowly-trial-results tbody tr:visible').length;
+                var total   = $('#knowly-trial-results tbody tr').length;
+                if (level || period) {
+                    $('#knowly-trial-summary-text').append(' · showing ' + visible + ' of ' + total);
+                }
+            }
+            $('#knowly-filter-level, #knowly-filter-period').on('change', function() {
+                // Reset summary text then re-apply
+                var d = window._lastTrialData;
+                if (d) $('#knowly-trial-summary-text').text(d.total_packages + ' packages · ' + d.slot_count + ' slots · ' + (d.empty_slots || 0) + ' empty');
+                applyTrialFilters();
             });
+
             function renderTrialTable(data) {
+                window._lastTrialData = data;
                 var slots = data.slots || [];
-                $('#knowly-trial-summary-text').text(data.total_packages + ' packages across ' + data.slot_count + ' slots');
-                if (!slots.length) { $('#knowly-trial-results').html('<p style="color:#666;">No approved trial packages found.</p>'); return; }
-                var html = '<table class="knowly-table widefat" style="font-size:12px;"><thead><tr><th>Level</th><th>Period</th><th>Subject</th><th>Difficulty</th><th>Count</th><th>Served</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+                $('#knowly-trial-summary-text').text(data.total_packages + ' packages · ' + data.slot_count + ' slots · ' + (data.empty_slots || 0) + ' empty');
+                if (!slots.length) { $('#knowly-trial-results').html('<p style="color:#666;">No slots found — check curriculum config in Settings.</p>'); return; }
+
+                var html = '<table class="knowly-table widefat" style="font-size:12px;">'
+                    + '<thead><tr><th>Level</th><th>Period</th><th>Subject</th><th>Difficulty</th><th>Count</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+
                 $.each(slots, function(i, s) {
-                    var status = s.count === 0 ? '<span style="color:#dc2626;font-weight:600;">Empty</span>' : s.count < 3 ? '<span style="color:#d97706;font-weight:600;">Low</span>' : '<span style="color:#16a34a;font-weight:600;">Ready</span>';
-                    html += '<tr><td>' + s.level + '</td><td>' + (s.period || '<em>SEA</em>') + '</td><td><strong>' + s.subject + '</strong></td><td>' + (s.difficulty || '—') + '</td>'
-                        + '<td style="text-align:center;font-weight:600;">' + s.count + '</td><td style="text-align:center;color:#888;">' + s.total_served + '</td>'
-                        + '<td>' + status + '</td><td style="white-space:nowrap;">'
-                        + '<button class="button button-small knowly-view-slot" data-level="' + s.level + '" data-period="' + (s.period||'') + '" data-subject="' + s.subject + '" data-difficulty="' + (s.difficulty||'') + '" style="margin-right:4px;">View</button>'
-                        + '<button class="button button-small knowly-gen-trial" data-level="' + s.level + '" data-period="' + (s.period||'') + '" data-subject="' + s.subject + '" data-difficulty="' + (s.difficulty||'') + '">Generate</button>'
-                        + '</td></tr>';
+                    var periodLabel = s.period ? s.period : '<em style="color:#6b7280;">Capstone (SEA)</em>';
+                    var statusBadge = s.count === 0
+                        ? '<span style="color:#dc2626;font-weight:600;">Empty</span>'
+                        : s.count < 3
+                            ? '<span style="color:#d97706;font-weight:600;">Low (' + s.count + ')</span>'
+                            : '<span style="color:#16a34a;font-weight:600;">Ready (' + s.count + ')</span>';
+
+                    var viewBtn = s.count > 0
+                        ? '<button class="button button-small knowly-view-slot" data-level="' + s.level + '" data-period="' + (s.period||'') + '" data-subject="' + s.subject + '" data-difficulty="' + (s.difficulty||'') + '" style="margin-right:4px;">View</button>'
+                        : '';
+                    var genBtn = '<button class="button button-small knowly-gen-trial" data-level="' + s.level + '" data-period="' + (s.period||'') + '" data-subject="' + s.subject + '" data-difficulty="' + (s.difficulty||'') + '">Generate</button>';
+
+                    var rowBg = s.count === 0 ? ' style="background:#fafafa;"' : '';
+                    html += '<tr data-level="' + s.level + '" data-period="' + (s.period||'') + '"' + rowBg + '>'
+                        + '<td>' + s.level + '</td>'
+                        + '<td>' + periodLabel + '</td>'
+                        + '<td><strong>' + s.subject + '</strong></td>'
+                        + '<td>' + (s.difficulty || '—') + '</td>'
+                        + '<td style="text-align:center;font-weight:600;color:' + (s.count === 0 ? '#dc2626' : '#374151') + ';">' + s.count + '</td>'
+                        + '<td>' + statusBadge + '</td>'
+                        + '<td style="white-space:nowrap;">' + viewBtn + genBtn + '</td>'
+                        + '</tr>';
                 });
                 html += '</tbody></table>';
                 $('#knowly-trial-results').html(html);
+                applyTrialFilters(); // apply any active filter after render
             }
+
             $(document).on('click', '.knowly-view-slot', function() {
                 var $btn = $(this).prop('disabled', true).text('…');
                 $.post(ajaxurl, { action: 'knowly_pool_trial_packages', nonce: nonce, level: $(this).data('level'), period: $(this).data('period'), subject: $(this).data('subject'), difficulty: $(this).data('difficulty') }, function(res) {
@@ -165,7 +218,11 @@ class Knowly_Admin_Trials {
                 var $btn = $(this).prop('disabled', true).text('Generating…');
                 $.post(ajaxurl, { action: 'knowly_pool_generate_trial', nonce: nonce, level: $(this).data('level'), period: $(this).data('period'), subject: $(this).data('subject'), difficulty: $(this).data('difficulty') }, function(res) {
                     $btn.prop('disabled', false).text('Generate');
-                    alert(res.success ? 'Generated: ' + res.data.package_id : 'Error: ' + (res.data.message || 'Failed'));
+                    if (res.success) {
+                        alert('Generated: ' + res.data.package_id + '\nSync from Railway after approval to add to the pool.');
+                    } else {
+                        alert('Error: ' + (res.data.message || 'Failed'));
+                    }
                 });
             });
             function openModal(html) {

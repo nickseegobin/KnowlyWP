@@ -428,49 +428,92 @@ class Knowly_Admin_Pool {
         <?php
     }
 
-    // ── AJAX: Trial Summary ───────────────────────────────────────────────────
+    // ── AJAX: Trial Summary — full catalog from curriculum config ─────────────
 
     public static function ajax_trial_summary(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         global $wpdb;
-        $table = $wpdb->prefix . 'knowly_trial_packages';
+        $table      = $wpdb->prefix . 'knowly_trial_packages';
+        $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
+        $all_cfg    = get_option( 'knowly_curriculum_subjects', [] );
+        $cfg        = $all_cfg[ $curriculum ] ?? null;
 
-        $slots = $wpdb->get_results(
-            "SELECT level, period, subject, difficulty, trial_type,
-                    COUNT(*) AS count,
-                    SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved_count
+        if ( ! $cfg ) {
+            wp_send_json_error( [ 'message' => "Curriculum config not found for '{$curriculum}'. Check Settings or run plugin re-activation." ] );
+        }
+
+        $levels    = $cfg['levels']                ?? [ 'std_4', 'std_5' ];
+        $periods   = $cfg['periods']               ?? [ 'term_1', 'term_2', 'term_3' ];
+        $std_diffs = $cfg['standard_difficulties'] ?? [ 'easy', 'medium', 'hard' ];
+        $sea_diffs = $cfg['capstone_difficulties'] ?? [ 'sea_paper' ];
+        $subjects  = array_column( $cfg['subjects'] ?? [], 'value' );
+
+        // Build full expected matrix: level × (period + capstone) × subject × difficulty
+        $expected = [];
+        foreach ( $levels as $level ) {
+            foreach ( array_merge( $periods, [ null ] ) as $period ) {
+                $diffs = ( $period === null ) ? $sea_diffs : $std_diffs;
+                foreach ( $subjects as $subject ) {
+                    foreach ( $diffs as $diff ) {
+                        $key             = $level . '|' . ( $period ?? '' ) . '|' . $subject . '|' . $diff;
+                        $expected[ $key ] = [
+                            'level'        => $level,
+                            'period'       => $period,
+                            'subject'      => $subject,
+                            'difficulty'   => $diff,
+                            'trial_type'   => ( $period === null ) ? 'sea_paper' : 'practice',
+                            'count'        => 0,
+                            'total_served' => 0,
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Merge actual approved counts from WP pool
+        $actual = $wpdb->get_results(
+            "SELECT level, period, subject, difficulty, COUNT(*) AS cnt
              FROM {$table}
-             GROUP BY level, period, subject, difficulty, trial_type
-             ORDER BY level, period, subject, difficulty",
+             WHERE status = 'approved'
+             GROUP BY level, period, subject, difficulty",
             ARRAY_A
         );
 
-        if ( $slots === null ) {
-            wp_send_json_error( [ 'message' => 'Database error: ' . $wpdb->last_error ] );
+        foreach ( $actual ?? [] as $row ) {
+            $key = $row['level'] . '|' . ( $row['period'] ?? '' ) . '|' . $row['subject'] . '|' . ( $row['difficulty'] ?? '' );
+            if ( isset( $expected[ $key ] ) ) {
+                $expected[ $key ]['count'] = (int) $row['cnt'];
+            } else {
+                // Orphaned data not in curriculum config — include it anyway
+                $expected[ $key ] = [
+                    'level'        => $row['level'],
+                    'period'       => $row['period'] ?: null,
+                    'subject'      => $row['subject'],
+                    'difficulty'   => $row['difficulty'] ?? '',
+                    'trial_type'   => $row['period'] ? 'practice' : 'sea_paper',
+                    'count'        => (int) $row['cnt'],
+                    'total_served' => 0,
+                ];
+            }
         }
 
-        $total = array_sum( array_column( $slots ?? [], 'approved_count' ) );
+        $shaped = array_values( $expected );
+        $total  = array_sum( array_column( $shaped, 'count' ) );
+        $empty  = count( array_filter( $shaped, static fn( $s ) => $s['count'] === 0 ) );
 
-        // Reshape to match the shape the JS renderTrialTable() expects
-        $shaped = array_map( function( $s ) {
-            return [
-                'level'       => $s['level'],
-                'period'      => $s['period'],
-                'subject'     => $s['subject'],
-                'difficulty'  => $s['difficulty'],
-                'trial_type'  => $s['trial_type'],
-                'count'       => (int) $s['approved_count'],
-                'total_served'=> 0,
-            ];
-        }, $slots );
+        Knowly_Debug::log( 'admin.pool', 'Trial full catalog loaded', [
+            'total'      => $total,
+            'slot_count' => count( $shaped ),
+            'empty'      => $empty,
+        ], null, 'info' );
 
-        Knowly_Debug::log( 'admin.pool', 'Trial summary loaded from WP', [ 'total' => $total ], null, 'info' );
         wp_send_json_success( [
             'slots'          => $shaped,
             'slot_count'     => count( $shaped ),
             'total_packages' => (int) $total,
+            'empty_slots'    => $empty,
         ] );
     }
 
@@ -647,44 +690,108 @@ class Knowly_Admin_Pool {
         ] );
     }
 
-    // ── AJAX: Quest Catalogue (reads from wp_knowly_quests) ───────────────────
+    // ── AJAX: Quest Catalogue — full catalog from curriculum config ───────────
 
     public static function ajax_quest_catalogue(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
         global $wpdb;
-        $table = $wpdb->prefix . 'knowly_quests';
+        $table      = $wpdb->prefix . 'knowly_quests';
+        $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
+        $all_cfg    = get_option( 'knowly_curriculum_subjects', [] );
+        $cfg        = $all_cfg[ $curriculum ] ?? null;
 
-        $level  = sanitize_key( $_POST['level']  ?? '' );
-        $period = sanitize_key( $_POST['period'] ?? '' );
-        $status = sanitize_key( $_POST['status'] ?? '' );
+        $levels  = $cfg['levels']  ?? [ 'std_4', 'std_5' ];
+        $periods = $cfg['periods'] ?? [ 'term_1', 'term_2', 'term_3' ];
+        $subjects = array_column( $cfg['subjects'] ?? [], 'value' );
 
-        $sql  = "SELECT quest_id, level, period, subject, module_number, module_title, topic, status, generated_at, approved_at
-                 FROM {$table}
-                 WHERE variant = 'student'";
-        $args = [];
+        // Build expected level × (period + capstone) × subject slots
+        $expected_map = [];
+        foreach ( $levels as $level ) {
+            foreach ( array_merge( $periods, [ null ] ) as $period ) {
+                foreach ( $subjects as $subject ) {
+                    $key                  = $level . '|' . ( $period ?? '' ) . '|' . $subject;
+                    $expected_map[ $key ] = [
+                        'level'      => $level,
+                        'period'     => $period,
+                        'subject'    => $subject,
+                        'quests'     => [],
+                        'max_module' => -1,
+                    ];
+                }
+            }
+        }
 
-        if ( $level )  { $sql .= ' AND level = %s';  $args[] = $level; }
-        if ( $period ) { $sql .= ' AND period = %s'; $args[] = $period; }
-        if ( $status ) { $sql .= ' AND status = %s'; $args[] = $status; }
-
-        $sql .= ' ORDER BY level ASC, period ASC, subject ASC, module_number ASC';
-
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-        $rows = empty( $args )
-            ? $wpdb->get_results( $sql, ARRAY_A )
-            : $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A );
+        // Fetch all student quests (no server-side filter — client filters client-side)
+        $rows = $wpdb->get_results(
+            "SELECT quest_id, level, period, subject, module_number, module_title, topic, status, generated_at, approved_at
+             FROM {$table}
+             WHERE variant = 'student'
+             ORDER BY level ASC, period ASC, subject ASC, module_number ASC",
+            ARRAY_A
+        );
 
         if ( $rows === null ) {
             Knowly_Debug::log( 'admin.pool', 'ajax_quest_catalogue DB error', [ 'error' => $wpdb->last_error ], null, 'error' );
             wp_send_json_error( [ 'message' => 'Database error: ' . $wpdb->last_error ] );
         }
 
-        Knowly_Debug::log( 'admin.pool', 'Quest catalogue loaded from WP', [ 'count' => count( $rows ) ], null, 'info' );
+        // Group quests into their slots
+        foreach ( $rows as $row ) {
+            $key = $row['level'] . '|' . ( $row['period'] ?? '' ) . '|' . $row['subject'];
+            if ( ! isset( $expected_map[ $key ] ) ) {
+                // Quest exists but slot not in curriculum config — add it
+                $expected_map[ $key ] = [
+                    'level'      => $row['level'],
+                    'period'     => $row['period'] ?: null,
+                    'subject'    => $row['subject'],
+                    'quests'     => [],
+                    'max_module' => -1,
+                ];
+            }
+            $expected_map[ $key ]['quests'][] = $row;
+            $mn = (int) ( $row['module_number'] ?? -1 );
+            if ( $mn > $expected_map[ $key ]['max_module'] ) {
+                $expected_map[ $key ]['max_module'] = $mn;
+            }
+        }
+
+        // Flatten: empty slot → one placeholder row; filled slot → individual quest rows
+        $output = [];
+        foreach ( $expected_map as $slot ) {
+            if ( empty( $slot['quests'] ) ) {
+                $output[] = [
+                    'quest_id'     => null,
+                    'level'        => $slot['level'],
+                    'period'       => $slot['period'],
+                    'subject'      => $slot['subject'],
+                    'module_number'=> null,
+                    'module_title' => null,
+                    'topic'        => null,
+                    'status'       => 'empty',
+                    'next_module'  => 0,
+                    'generated_at' => null,
+                    'approved_at'  => null,
+                ];
+            } else {
+                $next = $slot['max_module'] + 1;
+                foreach ( $slot['quests'] as $q ) {
+                    $q['next_module'] = $next;
+                    $output[]         = $q;
+                }
+            }
+        }
+
+        $empty_count = count( array_filter( $output, static fn( $r ) => $r['status'] === 'empty' ) );
+        Knowly_Debug::log( 'admin.pool', 'Quest full catalog loaded', [
+            'total' => count( $output ),
+            'empty' => $empty_count,
+        ], null, 'info' );
+
         wp_send_json_success( [
-            'quests' => $rows,
-            'count'  => count( $rows ),
+            'quests' => $output,
+            'count'  => count( $output ),
         ] );
     }
 

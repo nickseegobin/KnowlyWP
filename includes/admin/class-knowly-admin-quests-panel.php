@@ -118,35 +118,32 @@ class Knowly_Admin_Quests_Panel {
         </div>
 
         <!-- ── View Local Store ────────────────────────────────────────────── -->
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+            <button id="qp-load" class="button button-secondary">↺ Refresh</button>
             <select id="qp-level" style="height:30px;">
-                <option value="">All levels</option>
-                <option value="std_1">std_1</option>
-                <option value="std_2">std_2</option>
-                <option value="std_3">std_3</option>
-                <option value="std_4" selected>std_4</option>
+                <option value="">All Levels</option>
+                <option value="std_4">std_4</option>
                 <option value="std_5">std_5</option>
             </select>
             <select id="qp-period" style="height:30px;">
-                <option value="">All periods</option>
-                <option value="term_1">term_1</option>
-                <option value="term_2">term_2</option>
-                <option value="term_3">term_3</option>
+                <option value="">All Periods</option>
+                <option value="term_1">Term 1</option>
+                <option value="term_2">Term 2</option>
+                <option value="term_3">Term 3</option>
+                <option value="capstone">Capstone (SEA)</option>
             </select>
             <select id="qp-status-filter" style="height:30px;">
                 <option value="">All statuses</option>
+                <option value="empty">Empty (no quests)</option>
                 <option value="approved">approved</option>
                 <option value="pending_review">pending_review</option>
                 <option value="archived">archived</option>
                 <option value="rejected">rejected</option>
             </select>
-            <button id="qp-load" class="button button-secondary">
-                ↓ Load Quest Catalogue
-            </button>
             <span id="qp-summary" style="color:#666;font-size:13px;"></span>
         </div>
         <div id="qp-results">
-            <p style="color:#888;">Click "Load Quest Catalogue" to view quests from the WP local store.</p>
+            <p style="color:#888;">Loading quest catalogue…</p>
         </div>
 
         <!-- ── Generate Quest ─────────────────────────────────────────────── -->
@@ -201,6 +198,7 @@ class Knowly_Admin_Quests_Panel {
                     pending_review: { bg:'#fef3c7', color:'#d97706' },
                     rejected:       { bg:'#fee2e2', color:'#dc2626' },
                     archived:       { bg:'#f3f4f6', color:'#6b7280' },
+                    empty:          { bg:'#f3f4f6', color:'#9ca3af' },
                 };
                 var c = cfg[s] || { bg:'#f3f4f6', color:'#374151' };
                 return '<span style="font-size:11px;background:' + c.bg + ';color:' + c.color + ';padding:2px 6px;border-radius:3px;">' + s + '</span>';
@@ -232,8 +230,7 @@ class Knowly_Admin_Quests_Panel {
                             + (d.no_content > 0 ? ' <em>' + d.no_content + ' had no content and were stored as metadata-only.</em>' : '')
                             + '</span>'
                         );
-                        // Reload catalogue automatically
-                        $('#qp-load').trigger('click');
+                        loadQuestCatalogue();
                     },
                     error: function(xhr, status) {
                         $btn.prop('disabled', false).text('↻ Sync Quests');
@@ -242,51 +239,114 @@ class Knowly_Admin_Quests_Panel {
                 });
             });
 
-            // ── Load local quest catalogue ────────────────────────────────────
-            $('#qp-load').on('click', function() {
-                var $btn = $(this).prop('disabled', true).text('Loading…');
-                var level  = $('#qp-level').val();
-                var period = $('#qp-period').val();
-                var status = $('#qp-status-filter').val();
-                $.post(ajaxurl, { action: 'knowly_pool_quest_catalogue', nonce: nonce, level: level, period: period, status: status }, function(res) {
-                    $btn.prop('disabled', false).text('↓ Load Quest Catalogue');
+            // ── Load & render quest catalogue (always loads all — client filters) ─
+            function loadQuestCatalogue() {
+                var $btn = $('#qp-load').prop('disabled', true).text('Loading…');
+                $('#qp-results').html('<p style="color:#888;">Loading quest catalogue…</p>');
+                $.post(ajaxurl, { action: 'knowly_pool_quest_catalogue', nonce: nonce }, function(res) {
+                    $btn.prop('disabled', false).text('↺ Refresh');
                     if (!res.success) {
                         $('#qp-results').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown error') + '</p>');
                         return;
                     }
-                    var quests = res.data.quests || [];
-                    var label  = (level || 'all levels') + (period ? ' / ' + period : '');
-                    $('#qp-summary').text(quests.length + ' quest(s) — ' + label);
-                    if (!quests.length) {
-                        $('#qp-results').html('<p style="color:#666;">No quests found. Use <strong>Sync Quests</strong> to import from Railway, or generate a new one below.</p>');
-                        return;
-                    }
-                    var html = '<table class="knowly-table widefat" style="font-size:12px;">';
-                    html += '<thead><tr><th>Quest ID</th><th>Level</th><th>Period</th><th>Subject</th><th>Module</th><th>Title / Topic</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
-                    $.each(quests, function(i, q) {
+                    renderQuestTable(res.data.quests || []);
+                });
+            }
+
+            function renderQuestTable(quests) {
+                window._lastQuestData = quests;
+                var total  = quests.length;
+                var empty  = quests.filter(function(q) { return q.status === 'empty'; }).length;
+                var filled = total - empty;
+                $('#qp-summary').text(filled + ' quest(s) · ' + empty + ' empty slots');
+
+                if (!total) {
+                    $('#qp-results').html('<p style="color:#666;">No quest slots found — check curriculum config in Settings.</p>');
+                    return;
+                }
+
+                var html = '<table class="knowly-table widefat" style="font-size:12px;">'
+                    + '<thead><tr><th>Quest ID</th><th>Level</th><th>Period</th><th>Subject</th><th>Module</th><th>Title / Topic</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+
+                $.each(quests, function(i, q) {
+                    var period    = q.period || '';
+                    var periodLbl = q.period ? q.period : '<em style="color:#6b7280;">Capstone (SEA)</em>';
+                    var rowBg     = q.status === 'empty' ? ' style="background:#fafafa;"' : '';
+
+                    if (q.status === 'empty') {
+                        // Empty slot — Generate only, pre-fills form below
+                        html += '<tr data-level="' + q.level + '" data-period="' + period + '" data-status="empty"' + rowBg + '>'
+                            + '<td style="font-family:monospace;font-size:11px;color:#9ca3af;">—</td>'
+                            + '<td>' + q.level + '</td>'
+                            + '<td>' + periodLbl + '</td>'
+                            + '<td><strong>' + q.subject + '</strong></td>'
+                            + '<td style="text-align:center;color:#9ca3af;">—</td>'
+                            + '<td style="color:#9ca3af;font-style:italic;">No quests yet</td>'
+                            + '<td>' + statusBadge('empty') + '</td>'
+                            + '<td style="white-space:nowrap;">'
+                            + '<button class="button button-small qp-prefill-gen" data-level="' + q.level + '" data-period="' + period + '" data-subject="' + q.subject + '" data-module="0">Generate</button>'
+                            + '</td></tr>';
+                    } else {
                         var rowId  = 'qp-row-' + q.quest_id.replace(/[^a-z0-9]/gi, '_');
                         var actions = '';
                         if (q.status === 'pending_review') {
                             actions = '<button class="button button-small" style="color:#16a34a;margin-right:4px;" onclick="qpQuestAction(\'' + q.quest_id + '\',\'approve\',this)">✓ Approve</button>'
                                     + '<button class="button button-small" style="color:#dc2626;" onclick="qpQuestAction(\'' + q.quest_id + '\',\'reject\',this)">✗ Reject</button>';
                         } else if (q.status === 'approved') {
-                            actions = '<button class="button button-small" style="color:#6b7280;" onclick="qpQuestAction(\'' + q.quest_id + '\',\'archive\',this)">Archive</button>';
+                            actions = '<button class="button button-small" style="color:#6b7280;margin-right:4px;" onclick="qpQuestAction(\'' + q.quest_id + '\',\'archive\',this)">Archive</button>'
+                                    + '<button class="button button-small qp-prefill-gen" data-level="' + q.level + '" data-period="' + period + '" data-subject="' + q.subject + '" data-module="' + (q.next_module||0) + '">+ Next</button>';
                         }
-                        html += '<tr id="' + rowId + '">'
+                        html += '<tr id="' + rowId + '" data-level="' + q.level + '" data-period="' + period + '" data-status="' + q.status + '">'
                             + '<td style="font-family:monospace;font-size:11px;">' + q.quest_id + '</td>'
                             + '<td>' + (q.level||'') + '</td>'
-                            + '<td>' + (q.period||'<em>capstone</em>') + '</td>'
+                            + '<td>' + periodLbl + '</td>'
                             + '<td><strong>' + (q.subject||'') + '</strong></td>'
                             + '<td style="text-align:center;">' + (q.module_number != null ? q.module_number : '—') + '</td>'
                             + '<td>' + (q.module_title||q.topic||'—') + '</td>'
                             + '<td>' + statusBadge(q.status) + '</td>'
                             + '<td style="white-space:nowrap;">' + actions + '</td>'
                             + '</tr>';
-                    });
-                    html += '</tbody></table>';
-                    $('#qp-results').html(html);
+                    }
                 });
+                html += '</tbody></table>';
+                $('#qp-results').html(html);
+                applyQuestFilters();
+            }
+
+            // ── Client-side filters ───────────────────────────────────────────
+            function applyQuestFilters() {
+                var level  = $('#qp-level').val();
+                var period = $('#qp-period').val();
+                var status = $('#qp-status-filter').val();
+                $('#qp-results tbody tr').each(function() {
+                    var $tr      = $(this);
+                    var trLevel  = $tr.data('level');
+                    var trPeriod = String($tr.data('period') || '');
+                    var trStatus = $tr.data('status');
+                    var levelOk  = !level || trLevel === level;
+                    var statusOk = !status || trStatus === status;
+                    var periodOk;
+                    if (!period)                   { periodOk = true; }
+                    else if (period === 'capstone') { periodOk = (trPeriod === ''); }
+                    else                           { periodOk = (trPeriod === period); }
+                    $tr.toggle(levelOk && periodOk && statusOk);
+                });
+            }
+            $('#qp-level, #qp-period, #qp-status-filter').on('change', applyQuestFilters);
+
+            // ── Pre-fill generate form from table row ─────────────────────────
+            $(document).on('click', '.qp-prefill-gen', function() {
+                var $btn = $(this);
+                $('#qp-gen-level').val($btn.data('level'));
+                $('#qp-gen-period').val($btn.data('period'));
+                $('#qp-gen-subject').val($btn.data('subject'));
+                $('#qp-gen-module').val($btn.data('module') || 0);
+                $('html, body').animate({ scrollTop: $('#qp-generate').offset().top - 40 }, 300);
+                $('#qp-generate').focus();
             });
+
+            $('#qp-load').on('click', loadQuestCatalogue);
+            loadQuestCatalogue(); // auto-load on page open
 
             window.qpQuestAction = function(questId, action, btn) {
                 var labels = { approve: 'Approve', reject: 'Reject', archive: 'Archive' };
@@ -327,8 +387,8 @@ class Knowly_Admin_Quests_Panel {
                         if (res.success) {
                             $res.html('<span style="color:#16a34a;">✓ Stored in WP: <strong>' + res.data.quest_id + '</strong> — both variants saved as <strong>pending_review</strong>.'
                                 + (res.data.has_teacher ? '' : ' <em>(No teacher variant returned — student only.)</em>')
-                                + ' Click <strong>Load Quest Catalogue</strong> to review and approve.</span>');
-                            $('#qp-load').trigger('click');
+                                + '</span>');
+                            loadQuestCatalogue();
                         } else {
                             $res.html('<span style="color:#dc2626;">✗ ' + (res.data.message || 'Generation failed') + '</span>');
                         }
