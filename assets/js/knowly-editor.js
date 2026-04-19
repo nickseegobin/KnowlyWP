@@ -355,6 +355,28 @@
             }
         });
 
+        // Sync from Pinecone button
+        document.getElementById('tm-sync-btn')?.addEventListener('click', async () => {
+            const btn        = document.getElementById('tm-sync-btn');
+            const curriculum = document.getElementById('tm-filter-curriculum')?.value || 'tt_primary';
+
+            btn.disabled = true;
+            btn.textContent = 'Syncing…';
+            setStatus('tm-status-bar', 'Syncing from Pinecone…', 'loading');
+
+            try {
+                const result = await api('POST', '/training-material/sync-from-pinecone', { curriculum });
+                setStatus('tm-status-bar', `Sync complete — ${result.synced} item(s) synced.`, 'ok');
+                tmPage = 1;
+                loadTM();
+            } catch (err) {
+                setStatus('tm-status-bar', 'Sync failed: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Sync from Pinecone';
+            }
+        });
+
         loadTM();
     }
 

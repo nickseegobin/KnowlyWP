@@ -100,8 +100,9 @@ class Knowly_Admin_Editor {
                     <select id="tm-filter-subject" class="knowly-filter-select"><option value="">All Subjects</option></select>
                     <button class="button" id="tm-filter-btn">Filter</button>
                 </div>
-                <div>
+                <div style="display:flex;gap:8px;">
                     <button class="button button-primary" id="tm-add-btn">+ Add Training Material</button>
+                    <button class="button" id="tm-sync-btn" title="Import all training vectors from Pinecone into the local table">Sync from Pinecone</button>
                 </div>
             </div>
 

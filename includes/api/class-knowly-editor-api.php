@@ -32,6 +32,14 @@ class Knowly_Editor_API extends Knowly_API_Base {
             ],
         ] );
 
+        register_rest_route( $this->namespace, '/editor/training-material/sync-from-pinecone', [
+            [
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => [ $this, 'sync_training_from_pinecone' ],
+                'permission_callback' => [ $this, 'require_admin' ],
+            ],
+        ] );
+
         register_rest_route( $this->namespace, '/editor/training-material/(?P<id>\d+)', [
             [
                 'methods'             => 'PATCH',
@@ -343,6 +351,82 @@ class Knowly_Editor_API extends Knowly_API_Base {
 
         Knowly_Debug::log( 'editor.training', 'Training material deleted', [ 'id' => $id, 'vector_id' => $row['vector_id'] ], null, 'info' );
         return rest_ensure_response( [ 'id' => $id, 'deleted' => true ] );
+    }
+
+    /**
+     * POST /editor/training-material/sync-from-pinecone
+     *
+     * Calls Railway GET /api/v1/training/list to retrieve all vectors for a
+     * curriculum, then upserts each one into wp_knowly_training_material.
+     * Existing rows (matched by vector_id) are updated; new rows are inserted.
+     *
+     * Body: { curriculum? }  — defaults to tt_primary
+     */
+    public function sync_training_from_pinecone( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        global $wpdb;
+        $table      = $wpdb->prefix . 'knowly_training_material';
+        $curriculum = sanitize_text_field( $request->get_param( 'curriculum' ) ?: 'tt_primary' );
+
+        // Fetch all vectors from Pinecone via Railway
+        $result = $this->railway_get( '/api/v1/training/list', [ 'curriculum' => $curriculum ] );
+        if ( is_wp_error( $result ) ) {
+            return $result;
+        }
+
+        $items   = $result['items'] ?? [];
+        $synced  = 0;
+        $skipped = 0;
+        $now     = current_time( 'mysql', true );
+
+        foreach ( $items as $item ) {
+            $vector_id    = sanitize_text_field( $item['vector_id'] ?? '' );
+            $content_text = $item['content_text'] ?? '';
+
+            if ( ! $vector_id || ! $content_text ) {
+                $skipped++;
+                continue;
+            }
+
+            $existing = $wpdb->get_var(
+                $wpdb->prepare( "SELECT id FROM {$table} WHERE vector_id = %s", $vector_id )
+            );
+
+            $row_data = [
+                'curriculum'   => sanitize_text_field( $item['curriculum'] ?? $curriculum ),
+                'level'        => sanitize_text_field( $item['level'] ?? '' ),
+                'period'       => sanitize_text_field( $item['period'] ?? '' ) ?: null,
+                'subject'      => sanitize_text_field( $item['subject'] ?? '' ),
+                'topic'        => sanitize_text_field( $item['topic'] ?? '' ),
+                'subtopic'     => sanitize_text_field( $item['subtopic'] ?? '' ) ?: null,
+                'content_text' => $content_text,
+                'status'       => 'active',
+                'updated_at'   => $now,
+            ];
+            $formats = [ '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ];
+
+            if ( $existing ) {
+                $wpdb->update( $table, $row_data, [ 'id' => (int) $existing ], $formats, [ '%d' ] );
+            } else {
+                $wpdb->insert( $table, array_merge( $row_data, [
+                    'vector_id'  => $vector_id,
+                    'created_at' => $now,
+                ] ), array_merge( [ '%s' ], $formats ) );
+            }
+
+            $synced++;
+        }
+
+        Knowly_Debug::log( 'editor.training', 'Synced from Pinecone', [
+            'curriculum' => $curriculum,
+            'synced'     => $synced,
+            'skipped'    => $skipped,
+        ], null, 'info' );
+
+        return rest_ensure_response( [
+            'synced'  => $synced,
+            'skipped' => $skipped,
+            'total'   => count( $items ),
+        ] );
     }
 
     // =========================================================================
