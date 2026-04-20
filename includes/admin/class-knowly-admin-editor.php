@@ -14,7 +14,286 @@ defined( 'ABSPATH' ) || exit;
 class Knowly_Admin_Editor {
 
     public static function boot(): void {
-        // No AJAX handlers needed — JS communicates via WP REST API with nonce auth
+        add_action( 'wp_ajax_knowly_import_trial', [ __CLASS__, 'ajax_import_trial' ] );
+        add_action( 'wp_ajax_knowly_import_quest', [ __CLASS__, 'ajax_import_quest' ] );
+    }
+
+    // =========================================================================
+    // AJAX: Import Trial
+    // =========================================================================
+
+    public static function ajax_import_trial(): void {
+        check_ajax_referer( 'knowly_import', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => 'Insufficient permissions.' ], 403 );
+        }
+
+        $raw = stripslashes( $_POST['package_data'] ?? '' );
+        if ( ! $raw ) {
+            wp_send_json_error( [ 'message' => 'package_data is required.' ], 422 );
+        }
+
+        $pkg = json_decode( $raw, true );
+        if ( json_last_error() !== JSON_ERROR_NONE ) {
+            wp_send_json_error( [ 'message' => 'Invalid JSON: ' . json_last_error_msg() ], 422 );
+        }
+
+        // Validate structure
+        if ( empty( $pkg['meta'] ) || empty( $pkg['meta']['level'] ) || empty( $pkg['meta']['subject'] ) ) {
+            wp_send_json_error( [ 'message' => 'meta must include level and subject.' ], 422 );
+        }
+        if ( empty( $pkg['questions'] ) || ! is_array( $pkg['questions'] ) ) {
+            wp_send_json_error( [ 'message' => 'questions must be a non-empty array.' ], 422 );
+        }
+        $q = $pkg['questions'][0];
+        if ( empty( $q['question_id'] ) || empty( $q['question'] ) || ! isset( $q['options'] ) || empty( $q['correct_answer'] ) ) {
+            wp_send_json_error( [ 'message' => 'Each question requires question_id, question, options (A/B/C/D), and correct_answer.' ], 422 );
+        }
+        foreach ( [ 'A', 'B', 'C', 'D' ] as $opt ) {
+            if ( ! array_key_exists( $opt, $q['options'] ) ) {
+                wp_send_json_error( [ 'message' => "options must include A, B, C, and D. Missing: {$opt}." ], 422 );
+            }
+        }
+        if ( empty( $pkg['answer_sheet'] ) || ! is_array( $pkg['answer_sheet'] ) ) {
+            wp_send_json_error( [ 'message' => 'answer_sheet must be a non-empty array.' ], 422 );
+        }
+
+        // Auto-fill missing fields
+        if ( empty( $pkg['package_id'] ) ) {
+            $pkg['package_id'] = 'pkg-' . substr( md5( wp_json_encode( $pkg ) . uniqid( '', true ) ), 0, 16 );
+        }
+        if ( empty( $pkg['generated_at'] ) ) {
+            $pkg['generated_at'] = current_time( 'c' );
+        }
+
+        $package_id = sanitize_text_field( $pkg['package_id'] );
+
+        // Forward to Railway
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+        $admin_ids  = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        $token      = ! empty( $admin_ids ) ? Knowly_JWT::encode( (int) $admin_ids[0] ) : get_option( 'knowly_railway_api_key', '' );
+
+        $response = wp_remote_post( $endpoint . '/api/v1/editor-save', [
+            'timeout' => 30,
+            'headers' => [
+                'Authorization'    => 'Bearer ' . $token,
+                'Content-Type'     => 'application/json',
+                'X-AEP-Server-Key' => $server_key,
+            ],
+            'body' => wp_json_encode( $pkg ),
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            wp_send_json_error( [ 'message' => 'Railway error: ' . $response->get_error_message() ], 502 );
+        }
+
+        $code = wp_remote_retrieve_response_code( $response );
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( $code === 409 ) {
+            wp_send_json_error( [ 'message' => 'Package ID already exists in Supabase. Change the package_id in your JSON and try again.' ], 409 );
+        }
+        if ( $code < 200 || $code >= 300 ) {
+            wp_send_json_error( [ 'message' => $body['error'] ?? "Railway returned HTTP {$code}." ], 502 );
+        }
+
+        // Sync to WP
+        self::sync_trial_to_wp( $package_id );
+
+        wp_send_json_success( [ 'package_id' => $package_id, 'status' => 'pending_review' ] );
+    }
+
+    // =========================================================================
+    // AJAX: Import Quest
+    // =========================================================================
+
+    public static function ajax_import_quest(): void {
+        check_ajax_referer( 'knowly_import', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => 'Insufficient permissions.' ], 403 );
+        }
+
+        $raw = stripslashes( $_POST['content'] ?? '' );
+        if ( ! $raw ) {
+            wp_send_json_error( [ 'message' => 'content is required.' ], 422 );
+        }
+
+        $parsed = json_decode( $raw, true );
+        if ( json_last_error() !== JSON_ERROR_NONE ) {
+            wp_send_json_error( [ 'message' => 'Invalid JSON: ' . json_last_error_msg() ], 422 );
+        }
+
+        // Support { sections: [...] } at root or { content: { sections: [...] } }
+        if ( isset( $parsed['sections'] ) ) {
+            $content = $parsed;
+        } elseif ( isset( $parsed['content']['sections'] ) ) {
+            $content = $parsed['content'];
+        } else {
+            wp_send_json_error( [ 'message' => 'JSON must contain a sections array.' ], 422 );
+        }
+
+        if ( empty( $content['sections'] ) || ! is_array( $content['sections'] ) ) {
+            wp_send_json_error( [ 'message' => 'sections must be a non-empty array.' ], 422 );
+        }
+        $section = $content['sections'][0];
+        if ( ! isset( $section['title'] ) || ! isset( $section['explanation'] ) || ! is_array( $section['explanation'] ) ) {
+            wp_send_json_error( [ 'message' => 'Each section must have a title and an explanation array.' ], 422 );
+        }
+
+        $level   = sanitize_text_field( $_POST['level'] ?? '' );
+        $subject = sanitize_text_field( $_POST['subject'] ?? '' );
+        if ( ! $level || ! $subject ) {
+            wp_send_json_error( [ 'message' => 'level and subject are required.' ], 422 );
+        }
+
+        $body = [
+            'curriculum'    => sanitize_text_field( $_POST['curriculum'] ?? 'tt_primary' ),
+            'level'         => $level,
+            'period'        => sanitize_text_field( $_POST['period'] ?? '' ) ?: null,
+            'subject'       => $subject,
+            'topic'         => sanitize_text_field( $_POST['topic'] ?? '' ) ?: null,
+            'content'       => $content,
+        ];
+
+        // Forward to Railway
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+        $admin_ids  = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        $token      = ! empty( $admin_ids ) ? Knowly_JWT::encode( (int) $admin_ids[0] ) : get_option( 'knowly_railway_api_key', '' );
+
+        $response = wp_remote_post( $endpoint . '/api/v1/quest/import', [
+            'timeout' => 30,
+            'headers' => [
+                'Authorization'    => 'Bearer ' . $token,
+                'Content-Type'     => 'application/json',
+                'X-AEP-Server-Key' => $server_key,
+            ],
+            'body' => wp_json_encode( $body ),
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            wp_send_json_error( [ 'message' => 'Railway error: ' . $response->get_error_message() ], 502 );
+        }
+
+        $code      = wp_remote_retrieve_response_code( $response );
+        $resp_body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( $code < 200 || $code >= 300 ) {
+            wp_send_json_error( [ 'message' => $resp_body['error'] ?? "Railway returned HTTP {$code}." ], 502 );
+        }
+
+        $quest_id = sanitize_text_field( $resp_body['quest_id'] ?? '' );
+        if ( $quest_id ) {
+            self::sync_quest_to_wp( $quest_id );
+        }
+
+        wp_send_json_success( [ 'quest_id' => $quest_id, 'status' => 'draft' ] );
+    }
+
+    // ── WP sync helpers ───────────────────────────────────────────────────────
+
+    private static function sync_trial_to_wp( string $package_id ): void {
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_trial_packages';
+
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+        $admin_ids  = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        $token      = ! empty( $admin_ids ) ? Knowly_JWT::encode( (int) $admin_ids[0] ) : get_option( 'knowly_railway_api_key', '' );
+
+        $response = wp_remote_get( $endpoint . '/api/v1/trial-editor/' . rawurlencode( $package_id ), [
+            'timeout' => 15,
+            'headers' => [
+                'Authorization'    => 'Bearer ' . $token,
+                'X-AEP-Server-Key' => $server_key,
+            ],
+        ] );
+
+        if ( is_wp_error( $response ) ) return;
+
+        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( empty( $data['package'] ) ) return;
+
+        $pkg  = $data['package'];
+        $meta = $pkg['meta'] ?? [];
+        $now  = current_time( 'mysql', true );
+
+        $row = [
+            'package_id'   => $package_id,
+            'curriculum'   => $meta['curriculum'] ?? 'tt_primary',
+            'level'        => $meta['level']      ?? '',
+            'period'       => $meta['period']     ?? null,
+            'subject'      => $meta['subject']    ?? '',
+            'difficulty'   => $meta['difficulty'] ?? null,
+            'trial_type'   => $meta['trial_type'] ?? 'practice',
+            'topic'        => $meta['topic']      ?? null,
+            'questions'    => isset( $pkg['questions'] )    ? wp_json_encode( $pkg['questions'] )    : null,
+            'answer_sheet' => isset( $pkg['answer_sheet'] ) ? wp_json_encode( $pkg['answer_sheet'] ) : null,
+            'meta'         => $meta                         ? wp_json_encode( $meta )                : null,
+            'status'       => $data['status']     ?? 'pending_review',
+            'synced_at'    => $now,
+            'updated_at'   => $now,
+        ];
+
+        $exists = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE package_id = %s", $package_id ) );
+        if ( $exists ) {
+            $wpdb->update( $table, $row, [ 'package_id' => $package_id ] );
+        } else {
+            $row['created_at'] = $now;
+            $wpdb->insert( $table, $row );
+        }
+    }
+
+    private static function sync_quest_to_wp( string $quest_id ): void {
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_quests';
+
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+        $admin_ids  = get_users( [ 'role' => 'administrator', 'number' => 1, 'fields' => 'ID' ] );
+        $token      = ! empty( $admin_ids ) ? Knowly_JWT::encode( (int) $admin_ids[0] ) : get_option( 'knowly_railway_api_key', '' );
+
+        $response = wp_remote_get( $endpoint . '/api/v1/quest/editor/' . rawurlencode( $quest_id ), [
+            'timeout' => 15,
+            'headers' => [
+                'Authorization'    => 'Bearer ' . $token,
+                'X-AEP-Server-Key' => $server_key,
+            ],
+        ] );
+
+        if ( is_wp_error( $response ) ) return;
+
+        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( empty( $data ) ) return;
+
+        $now = current_time( 'mysql', true );
+        $row = [
+            'quest_id'         => $quest_id,
+            'variant'          => 'student',
+            'curriculum'       => $data['curriculum']   ?? 'tt_primary',
+            'level'            => $data['level']        ?? '',
+            'period'           => $data['period']       ?? null,
+            'subject'          => $data['subject']      ?? '',
+            'topic'            => $data['topic']        ?? null,
+            'module_number'    => isset( $data['module_number'] ) ? (int) $data['module_number'] : null,
+            'module_title'     => $data['module_title'] ?? null,
+            'objectives'       => isset( $data['objectives'] ) ? wp_json_encode( $data['objectives'] ) : null,
+            'content'          => isset( $data['content'] )    ? wp_json_encode( $data['content'] )    : null,
+            'status'           => $data['status']       ?? 'draft',
+            'railway_quest_id' => $quest_id,
+            'generated_at'     => ! empty( $data['generated_at'] ) ? gmdate( 'Y-m-d H:i:s', strtotime( $data['generated_at'] ) ) : $now,
+            'approved_at'      => ! empty( $data['approved_at'] )  ? gmdate( 'Y-m-d H:i:s', strtotime( $data['approved_at'] ) )  : null,
+            'updated_at'       => $now,
+        ];
+
+        $exists = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE quest_id = %s AND variant = 'student'", $quest_id ) );
+        if ( $exists ) {
+            $wpdb->update( $table, $row, [ 'quest_id' => $quest_id, 'variant' => 'student' ] );
+        } else {
+            $row['created_at'] = $now;
+            $wpdb->insert( $table, $row );
+        }
     }
 
     public static function render(): void {
@@ -71,10 +350,12 @@ class Knowly_Admin_Editor {
 
         <script>
         var KnowlyEditor = {
-            restBase:   <?= wp_json_encode( $rest_base ) ?>,
-            nonce:      <?= wp_json_encode( $rest_nonce ) ?>,
-            taxonomy:   <?= wp_json_encode( $curriculum_config ) ?>,
-            tab:        <?= wp_json_encode( $tab ) ?>
+            restBase:    <?= wp_json_encode( $rest_base ) ?>,
+            nonce:       <?= wp_json_encode( $rest_nonce ) ?>,
+            taxonomy:    <?= wp_json_encode( $curriculum_config ) ?>,
+            tab:         <?= wp_json_encode( $tab ) ?>,
+            ajaxUrl:     <?= wp_json_encode( admin_url( 'admin-ajax.php' ) ) ?>,
+            ajaxNonce:   <?= wp_json_encode( wp_create_nonce( 'knowly_import' ) ) ?>
         };
         </script>
         <?php
@@ -232,8 +513,9 @@ class Knowly_Admin_Editor {
                     </select>
                     <button class="button" id="trial-filter-btn">Filter</button>
                 </div>
-                <div>
+                <div style="display:flex;gap:8px;">
                     <button class="button button-primary" id="trial-generate-btn">+ Generate</button>
+                    <button class="button" id="trial-import-btn">&#8679; Import JSON</button>
                 </div>
             </div>
 
@@ -344,6 +626,32 @@ class Knowly_Admin_Editor {
                 </div>
             </div>
         </div>
+
+        <!-- Trial Import Modal -->
+        <div id="trial-import-modal" class="knowly-modal" style="display:none;">
+            <div class="knowly-modal-content knowly-modal-wide">
+                <div class="knowly-modal-header">
+                    <h2>Import Trial Package</h2>
+                    <button class="knowly-modal-close" data-modal="trial-import-modal">&times;</button>
+                </div>
+                <div class="knowly-modal-body">
+                    <p style="margin-bottom:12px;color:#555;">Paste or upload a Trial JSON file. The package must include <code>meta</code> (with <code>level</code> and <code>subject</code>), <code>questions</code>, and <code>answer_sheet</code>. The package will be imported as <strong>pending_review</strong>.</p>
+                    <div class="knowly-form-row">
+                        <label>Upload .json file</label>
+                        <input type="file" id="trial-import-file" accept=".json" style="display:block;margin-top:4px;">
+                    </div>
+                    <div class="knowly-form-row">
+                        <label>Or paste JSON</label>
+                        <textarea id="trial-import-json" class="knowly-form-textarea" rows="14" placeholder='{ "package_id": "...", "meta": { "level": "...", "subject": "..." }, "questions": [...], "answer_sheet": [...] }'></textarea>
+                    </div>
+                </div>
+                <div class="knowly-modal-footer">
+                    <button class="button button-primary" id="trial-import-confirm-btn">Import</button>
+                    <button class="button knowly-modal-close" data-modal="trial-import-modal">Cancel</button>
+                    <span id="trial-import-status" class="knowly-inline-status"></span>
+                </div>
+            </div>
+        </div>
         <?php
     }
 
@@ -373,8 +681,9 @@ class Knowly_Admin_Editor {
                     </select>
                     <button class="button" id="quest-filter-btn">Filter</button>
                 </div>
-                <div>
+                <div style="display:flex;gap:8px;">
                     <button class="button button-primary" id="quest-generate-btn">+ Generate</button>
+                    <button class="button" id="quest-import-btn">&#8679; Import JSON</button>
                 </div>
             </div>
 
@@ -483,6 +792,58 @@ class Knowly_Admin_Editor {
                     <button class="button button-primary knowly-danger-btn" id="quest-delete-confirm-btn">Yes, Delete</button>
                     <button class="button knowly-modal-close" data-modal="quest-delete-modal">Cancel</button>
                     <span id="quest-delete-status" class="knowly-inline-status"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quest Import Modal -->
+        <div id="quest-import-modal" class="knowly-modal" style="display:none;">
+            <div class="knowly-modal-content knowly-modal-wide">
+                <div class="knowly-modal-header">
+                    <h2>Import Quest</h2>
+                    <button class="knowly-modal-close" data-modal="quest-import-modal">&times;</button>
+                </div>
+                <div class="knowly-modal-body">
+                    <p style="margin-bottom:12px;color:#555;">Paste or upload a Quest JSON file. The JSON must contain a <code>sections</code> array. Fill in the quest metadata below — it is not included in the JSON format. The quest will be imported as <strong>draft</strong>.</p>
+                    <div class="knowly-form-row">
+                        <label>Upload .json file</label>
+                        <input type="file" id="quest-import-file" accept=".json" style="display:block;margin-top:4px;">
+                    </div>
+                    <div class="knowly-form-row">
+                        <label>Or paste JSON</label>
+                        <textarea id="quest-import-json" class="knowly-form-textarea" rows="10" placeholder='{ "sections": [ { "title": "...", "section_number": 1, "explanation": [...] } ] }'></textarea>
+                    </div>
+                    <hr style="margin:16px 0;border:none;border-top:1px solid #ddd;">
+                    <p style="font-weight:600;margin-bottom:8px;">Quest Metadata</p>
+                    <div class="knowly-form-row">
+                        <label>Curriculum</label>
+                        <select id="qi-curriculum" class="knowly-form-select">
+                            <?php foreach ( $taxonomy as $key => $cfg ) : ?>
+                            <option value="<?= esc_attr( $key ) ?>"><?= esc_html( $cfg['display_name'] ?? $key ) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="knowly-form-row">
+                        <label>Level</label>
+                        <select id="qi-level" class="knowly-form-select"><option value="">Select Level</option></select>
+                    </div>
+                    <div class="knowly-form-row" id="qi-period-row">
+                        <label>Period</label>
+                        <select id="qi-period" class="knowly-form-select"><option value="">N/A (Capstone)</option></select>
+                    </div>
+                    <div class="knowly-form-row">
+                        <label>Subject</label>
+                        <select id="qi-subject" class="knowly-form-select"><option value="">Select Subject</option></select>
+                    </div>
+                    <div class="knowly-form-row">
+                        <label>Topic / Module Title <span class="knowly-optional">(optional)</span></label>
+                        <input type="text" id="qi-topic" class="knowly-form-input" placeholder="e.g. Fractions">
+                    </div>
+                </div>
+                <div class="knowly-modal-footer">
+                    <button class="button button-primary" id="quest-import-confirm-btn">Import</button>
+                    <button class="button knowly-modal-close" data-modal="quest-import-modal">Cancel</button>
+                    <span id="quest-import-status" class="knowly-inline-status"></span>
                 </div>
             </div>
         </div>

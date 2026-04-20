@@ -1168,7 +1168,11 @@ class Knowly_Admin_Members {
 
         if ( $type === 'quests' ) {
             delete_user_meta( $child_id, 'knowly_earned_badges' );
-            $deleted = 1;
+            $deleted = (int) $wpdb->delete(
+                $wpdb->prefix . 'knowly_quest_sessions',
+                [ 'child_id' => $child_id ],
+                [ '%d' ]
+            );
         } else {
             $deleted = (int) $wpdb->delete(
                 $wpdb->prefix . 'knowly_exam_sessions',

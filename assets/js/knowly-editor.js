@@ -14,10 +14,12 @@
 
     if (typeof KnowlyEditor === 'undefined') return;
 
-    const BASE    = KnowlyEditor.restBase;    // …/wp-json/knowly/v1/editor
-    const NONCE   = KnowlyEditor.nonce;
-    const TAX     = KnowlyEditor.taxonomy;
-    const ACTIVE  = KnowlyEditor.tab;
+    const BASE       = KnowlyEditor.restBase;    // …/wp-json/knowly/v1/editor
+    const NONCE      = KnowlyEditor.nonce;
+    const TAX        = KnowlyEditor.taxonomy;
+    const ACTIVE     = KnowlyEditor.tab;
+    const AJAX_URL   = KnowlyEditor.ajaxUrl;
+    const AJAX_NONCE = KnowlyEditor.ajaxNonce;
 
     // ── REST helper ───────────────────────────────────────────────────────────
 
@@ -667,6 +669,56 @@
             }
         });
 
+        // ── Trial Import ──────────────────────────────────────────────────────
+
+        document.getElementById('trial-import-btn')?.addEventListener('click', () => {
+            document.getElementById('trial-import-json').value = '';
+            document.getElementById('trial-import-file').value = '';
+            setStatus('trial-import-status', '', '');
+            openModal('trial-import-modal');
+        });
+
+        // File upload → fills textarea
+        document.getElementById('trial-import-file')?.addEventListener('change', function () {
+            const file = this.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = e => { document.getElementById('trial-import-json').value = e.target.result; };
+            reader.readAsText(file);
+        });
+
+        document.getElementById('trial-import-confirm-btn')?.addEventListener('click', async () => {
+            const raw = document.getElementById('trial-import-json').value.trim();
+            if (!raw) {
+                setStatus('trial-import-status', 'Paste JSON or upload a file first.', 'error');
+                return;
+            }
+
+            // Client-side parse check before sending
+            try { JSON.parse(raw); } catch (e) {
+                setStatus('trial-import-status', 'Invalid JSON: ' + e.message, 'error');
+                return;
+            }
+
+            setStatus('trial-import-status', 'Importing…', 'loading');
+            try {
+                const form = new URLSearchParams();
+                form.append('action', 'knowly_import_trial');
+                form.append('nonce',  AJAX_NONCE);
+                form.append('package_data', raw);
+
+                const res  = await fetch(AJAX_URL, { method: 'POST', body: form });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.data?.message || 'Import failed.');
+
+                closeModal('trial-import-modal');
+                setStatus('trial-status-bar', `Trial imported (${data.data.package_id}) — pending review.`, 'ok');
+                loadTrials();
+            } catch (err) {
+                setStatus('trial-import-status', err.message, 'error');
+            }
+        });
+
         loadTrials();
     }
 
@@ -989,6 +1041,90 @@
                 loadQuests();
             } catch (err) {
                 setStatus('qg-status', err.message, 'error');
+            }
+        });
+
+        // ── Quest Import ──────────────────────────────────────────────────────
+
+        document.getElementById('quest-import-btn')?.addEventListener('click', () => {
+            document.getElementById('quest-import-json').value = '';
+            document.getElementById('quest-import-file').value = '';
+            setStatus('quest-import-status', '', '');
+            openModal('quest-import-modal');
+
+            // Populate metadata dropdowns
+            const qiCurr  = document.getElementById('qi-curriculum');
+            const qiLevel = document.getElementById('qi-level');
+            const qiPer   = document.getElementById('qi-period');
+            const qiSubj  = document.getElementById('qi-subject');
+
+            function populateQI() {
+                const c = qiCurr.value;
+                populateSelect(qiLevel, getLevels(c),   'value', 'label', 'Select Level');
+                populateSelect(qiPer,   getPeriods(c),  'value', 'label', 'N/A (Capstone)');
+                populateSelect(qiSubj,  getSubjects(c), 'value', 'label', 'Select Subject');
+            }
+            function onQILevel() {
+                const cap = isCapstone(qiCurr.value, qiLevel.value);
+                document.getElementById('qi-period-row').style.display = cap ? 'none' : '';
+            }
+            qiCurr.removeEventListener('change', populateQI);
+            qiCurr.addEventListener('change', populateQI);
+            qiLevel.removeEventListener('change', onQILevel);
+            qiLevel.addEventListener('change', onQILevel);
+            populateQI();
+        });
+
+        // File upload → fills textarea
+        document.getElementById('quest-import-file')?.addEventListener('change', function () {
+            const file = this.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = e => { document.getElementById('quest-import-json').value = e.target.result; };
+            reader.readAsText(file);
+        });
+
+        document.getElementById('quest-import-confirm-btn')?.addEventListener('click', async () => {
+            const raw = document.getElementById('quest-import-json').value.trim();
+            if (!raw) {
+                setStatus('quest-import-status', 'Paste JSON or upload a file first.', 'error');
+                return;
+            }
+
+            // Client-side parse check before sending
+            try { JSON.parse(raw); } catch (e) {
+                setStatus('quest-import-status', 'Invalid JSON: ' + e.message, 'error');
+                return;
+            }
+
+            const level   = document.getElementById('qi-level').value;
+            const subject = document.getElementById('qi-subject').value;
+            if (!level || !subject) {
+                setStatus('quest-import-status', 'Level and Subject are required.', 'error');
+                return;
+            }
+
+            setStatus('quest-import-status', 'Importing…', 'loading');
+            try {
+                const form = new URLSearchParams();
+                form.append('action',     'knowly_import_quest');
+                form.append('nonce',      AJAX_NONCE);
+                form.append('content',    raw);
+                form.append('curriculum', document.getElementById('qi-curriculum').value || 'tt_primary');
+                form.append('level',      level);
+                form.append('period',     document.getElementById('qi-period').value || '');
+                form.append('subject',    subject);
+                form.append('topic',      document.getElementById('qi-topic').value.trim());
+
+                const res  = await fetch(AJAX_URL, { method: 'POST', body: form });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.data?.message || 'Import failed.');
+
+                closeModal('quest-import-modal');
+                setStatus('quest-status-bar', `Quest imported (${data.data.quest_id}) — review and approve it in the table.`, 'ok');
+                loadQuests();
+            } catch (err) {
+                setStatus('quest-import-status', err.message, 'error');
             }
         });
 

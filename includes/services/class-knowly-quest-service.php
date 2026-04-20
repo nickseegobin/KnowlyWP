@@ -135,32 +135,32 @@ class Knowly_Quest_Service {
     // ── Start ─────────────────────────────────────────────────────────────────
 
     /**
-     * Start a Quest session.
+     * Start a Quest session — fully WP-local, no Railway dependency.
      *
-     *  1. Check if first attempt (Railway GET /:quest_id/completed)
+     *  1. Check prior completion in wp_knowly_quest_sessions
      *  2. Determine gem cost (0 if assignment)
      *  3. Pre-check gem balance
-     *  4. Call Railway POST /quest/start
+     *  4. Insert local session row
      *  5. Deduct gems
      *
      * @param  int    $child_id
      * @param  string $quest_id
      * @param  string $source    'direct' | 'assignment'
-     * @return array|WP_Error    { session_id, is_first_attempt, balance_after }
+     * @return array|WP_Error    { session_id, is_first_attempt, gem_cost, balance_after }
      */
     public static function start( int $child_id, string $quest_id, string $source = 'direct' ): array|WP_Error {
+        global $wpdb;
         $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
 
         // ── Determine gem cost ────────────────────────────────────────────────
         if ( $source === 'assignment' ) {
-            $gem_cost = 0;
+            $gem_cost        = 0;
+            $is_first_attempt = true;
         } else {
-            $completed = self::has_prior_completion( $child_id, $quest_id );
-            if ( is_wp_error( $completed ) ) return $completed;
-
-            $gem_cost = $completed
-                ? self::get_retake_cost( $curriculum )
-                : self::get_first_attempt_cost( $curriculum );
+            $is_first_attempt = ! self::has_prior_completion( $child_id, $quest_id );
+            $gem_cost         = $is_first_attempt
+                ? self::get_first_attempt_cost( $curriculum )
+                : self::get_retake_cost( $curriculum );
         }
 
         // ── Pre-check balance (skip if free) ──────────────────────────────────
@@ -172,20 +172,24 @@ class Knowly_Quest_Service {
             ] );
         }
 
-        // ── Call Railway start ────────────────────────────────────────────────
-        $response = self::railway_post( '/api/v1/quest/start', [
-            'user_id'  => (string) $child_id,
-            'quest_id' => $quest_id,
-            'source'   => $source,
-        ] );
+        // ── Create local session row ──────────────────────────────────────────
+        $quest_session_id = 'qs_' . strtolower( bin2hex( random_bytes( 12 ) ) );
 
-        if ( is_wp_error( $response ) ) return $response;
+        $wpdb->insert(
+            $wpdb->prefix . 'knowly_quest_sessions',
+            [
+                'quest_session_id' => $quest_session_id,
+                'child_id'         => $child_id,
+                'quest_id'         => $quest_id,
+                'source'           => in_array( $source, [ 'direct', 'assignment' ], true ) ? $source : 'direct',
+                'state'            => 'active',
+                'started_at'       => current_time( 'mysql', true ),
+            ],
+            [ '%s', '%d', '%s', '%s', '%s', '%s' ]
+        );
 
-        $session_id       = $response['session_id']       ?? null;
-        $is_first_attempt = $response['is_first_attempt'] ?? true;
-
-        if ( ! $session_id ) {
-            return new WP_Error( 'knowly_railway_error', 'Quest service did not return a session ID.', [ 'status' => 503 ] );
+        if ( ! $wpdb->insert_id ) {
+            return new WP_Error( 'knowly_db_error', 'Failed to create quest session.', [ 'status' => 500 ] );
         }
 
         // ── Deduct gems ───────────────────────────────────────────────────────
@@ -197,24 +201,24 @@ class Knowly_Quest_Service {
                 $gem_cost,
                 'spent',
                 $curriculum,
-                $session_id,
+                $quest_session_id,
                 'Quest started: ' . $quest_id
             );
             if ( is_wp_error( $deduction ) ) return $deduction;
             $balance_after = $deduction['balance_after'];
         }
 
-        Knowly_Debug::log( 'quest.start', 'Quest session started', [
+        Knowly_Debug::log( 'quest.start', 'Quest session started (local)', [
             'child_id'         => $child_id,
             'quest_id'         => $quest_id,
-            'session_id'       => $session_id,
+            'session_id'       => $quest_session_id,
             'gem_cost'         => $gem_cost,
             'is_first_attempt' => $is_first_attempt,
             'source'           => $source,
         ], $child_id, 'info' );
 
         return [
-            'session_id'       => $session_id,
+            'session_id'       => $quest_session_id,
             'is_first_attempt' => $is_first_attempt,
             'gem_cost'         => $gem_cost,
             'balance_after'    => $balance_after,
@@ -224,72 +228,114 @@ class Knowly_Quest_Service {
     // ── Section Complete ──────────────────────────────────────────────────────
 
     /**
-     * Proxy a section completion to Railway.
+     * Section completion is tracked client-side only.
+     * This endpoint is a no-op kept for API compatibility.
      *
-     * @return array|WP_Error  { sections_completed, quest_complete, next_section_index }
+     * @return array|WP_Error
      */
     public static function section_complete( string $session_id, string $section_id, int $child_id ): array|WP_Error {
-        return self::railway_post( '/api/v1/quest/section-complete', [
-            'session_id' => $session_id,
-            'section_id' => $section_id,
-            'user_id'    => (string) $child_id,
-        ] );
+        return [ 'recorded' => true, 'session_id' => $session_id, 'section_id' => $section_id ];
     }
 
     // ── Complete ──────────────────────────────────────────────────────────────
 
     /**
-     * Mark a Quest session complete.
+     * Mark a Quest session complete — fully WP-local, no Railway dependency.
      *
-     * If Railway returns badge_awarded: true, write the badge to the child's
-     * knowly_earned_badges user meta via Knowly_Badge_Service::award().
+     * Awards a badge on first completion via Knowly_Badge_Service::award().
      *
-     * @return array|WP_Error  { completed, badge_awarded, quest_id, badge? }
+     * @param  string $session_id   The quest_session_id string (qs_…)
+     * @param  int    $child_id
+     * @return array|WP_Error  { completed, badge_earned, badge_name, is_first_completion, gems_awarded }
      */
     public static function complete( string $session_id, int $child_id ): array|WP_Error {
-        $response = self::railway_post( '/api/v1/quest/complete', [
-            'session_id' => $session_id,
-            'user_id'    => (string) $child_id,
-        ] );
+        global $wpdb;
 
-        if ( is_wp_error( $response ) ) return $response;
+        // Load and verify the session
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}knowly_quest_sessions
+                 WHERE quest_session_id = %s AND child_id = %d",
+                $session_id,
+                $child_id
+            ),
+            ARRAY_A
+        );
 
-        $badge_awarded = ! empty( $response['badge_awarded'] );
-        $quest_id      = $response['quest_id'] ?? '';
+        if ( ! $row ) {
+            return new WP_Error( 'knowly_not_found', 'Quest session not found.', [ 'status' => 404 ] );
+        }
 
-        $result = [
-            'completed'    => $response['completed']     ?? ( $response['already_complete'] ?? false ),
-            'badge_awarded' => $badge_awarded,
-            'quest_id'     => $quest_id,
-        ];
+        $quest_id = $row['quest_id'];
 
-        // Write badge to WP user meta if awarded
-        if ( $badge_awarded && $quest_id ) {
+        // Mark completed (idempotent)
+        if ( $row['state'] !== 'completed' ) {
+            $wpdb->update(
+                $wpdb->prefix . 'knowly_quest_sessions',
+                [
+                    'state'        => 'completed',
+                    'completed_at' => current_time( 'mysql', true ),
+                ],
+                [ 'quest_session_id' => $session_id ],
+                [ '%s', '%s' ],
+                [ '%s' ]
+            );
+        }
+
+        // First completion = this was the only (or first) completed session for this quest
+        $prior_count = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_quest_sessions
+             WHERE child_id = %d AND quest_id = %s AND state = 'completed' AND quest_session_id != %s",
+            $child_id,
+            $quest_id,
+            $session_id
+        ) );
+        $is_first_completion = ( $prior_count === 0 );
+
+        // Award badge on first completion
+        $badge_earned = false;
+        $badge_name   = null;
+
+        if ( $is_first_completion ) {
             $badge_result = Knowly_Badge_Service::award( $child_id, $quest_id );
             if ( ! is_wp_error( $badge_result ) ) {
-                $result['badge'] = $badge_result;
+                $badge_earned = true;
+                // badge_result contains badge_id — look up the title for display
+                $badge_name = ! empty( $badge_result['badge_id'] )
+                    ? ( get_the_title( (int) $badge_result['badge_id'] ) ?: $quest_id )
+                    : $quest_id;
             }
         }
 
-        Knowly_Debug::log( 'quest.complete', 'Quest session completed', [
-            'child_id'     => $child_id,
-            'session_id'   => $session_id,
-            'quest_id'     => $quest_id,
-            'badge_awarded' => $badge_awarded,
+        Knowly_Debug::log( 'quest.complete', 'Quest session completed (local)', [
+            'child_id'           => $child_id,
+            'session_id'         => $session_id,
+            'quest_id'           => $quest_id,
+            'is_first_completion' => $is_first_completion,
+            'badge_earned'       => $badge_earned,
         ], $child_id, 'info' );
 
-        return $result;
+        return [
+            'completed'          => true,
+            'badge_earned'       => $badge_earned,
+            'badge_name'         => $badge_name,
+            'is_first_completion' => $is_first_completion,
+            'gems_awarded'       => 0,
+            'quest_id'           => $quest_id,
+        ];
     }
 
     // ── Prior Completion Check ────────────────────────────────────────────────
 
-    private static function has_prior_completion( int $child_id, string $quest_id ): bool|WP_Error {
-        $response = self::railway_get(
-            '/api/v1/quest/' . rawurlencode( $quest_id ) . '/completed',
-            [ 'user_id' => (string) $child_id ]
-        );
-        if ( is_wp_error( $response ) ) return $response;
-        return ! empty( $response['completed'] );
+    private static function has_prior_completion( int $child_id, string $quest_id ): bool {
+        global $wpdb;
+        $count = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_quest_sessions
+             WHERE child_id = %d AND quest_id = %s AND state = 'completed'",
+            $child_id,
+            $quest_id
+        ) );
+        return $count > 0;
     }
 
     // ── Railway HTTP Helpers ──────────────────────────────────────────────────

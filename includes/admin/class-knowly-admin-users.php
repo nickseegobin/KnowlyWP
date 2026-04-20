@@ -491,7 +491,10 @@ class Knowly_Admin_Users {
                 "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_sessions WHERE child_id = %d", $child->ID
             ) );
             $earned_badges = json_decode( get_user_meta( $child->ID, 'knowly_earned_badges', true ) ?: '[]', true );
-            $quest_count   = is_array( $earned_badges ) ? count( $earned_badges ) : 0;
+            $quest_count   = (int) $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_quest_sessions WHERE child_id = %d AND state = 'completed'",
+                $child->ID
+            ) );
         ?>
         <div class="knowly-child-entry"
              style="border:1px solid #c3c4c7;border-radius:4px;margin-bottom:6px;background:#fff;"
@@ -625,19 +628,38 @@ class Knowly_Admin_Users {
                 <?php endif; ?>
 
                 <?php if ( $quest_count > 0 ) : ?>
+                <?php
+                $quest_sessions = $wpdb->get_results( $wpdb->prepare(
+                    "SELECT quest_session_id, quest_id, source, state, started_at, completed_at
+                     FROM {$wpdb->prefix}knowly_quest_sessions
+                     WHERE child_id = %d ORDER BY started_at DESC LIMIT 50",
+                    $child->ID
+                ), ARRAY_A ) ?: [];
+                // Build a badge lookup map for quick display
+                $badge_map = [];
+                if ( is_array( $earned_badges ) ) {
+                    foreach ( $earned_badges as $b ) {
+                        $badge_map[ $b['quest_id'] ?? '' ] = $b;
+                    }
+                }
+                ?>
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                    <strong style="font-size:13px;">Quest Badges (<?= esc_html( $quest_count ) ?>)</strong>
+                    <strong style="font-size:13px;">Quest History (<?= esc_html( $quest_count ) ?>)</strong>
                     <button class="button button-small" style="color:#dc2626;border-color:#dc2626;"
                         onclick="knowlyChildren.deleteHistory(<?= (int) $child->ID ?>, 'quests', this)">Remove All Quests</button>
                 </div>
                 <table class="knowly-table" style="font-size:12px;margin-bottom:12px;">
-                    <thead><tr><th>Quest ID</th><th>Badge ID</th><th>Awarded</th></tr></thead>
+                    <thead><tr><th>Quest ID</th><th>Source</th><th>Status</th><th>Badge</th><th>Date</th></tr></thead>
                     <tbody>
-                    <?php foreach ( $earned_badges as $badge ) : ?>
+                    <?php foreach ( $quest_sessions as $qs ) :
+                        $has_badge = isset( $badge_map[ $qs['quest_id'] ] );
+                    ?>
                     <tr>
-                        <td><?= esc_html( $badge['quest_id'] ?? '—' ) ?></td>
-                        <td><?= esc_html( $badge['badge_id'] ?? '—' ) ?></td>
-                        <td style="color:#888;"><?= esc_html( substr( $badge['awarded_at'] ?? '', 0, 10 ) ) ?></td>
+                        <td><?= esc_html( $qs['quest_id'] ) ?></td>
+                        <td><?= esc_html( ucfirst( $qs['source'] ) ) ?></td>
+                        <td><?= esc_html( ucfirst( $qs['state'] ) ) ?></td>
+                        <td><?= $has_badge ? '<span style="color:#16a34a;font-weight:600;">✓ Earned</span>' : '—' ?></td>
+                        <td style="color:#888;"><?= esc_html( substr( $qs['completed_at'] ?? $qs['started_at'], 0, 10 ) ) ?></td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>

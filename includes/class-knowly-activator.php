@@ -47,6 +47,8 @@ class Knowly_Activator {
 
     private static function run_migrations(): void {
         global $wpdb;
+        $charset = $wpdb->get_charset_collate();
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
         // v1.7.1 — add trial_type column to knowly_exam_sessions if missing
         $col = $wpdb->get_results( $wpdb->prepare(
@@ -59,6 +61,68 @@ class Knowly_Activator {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_exam_sessions
                 ADD COLUMN trial_type VARCHAR(50) NOT NULL DEFAULT 'practice'
                 AFTER difficulty" );
+        }
+
+        // v1.9.4 — add source + task_id to knowly_exam_sessions for analytics segmentation
+        $col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'source'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_exam_sessions'
+        ) );
+        if ( empty( $col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_exam_sessions
+                ADD COLUMN source ENUM('self','teacher_assigned') NOT NULL DEFAULT 'self'
+                AFTER trial_type" );
+        }
+
+        $col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'task_id'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_exam_sessions'
+        ) );
+        if ( empty( $col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_exam_sessions
+                ADD COLUMN task_id BIGINT UNSIGNED NULL DEFAULT NULL
+                AFTER source" );
+        }
+
+        // v1.9.4b — add answer_sheet to knowly_exam_sessions for self-contained scoring
+        $col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'answer_sheet'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_exam_sessions'
+        ) );
+        if ( empty( $col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_exam_sessions
+                ADD COLUMN answer_sheet LONGTEXT NULL DEFAULT NULL
+                AFTER task_id" );
+        }
+
+        // v1.9.6 — create quest_sessions table if missing (new WP-local session store)
+        $tbl = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_quest_sessions'
+        ) );
+        if ( ! $tbl ) {
+            $wpdb->query( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_quest_sessions (
+                session_id       BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                quest_session_id VARCHAR(64)     NOT NULL,
+                child_id         BIGINT UNSIGNED NOT NULL,
+                quest_id         VARCHAR(200)    NOT NULL,
+                source           ENUM('direct','assignment') NOT NULL DEFAULT 'direct',
+                state            ENUM('active','completed')  NOT NULL DEFAULT 'active',
+                started_at       DATETIME        NOT NULL,
+                completed_at     DATETIME                 DEFAULT NULL,
+                PRIMARY KEY      (session_id),
+                UNIQUE KEY       uq_quest_session (quest_session_id),
+                KEY              idx_child (child_id),
+                KEY              idx_quest (quest_id),
+                KEY              idx_state (state)
+            ) {$charset};" );
         }
 
         // v1.7.2 — add type column to knowly_tasks if missing
@@ -165,6 +229,9 @@ class Knowly_Activator {
             period              VARCHAR(20)     NOT NULL DEFAULT '',
             difficulty          ENUM('easy','medium','hard') NOT NULL DEFAULT 'medium',
             trial_type          VARCHAR(50)      NOT NULL DEFAULT 'practice',
+            source              ENUM('self','teacher_assigned') NOT NULL DEFAULT 'self',
+            task_id             BIGINT UNSIGNED           DEFAULT NULL,
+            answer_sheet        LONGTEXT                  DEFAULT NULL,
             state               ENUM('active','completed','cancelled') NOT NULL DEFAULT 'active',
             score               INT UNSIGNED             DEFAULT NULL,
             total               INT UNSIGNED             DEFAULT NULL,
@@ -433,7 +500,24 @@ class Knowly_Activator {
             KEY idx_slot (level, period, subject, difficulty, trial_type, status)
         ) {$charset};" );
 
-        // ── 20. Debug Log ─────────────────────────────────────────────────────────
+        // ── 20. Quest Sessions (WP-local — no Railway dependency) ───────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_quest_sessions (
+            session_id       BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            quest_session_id VARCHAR(64)     NOT NULL,
+            child_id         BIGINT UNSIGNED NOT NULL,
+            quest_id         VARCHAR(200)    NOT NULL,
+            source           ENUM('direct','assignment') NOT NULL DEFAULT 'direct',
+            state            ENUM('active','completed')  NOT NULL DEFAULT 'active',
+            started_at       DATETIME        NOT NULL,
+            completed_at     DATETIME                 DEFAULT NULL,
+            PRIMARY KEY      (session_id),
+            UNIQUE KEY       uq_quest_session (quest_session_id),
+            KEY              idx_child (child_id),
+            KEY              idx_quest (quest_id),
+            KEY              idx_state (state)
+        ) {$charset};" );
+
+        // ── 21. Debug Log ─────────────────────────────────────────────────────────
         dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_debug_log (
             log_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             level      ENUM('debug','info','warning','error') NOT NULL DEFAULT 'info',

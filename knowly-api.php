@@ -14,15 +14,15 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ────────────────────────────────────────────────────────────────
-define( 'KNOWLY_VERSION',            '1.9.3' );
-define( 'KNOWLY_DB_VERSION',         '1.9.3' );
+define( 'KNOWLY_VERSION',            '1.9.6' );
+define( 'KNOWLY_DB_VERSION',         '1.9.6' );
 define( 'KNOWLY_PLUGIN_FILE',        __FILE__ );
 define( 'KNOWLY_PLUGIN_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'KNOWLY_PLUGIN_URL',         plugin_dir_url( __FILE__ ) );
 define( 'KNOWLY_REST_NAMESPACE',     'knowly/v1' );
 
 // Children
-define( 'KNOWLY_MAX_CHILDREN',       3 );
+define( 'KNOWLY_MAX_CHILDREN',       4 );
 
 // PIN
 define( 'KNOWLY_PIN_MAX_ATTEMPTS',   5 );

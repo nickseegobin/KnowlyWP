@@ -72,6 +72,14 @@ class Knowly_Editor_API extends Knowly_API_Base {
             ],
         ] );
 
+        register_rest_route( $this->namespace, '/editor/trials/import', [
+            [
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => [ $this, 'import_trial' ],
+                'permission_callback' => [ $this, 'require_admin' ],
+            ],
+        ] );
+
         register_rest_route( $this->namespace, '/editor/trials/(?P<package_id>[a-zA-Z0-9_\-]+)', [
             [
                 'methods'             => WP_REST_Server::READABLE,
@@ -111,6 +119,14 @@ class Knowly_Editor_API extends Knowly_API_Base {
             [
                 'methods'             => WP_REST_Server::CREATABLE,
                 'callback'            => [ $this, 'generate_quest' ],
+                'permission_callback' => [ $this, 'require_admin' ],
+            ],
+        ] );
+
+        register_rest_route( $this->namespace, '/editor/quests/import', [
+            [
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => [ $this, 'import_quest' ],
                 'permission_callback' => [ $this, 'require_admin' ],
             ],
         ] );
@@ -484,6 +500,76 @@ class Knowly_Editor_API extends Knowly_API_Base {
         return new WP_REST_Response( $result, 201 );
     }
 
+    /**
+     * POST /editor/trials/import
+     * Body: { package_data: <full trial JSON object> }
+     *
+     * Validates the trial package format, forwards to Railway /api/v1/editor-save,
+     * and syncs the result to wp_knowly_trial_packages.
+     *
+     * Required fields: meta.level, meta.subject, questions (array), answer_sheet (array)
+     * Optional: package_id (auto-generated if absent), generated_at
+     */
+    public function import_trial( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $package_data = $request->get_param( 'package_data' );
+
+        if ( ! $package_data || ! is_array( $package_data ) ) {
+            return new WP_Error( 'knowly_missing_fields', 'package_data is required and must be a JSON object.', [ 'status' => 422 ] );
+        }
+
+        // Validate meta
+        if ( empty( $package_data['meta'] ) || ! is_array( $package_data['meta'] ) ) {
+            return new WP_Error( 'knowly_invalid_format', 'Missing required field: meta (must include level and subject).', [ 'status' => 422 ] );
+        }
+        $meta = $package_data['meta'];
+        if ( empty( $meta['level'] ) || empty( $meta['subject'] ) ) {
+            return new WP_Error( 'knowly_invalid_format', 'meta.level and meta.subject are required.', [ 'status' => 422 ] );
+        }
+
+        // Validate questions
+        if ( empty( $package_data['questions'] ) || ! is_array( $package_data['questions'] ) ) {
+            return new WP_Error( 'knowly_invalid_format', 'questions must be a non-empty array.', [ 'status' => 422 ] );
+        }
+        $q = $package_data['questions'][0];
+        if ( empty( $q['question_id'] ) || empty( $q['question'] ) || ! isset( $q['options'] ) || empty( $q['correct_answer'] ) ) {
+            return new WP_Error( 'knowly_invalid_format', 'Each question requires question_id, question, options (A/B/C/D), and correct_answer.', [ 'status' => 422 ] );
+        }
+        foreach ( [ 'A', 'B', 'C', 'D' ] as $opt ) {
+            if ( ! array_key_exists( $opt, $q['options'] ) ) {
+                return new WP_Error( 'knowly_invalid_format', "Each question's options must include A, B, C, and D. Missing: {$opt}.", [ 'status' => 422 ] );
+            }
+        }
+
+        // Validate answer_sheet
+        if ( empty( $package_data['answer_sheet'] ) || ! is_array( $package_data['answer_sheet'] ) ) {
+            return new WP_Error( 'knowly_invalid_format', 'answer_sheet must be a non-empty array.', [ 'status' => 422 ] );
+        }
+        $ans = $package_data['answer_sheet'][0];
+        if ( empty( $ans['question_id'] ) || empty( $ans['correct_answer'] ) ) {
+            return new WP_Error( 'knowly_invalid_format', 'Each answer_sheet entry requires question_id and correct_answer.', [ 'status' => 422 ] );
+        }
+
+        // Auto-generate package_id and generated_at if absent
+        if ( empty( $package_data['package_id'] ) ) {
+            $package_data['package_id'] = 'pkg-' . substr( md5( wp_json_encode( $package_data ) . uniqid( '', true ) ), 0, 16 );
+        }
+        if ( empty( $package_data['generated_at'] ) ) {
+            $package_data['generated_at'] = current_time( 'c' );
+        }
+
+        $package_id = sanitize_text_field( $package_data['package_id'] );
+
+        $result = $this->railway_post( '/api/v1/editor-save', $package_data );
+        if ( is_wp_error( $result ) ) {
+            return $result;
+        }
+
+        $this->sync_trial_to_wp( $package_id );
+
+        Knowly_Debug::log( 'editor.import', 'Trial imported via JSON', [ 'package_id' => $package_id ], null, 'info' );
+        return new WP_REST_Response( [ 'package_id' => $package_id, 'status' => 'pending_review' ], 201 );
+    }
+
     /** PATCH /editor/trials/{package_id} */
     public function update_trial( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $package_id   = sanitize_text_field( $request->get_param( 'package_id' ) );
@@ -574,6 +660,74 @@ class Knowly_Editor_API extends Knowly_API_Base {
         $result = $this->railway_post( '/api/v1/quest/generate', $body );
         if ( is_wp_error( $result ) ) return $result;
         return new WP_REST_Response( $result, 201 );
+    }
+
+    /**
+     * POST /editor/quests/import
+     * Body: { content: <quest JSON with sections array>, curriculum, level, period, subject, topic?, module_number?, module_title? }
+     *
+     * Validates the quest content format, forwards to Railway /api/v1/quest/import,
+     * and syncs the result to wp_knowly_quests.
+     *
+     * content may be { sections: [...] } directly or { content: { sections: [...] } }.
+     */
+    public function import_quest( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $content_raw = $request->get_param( 'content' );
+
+        if ( ! $content_raw || ! is_array( $content_raw ) ) {
+            return new WP_Error( 'knowly_missing_fields', 'content is required and must be a JSON object.', [ 'status' => 422 ] );
+        }
+
+        // Accept either { sections: [...] } at root, or { content: { sections: [...] } }
+        if ( isset( $content_raw['sections'] ) ) {
+            $content = $content_raw;
+        } elseif ( isset( $content_raw['content']['sections'] ) ) {
+            $content = $content_raw['content'];
+        } else {
+            return new WP_Error( 'knowly_invalid_format', 'JSON must contain a sections array (either at root or nested under content).', [ 'status' => 422 ] );
+        }
+
+        if ( empty( $content['sections'] ) || ! is_array( $content['sections'] ) ) {
+            return new WP_Error( 'knowly_invalid_format', 'sections must be a non-empty array.', [ 'status' => 422 ] );
+        }
+
+        $section = $content['sections'][0];
+        if ( ! isset( $section['title'] ) ) {
+            return new WP_Error( 'knowly_invalid_format', 'Each section must have a title.', [ 'status' => 422 ] );
+        }
+        if ( ! isset( $section['explanation'] ) || ! is_array( $section['explanation'] ) ) {
+            return new WP_Error( 'knowly_invalid_format', 'Each section must have an explanation array.', [ 'status' => 422 ] );
+        }
+
+        $level   = sanitize_text_field( $request->get_param( 'level' ) ?: '' );
+        $subject = sanitize_text_field( $request->get_param( 'subject' ) ?: '' );
+        if ( ! $level || ! $subject ) {
+            return new WP_Error( 'knowly_missing_fields', 'level and subject are required.', [ 'status' => 422 ] );
+        }
+
+        $body = [
+            'curriculum'    => sanitize_text_field( $request->get_param( 'curriculum' ) ?: 'tt_primary' ),
+            'level'         => $level,
+            'period'        => sanitize_text_field( $request->get_param( 'period' ) ?: '' ) ?: null,
+            'subject'       => $subject,
+            'topic'         => sanitize_text_field( $request->get_param( 'topic' ) ?: '' ) ?: null,
+            'module_number' => $request->get_param( 'module_number' ) !== null ? (int) $request->get_param( 'module_number' ) : null,
+            'module_title'  => sanitize_text_field( $request->get_param( 'module_title' ) ?: '' ) ?: null,
+            'content'       => $content,
+        ];
+
+        $result = $this->railway_post( '/api/v1/quest/import', $body );
+        if ( is_wp_error( $result ) ) {
+            return $result;
+        }
+
+        $quest_id = sanitize_text_field( $result['quest_id'] ?? '' );
+        if ( $quest_id ) {
+            $this->sync_quest_to_wp( $quest_id );
+        }
+
+        Knowly_Debug::log( 'editor.import', 'Quest imported via JSON', [ 'quest_id' => $quest_id ], null, 'info' );
+        return new WP_REST_Response( [ 'quest_id' => $quest_id, 'status' => 'draft' ], 201 );
     }
 
     /** PATCH /editor/quests/{quest_id} — saves edited content (resets to draft) */

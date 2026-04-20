@@ -20,9 +20,10 @@ defined( 'ABSPATH' ) || exit;
 class Knowly_Admin_Analytics {
 
     public static function boot(): void {
-        add_action( 'wp_ajax_knowly_analytics_health',  [ __CLASS__, 'ajax_health' ] );
-        add_action( 'wp_ajax_knowly_analytics_class',   [ __CLASS__, 'ajax_class_analytics' ] );
-        add_action( 'wp_ajax_knowly_analytics_student', [ __CLASS__, 'ajax_student_analytics' ] );
+        add_action( 'wp_ajax_knowly_analytics_health',         [ __CLASS__, 'ajax_health' ] );
+        add_action( 'wp_ajax_knowly_analytics_class',          [ __CLASS__, 'ajax_class_analytics' ] );
+        add_action( 'wp_ajax_knowly_analytics_student',        [ __CLASS__, 'ajax_student_analytics' ] );
+        add_action( 'wp_ajax_knowly_purge_orphaned_students',  [ __CLASS__, 'ajax_purge_orphaned_students' ] );
     }
 
     public static function render(): void {
@@ -481,6 +482,7 @@ class Knowly_Admin_Analytics {
         $sql = "SELECT ch.child_id, ch.display_name, ch.level, ch.period, ch.avatar_index,
                        um.meta_value AS nickname
                 FROM {$wpdb->prefix}knowly_children ch
+                INNER JOIN {$wpdb->users} u ON u.ID = ch.child_id
                 LEFT JOIN {$wpdb->usermeta} um ON um.user_id = ch.child_id AND um.meta_key = 'knowly_nickname'
                 WHERE " . implode( ' AND ', $where ) . "
                 ORDER BY ch.display_name ASC
@@ -526,6 +528,42 @@ class Knowly_Admin_Analytics {
             </form>
         </div>
 
+        <?php
+        // Show orphan count so admin knows cleanup is available
+        $orphan_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_children ch
+             LEFT JOIN {$wpdb->users} u ON u.ID = ch.child_id
+             WHERE u.ID IS NULL"
+        );
+        if ( $orphan_count > 0 ) : ?>
+        <div style="background:#fef9c3;border:1px solid #fef08a;border-radius:4px;padding:10px 14px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+            <span style="color:#854d0e;font-size:13px;">
+                ⚠ <?= esc_html( $orphan_count ) ?> student record<?= $orphan_count !== 1 ? 's' : '' ?> belong to deleted WP users and are hidden from this list.
+            </span>
+            <button id="knowly-purge-orphans" class="button button-small" style="color:#dc2626;border-color:#dc2626;"
+                    data-nonce="<?= esc_attr( wp_create_nonce( 'knowly_admin_nonce' ) ) ?>">
+                Purge Orphaned Data
+            </button>
+        </div>
+        <script>
+        document.getElementById('knowly-purge-orphans').addEventListener('click', function() {
+            if (!confirm('This will permanently delete all Knowly data (sessions, answers, gems, quest history) for users who no longer exist in WordPress. This cannot be undone. Continue?')) return;
+            var btn = this;
+            btn.disabled = true; btn.textContent = 'Purging…';
+            jQuery.post(ajaxurl, {
+                action: 'knowly_purge_orphaned_students',
+                nonce:  btn.dataset.nonce,
+            }, function(res) {
+                if (res.success) {
+                    btn.closest('div').innerHTML = '<span style="color:#16a34a;font-size:13px;">✓ ' + (res.data.message || 'Purge complete.') + ' Reload to refresh the list.</span>';
+                } else {
+                    btn.disabled = false; btn.textContent = 'Purge Orphaned Data';
+                    alert('Error: ' + (res.data?.message || 'Unknown error'));
+                }
+            });
+        });
+        </script>
+        <?php endif; ?>
         <?php if ( empty( $students ) ) : ?>
         <p style="color:#888;">No students found.</p>
         <?php else : ?>
@@ -925,6 +963,63 @@ class Knowly_Admin_Analytics {
         $checks[] = [ 'label' => 'Active classes exist', 'status' => $class_count > 0 ? 'pass' : 'warn', 'detail' => "{$class_count} active class(es)." ];
 
         wp_send_json_success( [ 'checks' => $checks ] );
+    }
+
+    // =========================================================================
+    // AJAX: Purge orphaned student data
+    // =========================================================================
+
+    public static function ajax_purge_orphaned_students(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( [ 'message' => 'Forbidden' ], 403 );
+
+        global $wpdb;
+
+        // Find child IDs that no longer have a matching WP user
+        $orphan_ids = $wpdb->get_col(
+            "SELECT ch.child_id FROM {$wpdb->prefix}knowly_children ch
+             LEFT JOIN {$wpdb->users} u ON u.ID = ch.child_id
+             WHERE u.ID IS NULL"
+        );
+
+        if ( empty( $orphan_ids ) ) {
+            wp_send_json_success( [ 'message' => 'No orphaned records found.' ] );
+        }
+
+        $id_list   = implode( ',', array_map( 'intval', $orphan_ids ) );
+        $count     = count( $orphan_ids );
+        $tables    = [
+            'knowly_exam_answers'    => 'child_id',
+            'knowly_topic_breakdown' => 'child_id',
+            'knowly_exam_sessions'   => 'child_id',
+            'knowly_quest_sessions'  => 'child_id',
+            'knowly_gem_transactions' => 'child_id',
+            'knowly_class_members'   => 'child_id',
+            'knowly_children'        => 'child_id',
+        ];
+
+        foreach ( $tables as $table => $col ) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $wpdb->query( "DELETE FROM {$wpdb->prefix}{$table} WHERE {$col} IN ({$id_list})" );
+        }
+
+        // Clean up WP usermeta for orphan IDs
+        foreach ( $orphan_ids as $orphan_id ) {
+            $meta_keys = $wpdb->get_col( $wpdb->prepare(
+                "SELECT meta_key FROM {$wpdb->usermeta} WHERE user_id = %d AND meta_key LIKE 'knowly_%'",
+                (int) $orphan_id
+            ) );
+            foreach ( $meta_keys as $key ) {
+                delete_user_meta( (int) $orphan_id, $key );
+            }
+        }
+
+        Knowly_Debug::log( 'admin.analytics', 'Orphaned student data purged', [
+            'count'      => $count,
+            'orphan_ids' => $orphan_ids,
+        ], null, 'info' );
+
+        wp_send_json_success( [ 'message' => "Purged data for {$count} deleted user(s)." ] );
     }
 
     // =========================================================================
