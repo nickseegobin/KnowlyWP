@@ -76,7 +76,13 @@ class Knowly_Admin_Trials {
             <button id="knowly-sync-trials" class="button button-primary" <?= $railway_ok ? '' : 'disabled' ?>>
                 ↓ Sync Trials from Railway
             </button>
+            <button id="knowly-sync-trials-force" class="button" style="margin-left:8px;" <?= $railway_ok ? '' : 'disabled' ?> title="Re-fetches all packages including existing ones — use this to backfill missing answer sheets">
+                ↺ Force Full Re-sync
+            </button>
             <span id="knowly-sync-status" style="margin-left:10px;font-size:12px;color:#666;"></span>
+            <?php if ( $server_key === '' ) : ?>
+            <p style="margin:6px 0 0;font-size:11px;color:#d97706;">⚠ Railway server key not set — answer sheets will not be included in sync. <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>">Configure in Settings →</a></p>
+            <?php endif; ?>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
             <button id="knowly-load-trials" class="button button-secondary">↺ Refresh</button>
@@ -123,23 +129,40 @@ class Knowly_Admin_Trials {
             $('#knowly-load-trials').on('click', loadTrialInventory);
             loadTrialInventory();
 
-            $('#knowly-sync-trials').on('click', function() {
-                var $btn = $(this).prop('disabled', true).text('Syncing…');
+            function doSync(force) {
+                var $normBtn  = $('#knowly-sync-trials');
+                var $forcBtn  = $('#knowly-sync-trials-force');
+                var origNorm  = '↓ Sync Trials from Railway';
+                var origForce = '↺ Force Full Re-sync';
+                $normBtn.prop('disabled', true).text(force ? origNorm : 'Syncing…');
+                $forcBtn.prop('disabled', true).text(force ? 'Re-syncing…' : origForce);
                 $('#knowly-sync-status').text('').css('color','#666');
-                $.post(ajaxurl, { action: 'knowly_pool_sync_trials', nonce: nonce }, function(res) {
-                    $btn.prop('disabled', false).text('↓ Sync Trials from Railway');
+
+                var postData = { action: 'knowly_pool_sync_trials', nonce: nonce };
+                if (force) postData.force = '1';
+
+                $.post(ajaxurl, postData, function(res) {
+                    $normBtn.prop('disabled', false).text(origNorm);
+                    $forcBtn.prop('disabled', false).text(origForce);
                     if (!res.success) {
                         $('#knowly-sync-status').text('Error: ' + (res.data.message || 'Failed')).css('color','#dc2626');
                         return;
                     }
                     var d = res.data;
-                    $('#knowly-sync-status').text('✓ ' + d.synced + ' synced, ' + d.skipped + ' already in pool' + (d.failed > 0 ? ', ' + d.failed + ' failed' : '')).css('color','#16a34a');
+                    var msg = force
+                        ? '✓ Force re-sync: ' + d.synced + ' updated' + (d.failed > 0 ? ', ' + d.failed + ' failed' : '')
+                        : '✓ ' + d.synced + ' synced, ' + d.skipped + ' already in pool' + (d.failed > 0 ? ', ' + d.failed + ' failed' : '');
+                    $('#knowly-sync-status').text(msg).css('color','#16a34a');
                     loadTrialInventory();
                 }).fail(function() {
-                    $btn.prop('disabled', false).text('↓ Sync Trials from Railway');
+                    $normBtn.prop('disabled', false).text(origNorm);
+                    $forcBtn.prop('disabled', false).text(origForce);
                     $('#knowly-sync-status').text('Request failed — check server logs').css('color','#dc2626');
                 });
-            });
+            }
+
+            $('#knowly-sync-trials').on('click', function() { doSync(false); });
+            $('#knowly-sync-trials-force').on('click', function() { doSync(true); });
 
             // ── Client-side filters ───────────────────────────────────────────
             function applyTrialFilters() {

@@ -148,7 +148,7 @@ class Knowly_Quest_Service {
      * @param  string $source    'direct' | 'assignment'
      * @return array|WP_Error    { session_id, is_first_attempt, gem_cost, balance_after }
      */
-    public static function start( int $child_id, string $quest_id, string $source = 'direct' ): array|WP_Error {
+    public static function start( int $child_id, string $quest_id, string $source = 'direct', ?int $task_id = null ): array|WP_Error {
         global $wpdb;
         $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
 
@@ -175,18 +175,29 @@ class Knowly_Quest_Service {
         // ── Create local session row ──────────────────────────────────────────
         $quest_session_id = 'qs_' . strtolower( bin2hex( random_bytes( 12 ) ) );
 
-        $wpdb->insert(
-            $wpdb->prefix . 'knowly_quest_sessions',
-            [
-                'quest_session_id' => $quest_session_id,
-                'child_id'         => $child_id,
-                'quest_id'         => $quest_id,
-                'source'           => in_array( $source, [ 'direct', 'assignment' ], true ) ? $source : 'direct',
-                'state'            => 'active',
-                'started_at'       => current_time( 'mysql', true ),
-            ],
-            [ '%s', '%d', '%s', '%s', '%s', '%s' ]
-        );
+        $insert_data = [
+            'quest_session_id' => $quest_session_id,
+            'child_id'         => $child_id,
+            'quest_id'         => $quest_id,
+            'source'           => in_array( $source, [ 'direct', 'assignment' ], true ) ? $source : 'direct',
+            'state'            => 'active',
+            'started_at'       => current_time( 'mysql', true ),
+        ];
+        $insert_fmts = [ '%s', '%d', '%s', '%s', '%s', '%s' ];
+
+        // Only store task_id if the column exists (migration guard)
+        $has_task_id_col = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'task_id'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_quest_sessions'
+        ) );
+        if ( $has_task_id_col ) {
+            $insert_data['task_id'] = $task_id;
+            $insert_fmts[]          = '%d';
+        }
+
+        $wpdb->insert( $wpdb->prefix . 'knowly_quest_sessions', $insert_data, $insert_fmts );
 
         if ( ! $wpdb->insert_id ) {
             return new WP_Error( 'knowly_db_error', 'Failed to create quest session.', [ 'status' => 500 ] );

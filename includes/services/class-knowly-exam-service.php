@@ -40,7 +40,9 @@ class Knowly_Exam_Service {
         string $subject,
         string $difficulty = 'medium',
         string $trial_type = 'practice',
-        string $topic = ''
+        string $topic = '',
+        string $source = 'self',
+        ?int   $task_id = null
     ): array|WP_Error {
         Knowly_Debug::log( 'exam.start', 'Trial start requested', [
             'parent_id'  => $parent_id,
@@ -51,6 +53,8 @@ class Knowly_Exam_Service {
             'difficulty' => $difficulty,
             'trial_type' => $trial_type,
             'topic'      => $topic,
+            'source'     => $source,
+            'task_id'    => $task_id,
         ], $parent_id, 'info' );
 
         // ── 1. Pre-check gem balance ──────────────────────────────────────────
@@ -95,6 +99,8 @@ class Knowly_Exam_Service {
 
         // ── 5. Create active session record ───────────────────────────────────
         global $wpdb;
+
+        // ── 5a. Core INSERT — only original columns (always safe) ────────────────
         $wpdb->insert(
             $wpdb->prefix . 'knowly_exam_sessions',
             [
@@ -114,6 +120,46 @@ class Knowly_Exam_Service {
         );
 
         $session_id = $wpdb->insert_id;
+
+        // ── 5b. UPDATE new columns if they exist (added in v1.9.4 migration) ──
+        // Separated from the INSERT so older DB schemas don't break.
+        if ( $session_id ) {
+            $raw_answer_sheet = $wpdb->get_var( $wpdb->prepare(
+                "SELECT answer_sheet FROM {$wpdb->prefix}knowly_trial_packages WHERE package_id = %s",
+                $package['package_id']
+            ) );
+
+            $new_cols = $wpdb->get_col( $wpdb->prepare(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME IN ('source','task_id','answer_sheet')",
+                DB_NAME,
+                $wpdb->prefix . 'knowly_exam_sessions'
+            ) );
+
+            $update = [];
+            $fmts   = [];
+            if ( in_array( 'source', $new_cols, true ) ) {
+                $update['source'] = in_array( $source, [ 'self', 'teacher_assigned' ], true ) ? $source : 'self';
+                $fmts[]           = '%s';
+            }
+            if ( in_array( 'task_id', $new_cols, true ) ) {
+                $update['task_id'] = $task_id;
+                $fmts[]            = '%d';
+            }
+            if ( in_array( 'answer_sheet', $new_cols, true ) ) {
+                $update['answer_sheet'] = $raw_answer_sheet ?: null;
+                $fmts[]                 = '%s';
+            }
+            if ( ! empty( $update ) ) {
+                $wpdb->update(
+                    $wpdb->prefix . 'knowly_exam_sessions',
+                    $update,
+                    [ 'session_id' => $session_id ],
+                    $fmts,
+                    [ '%d' ]
+                );
+            }
+        }
 
         Knowly_Debug::log( 'exam.start', 'Trial session created', [
             'session_id'          => $session_id,

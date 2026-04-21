@@ -876,28 +876,18 @@ class Knowly_Admin_Analytics {
         $class_id = (int) ( $_POST['class_id'] ?? 0 );
         if ( ! $class_id ) { wp_send_json_error( [ 'message' => 'class_id required' ] ); }
 
-        $members = $wpdb->get_col( $wpdb->prepare(
+        $child_ids = array_map( 'intval', $wpdb->get_col( $wpdb->prepare(
             "SELECT child_id FROM {$wpdb->prefix}knowly_class_members WHERE class_id = %d AND status = 'active'",
             $class_id
-        ) );
+        ) ) ?: [] );
 
-        if ( empty( $members ) ) {
-            wp_send_json_success( [
-                'student_count' => 0, 'total_trials' => 0, 'total_quests' => 0,
-                'class_avg_score' => null, 'at_risk_count' => 0,
-                'avg_engagement_rate' => 0, 'students' => [],
-                'topic_heatmap' => [], 'strengths' => [], 'weaknesses' => [],
-            ] );
-        }
+        $filters = [];
+        if ( ! empty( $_POST['period'] ) )  $filters['period']  = sanitize_text_field( $_POST['period'] );
+        if ( ! empty( $_POST['subject'] ) ) $filters['subject'] = sanitize_text_field( $_POST['subject'] );
 
-        $params = [ 'user_ids' => implode( ',', $members ) ];
-        if ( ! empty( $_POST['period'] ) )  $params['period']  = sanitize_text_field( $_POST['period'] );
-        if ( ! empty( $_POST['subject'] ) ) $params['subject'] = sanitize_text_field( $_POST['subject'] );
+        $data = Knowly_Analytics_Service::get_class_data( $child_ids, $filters );
 
-        $data = self::railway_get( '/api/v1/analytics/class', $params );
-        if ( is_wp_error( $data ) ) { wp_send_json_error( [ 'message' => $data->get_error_message() ] ); }
-
-        // Merge WP nicknames
+        // Merge WP nicknames and levels into per-student rows
         if ( ! empty( $data['students'] ) ) {
             $data['students'] = array_map( function( array $s ): array {
                 $uid = (int) ( $s['user_id'] ?? 0 );
@@ -923,13 +913,11 @@ class Knowly_Admin_Analytics {
         $user_id = (int) ( $_POST['user_id'] ?? 0 );
         if ( ! $user_id ) { wp_send_json_error( [ 'message' => 'user_id required' ] ); }
 
-        $params = [ 'user_id' => (string) $user_id ];
-        if ( ! empty( $_POST['period'] ) )  $params['period']  = sanitize_text_field( $_POST['period'] );
-        if ( ! empty( $_POST['subject'] ) ) $params['subject'] = sanitize_text_field( $_POST['subject'] );
+        $filters = [];
+        if ( ! empty( $_POST['period'] ) )  $filters['period']  = sanitize_text_field( $_POST['period'] );
+        if ( ! empty( $_POST['subject'] ) ) $filters['subject'] = sanitize_text_field( $_POST['subject'] );
 
-        $data = self::railway_get( '/api/v1/analytics/student', $params );
-        if ( is_wp_error( $data ) ) { wp_send_json_error( [ 'message' => $data->get_error_message() ] ); }
-
+        $data             = Knowly_Analytics_Service::get_student_data( $user_id, $filters );
         $data['nickname'] = get_user_meta( $user_id, 'knowly_nickname', true ) ?: '';
         $data['level']    = get_user_meta( $user_id, 'knowly_level',    true ) ?: '';
 
@@ -944,23 +932,31 @@ class Knowly_Admin_Analytics {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        $checks   = [];
-        $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        global $wpdb;
+        $checks = [];
 
-        if ( $endpoint ) {
-            $resp = wp_remote_get( $endpoint . '/api/v1/health', [ 'timeout' => 8 ] );
-            $ok   = ! is_wp_error( $resp ) && wp_remote_retrieve_response_code( $resp ) === 200;
-            $checks[] = [ 'label' => 'Railway reachable', 'status' => $ok ? 'pass' : 'fail', 'detail' => $ok ? 'Analytics routes reachable.' : 'Railway unreachable.' ];
-        } else {
-            $checks[] = [ 'label' => 'Railway endpoint', 'status' => 'fail', 'detail' => 'Not configured.' ];
-        }
+        // Analytics tables accessible and readable
+        $exam_count  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_exam_sessions  WHERE state = 'completed'" );
+        $quest_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_quest_sessions WHERE state = 'completed'" );
+        $checks[] = [
+            'label'  => 'Analytics data (WP-local)',
+            'status' => 'pass',
+            'detail' => "{$exam_count} completed trial session(s), {$quest_count} completed quest session(s).",
+        ];
 
         $test_teacher = get_user_by( 'login', 'test.teacher' );
-        $checks[] = [ 'label' => 'Test teacher account', 'status' => $test_teacher ? 'pass' : 'warn', 'detail' => $test_teacher ? 'test.teacher exists (ID ' . $test_teacher->ID . ').' : 'Not found.' ];
+        $checks[] = [
+            'label'  => 'Test teacher account',
+            'status' => $test_teacher ? 'pass' : 'warn',
+            'detail' => $test_teacher ? 'test.teacher exists (ID ' . $test_teacher->ID . ').' : 'Not found.',
+        ];
 
-        global $wpdb;
         $class_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_classes WHERE status = 'active'" );
-        $checks[] = [ 'label' => 'Active classes exist', 'status' => $class_count > 0 ? 'pass' : 'warn', 'detail' => "{$class_count} active class(es)." ];
+        $checks[] = [
+            'label'  => 'Active classes exist',
+            'status' => $class_count > 0 ? 'pass' : 'warn',
+            'detail' => "{$class_count} active class(es).",
+        ];
 
         wp_send_json_success( [ 'checks' => $checks ] );
     }
@@ -1022,37 +1018,4 @@ class Knowly_Admin_Analytics {
         wp_send_json_success( [ 'message' => "Purged data for {$count} deleted user(s)." ] );
     }
 
-    // =========================================================================
-    // Railway HTTP helper
-    // =========================================================================
-
-    private static function railway_get( string $path, array $params = [] ): array|WP_Error {
-        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
-        $server_key = get_option( 'knowly_railway_server_key', '' );
-
-        if ( ! $endpoint ) {
-            return new WP_Error( 'not_configured', 'Railway endpoint not configured.', [ 'status' => 503 ] );
-        }
-
-        $url = $endpoint . $path;
-        if ( ! empty( $params ) ) $url .= '?' . http_build_query( $params );
-
-        $response = wp_remote_get( $url, [
-            'timeout' => 20,
-            'headers' => [ 'X-AEP-Server-Key' => $server_key, 'Content-Type' => 'application/json' ],
-        ] );
-
-        if ( is_wp_error( $response ) ) {
-            return new WP_Error( 'railway_error', 'Failed to connect to Railway: ' . $response->get_error_message() );
-        }
-
-        $code = wp_remote_retrieve_response_code( $response );
-        $body = json_decode( wp_remote_retrieve_body( $response ), true );
-
-        if ( $code < 200 || $code >= 300 || empty( $body ) ) {
-            return new WP_Error( 'railway_error', $body['error'] ?? "Railway returned HTTP {$code}." );
-        }
-
-        return $body;
-    }
 }

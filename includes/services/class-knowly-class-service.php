@@ -158,40 +158,74 @@ class Knowly_Class_Service {
         }, $rows ?: [] );
     }
 
-    // ── Child Search by Nickname ──────────────────────────────────────────────
+    // ── Child Search ──────────────────────────────────────────────────────────
 
     /**
-     * Search for children by partial nickname match (case-insensitive LIKE).
-     * Returns a list — used by the teacher child-lookup UI.
+     * Search for children by nickname, first name, and/or last name (partial LIKE).
+     * At least one filter must be provided and be at least 2 characters.
      *
-     * Minimum query length: 2 characters.
-     *
-     * @param  string $query  Partial nickname fragment.
-     * @return array|WP_Error  Array of { child_id, nickname, level }
+     * @param  array $filters  { q?: string, first_name?: string, last_name?: string }
+     * @return array|WP_Error  Array of { child_id, nickname, first_name, last_name, level }
      */
-    public static function search_children( string $query ): array|WP_Error {
+    public static function search_children( array $filters ): array|WP_Error {
         global $wpdb;
 
-        $query = sanitize_text_field( $query );
-        if ( strlen( $query ) < 2 ) {
-            return new WP_Error( 'knowly_query_too_short', 'Search query must be at least 2 characters.', [ 'status' => 400 ] );
+        $q          = sanitize_text_field( $filters['q']          ?? '' );
+        $first_name = sanitize_text_field( $filters['first_name'] ?? '' );
+        $last_name  = sanitize_text_field( $filters['last_name']  ?? '' );
+
+        // At least one filter must be >= 2 chars
+        $has_q  = strlen( $q )          >= 2;
+        $has_fn = strlen( $first_name ) >= 2;
+        $has_ln = strlen( $last_name )  >= 2;
+
+        if ( ! $has_q && ! $has_fn && ! $has_ln ) {
+            return new WP_Error( 'knowly_query_too_short', 'At least one search field must be 2 or more characters.', [ 'status' => 400 ] );
         }
 
-        $like = '%' . $wpdb->esc_like( $query ) . '%';
+        // Build query joining nickname, first_name, last_name meta
+        $where  = [ '1=1' ];
+        $values = [ '%knowly_child%' ];
 
+        if ( $has_q ) {
+            $where[]  = 'nickname_meta.meta_value LIKE %s';
+            $values[] = '%' . $wpdb->esc_like( $q ) . '%';
+        }
+        if ( $has_fn ) {
+            $where[]  = 'fn_meta.meta_value LIKE %s';
+            $values[] = '%' . $wpdb->esc_like( $first_name ) . '%';
+        }
+        if ( $has_ln ) {
+            $where[]  = 'ln_meta.meta_value LIKE %s';
+            $values[] = '%' . $wpdb->esc_like( $last_name ) . '%';
+        }
+
+        $where_sql = implode( ' AND ', $where );
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
         $rows = $wpdb->get_results( $wpdb->prepare(
-            "SELECT um.user_id, um.meta_value AS nickname
-             FROM {$wpdb->usermeta} um
+            "SELECT u.ID AS user_id,
+                    COALESCE(nickname_meta.meta_value, '') AS nickname,
+                    COALESCE(fn_meta.meta_value, '')       AS first_name,
+                    COALESCE(ln_meta.meta_value, '')       AS last_name
+             FROM {$wpdb->users} u
              INNER JOIN {$wpdb->usermeta} role_meta
-                ON role_meta.user_id = um.user_id
+                ON role_meta.user_id = u.ID
                 AND role_meta.meta_key = '{$wpdb->prefix}capabilities'
                 AND role_meta.meta_value LIKE %s
-             WHERE um.meta_key = 'knowly_nickname'
-               AND um.meta_value LIKE %s
-             ORDER BY um.meta_value ASC
+             LEFT JOIN {$wpdb->usermeta} nickname_meta
+                ON nickname_meta.user_id = u.ID
+                AND nickname_meta.meta_key = 'knowly_nickname'
+             LEFT JOIN {$wpdb->usermeta} fn_meta
+                ON fn_meta.user_id = u.ID
+                AND fn_meta.meta_key = 'first_name'
+             LEFT JOIN {$wpdb->usermeta} ln_meta
+                ON ln_meta.user_id = u.ID
+                AND ln_meta.meta_key = 'last_name'
+             WHERE {$where_sql}
+             ORDER BY nickname_meta.meta_value ASC
              LIMIT 20",
-            '%knowly_child%',
-            $like
+            $values
         ), ARRAY_A );
 
         if ( empty( $rows ) ) {
@@ -201,9 +235,11 @@ class Knowly_Class_Service {
         return array_map( function ( array $row ): array {
             $user_id = (int) $row['user_id'];
             return [
-                'child_id' => $user_id,
-                'nickname' => $row['nickname'],
-                'level'    => get_user_meta( $user_id, 'knowly_level', true ) ?: null,
+                'child_id'   => $user_id,
+                'nickname'   => $row['nickname'],
+                'first_name' => $row['first_name'],
+                'last_name'  => $row['last_name'],
+                'level'      => get_user_meta( $user_id, 'knowly_level', true ) ?: null,
             ];
         }, $rows );
     }

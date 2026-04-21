@@ -37,12 +37,57 @@ class Knowly_Results_Service {
         $correct    = 0;
         $time_taken = 0;
 
-        foreach ( $answers as $ans ) {
+        // Load server-side answer key.
+        // Prefer the answer_sheet stored on the session itself (captured at exam-start).
+        // Fall back to looking up the trial_packages table in case the session row pre-dates
+        // the answer_sheet column being added to exam_sessions.
+        // answer_sheet format: array of { question_id, correct_answer, explanation }.
+        $answer_key = [];
+        $raw_sheet  = $session['answer_sheet'] ?? null;
+
+        if ( ! $raw_sheet && ! empty( $session['package_id'] ) ) {
+            $raw_sheet = $wpdb->get_var( $wpdb->prepare(
+                "SELECT answer_sheet FROM {$wpdb->prefix}knowly_trial_packages WHERE package_id = %s",
+                $session['package_id']
+            ) );
+        }
+
+        if ( $raw_sheet ) {
+            $sheet = json_decode( $raw_sheet, true );
+            if ( is_array( $sheet ) ) {
+                foreach ( $sheet as $entry ) {
+                    if ( isset( $entry['question_id'], $entry['correct_answer'] ) ) {
+                        $answer_key[ $entry['question_id'] ] = strtoupper( trim( $entry['correct_answer'] ) );
+                    }
+                }
+            }
+        }
+
+        Knowly_Debug::log( 'results.save', 'Answer key loaded', [
+            'session_id'  => $session['session_id'],
+            'package_id'  => $session['package_id'],
+            'key_count'   => count( $answer_key ),
+            'sheet_source' => ! empty( $session['answer_sheet'] ) ? 'session' : ( $raw_sheet ? 'package_lookup' : 'missing' ),
+        ], (int) $session['child_id'], 'info' );
+
+
+        foreach ( $answers as &$ans ) {
+            $qid      = $ans['question_id'] ?? '';
+            $selected = strtoupper( trim( $ans['selected_answer'] ?? '' ) );
+
+            // Server-side scoring: compare against the stored answer key.
+            if ( isset( $answer_key[ $qid ] ) ) {
+                $ans['correct_answer'] = $answer_key[ $qid ];
+                $ans['is_correct']     = ( $selected === $answer_key[ $qid ] );
+            }
+            // If question_id is absent from the key (edge case), keep client value.
+
             if ( ! empty( $ans['is_correct'] ) ) {
                 $correct++;
             }
             $time_taken += (int) ( $ans['time_taken_seconds'] ?? 0 );
         }
+        unset( $ans );
 
         $percentage = $total > 0 ? round( ( $correct / $total ) * 100, 2 ) : 0;
 

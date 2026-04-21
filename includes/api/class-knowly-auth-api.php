@@ -103,6 +103,22 @@ class Knowly_Auth_API extends Knowly_API_Base {
             ],
         ] );
 
+        register_rest_route( $ns, '/auth/teacher/profile', [
+            'methods'             => 'PATCH',
+            'callback'            => [ $this, 'update_teacher_profile' ],
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'first_name'        => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'last_name'         => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'avatar_index'      => [ 'required' => false, 'type' => 'integer' ],
+                'school_name'       => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'class_name'        => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'phone'             => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'principal_name'    => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'principal_contact' => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+            ],
+        ] );
+
         register_rest_route( $ns, '/auth/password/reset', [
             'methods'             => 'POST',
             'callback'            => [ $this, 'password_reset' ],
@@ -221,6 +237,23 @@ class Knowly_Auth_API extends Knowly_API_Base {
             'last_name'    => $request->get_param( 'last_name' ),
             'display_name' => $request->get_param( 'display_name' ),
             'avatar_index' => $request->get_param( 'avatar_index' ),
+        ] );
+        return is_wp_error( $result ) ? $result : $this->success( $result );
+    }
+
+    public function update_teacher_profile( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $teacher_id = $this->require_teacher( $request );
+        if ( is_wp_error( $teacher_id ) ) return $teacher_id;
+
+        $result = Knowly_Teacher_Service::update_profile( $teacher_id, [
+            'first_name'        => $request->get_param( 'first_name' ),
+            'last_name'         => $request->get_param( 'last_name' ),
+            'avatar_index'      => $request->get_param( 'avatar_index' ),
+            'school_name'       => $request->get_param( 'school_name' ),
+            'class_name'        => $request->get_param( 'class_name' ),
+            'phone'             => $request->get_param( 'phone' ),
+            'principal_name'    => $request->get_param( 'principal_name' ),
+            'principal_contact' => $request->get_param( 'principal_contact' ),
         ] );
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }

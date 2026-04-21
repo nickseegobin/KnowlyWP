@@ -125,6 +125,19 @@ class Knowly_Activator {
             ) {$charset};" );
         }
 
+        // v1.9.7 — add task_id to knowly_quest_sessions for analytics segmentation
+        $col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'task_id'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_quest_sessions'
+        ) );
+        if ( empty( $col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_quest_sessions
+                ADD COLUMN task_id BIGINT UNSIGNED NULL DEFAULT NULL
+                AFTER source" );
+        }
+
         // v1.7.2 — add type column to knowly_tasks if missing
         $col = $wpdb->get_results( $wpdb->prepare(
             "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS

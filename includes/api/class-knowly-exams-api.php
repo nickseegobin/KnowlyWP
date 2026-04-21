@@ -37,6 +37,8 @@ class Knowly_Exams_API extends Knowly_API_Base {
                 'difficulty' => [ 'required' => false, 'type' => 'string', 'default' => 'medium', 'enum' => [ 'easy', 'medium', 'hard' ] ],
                 'trial_type' => [ 'required' => false, 'type' => 'string', 'default' => 'practice', 'enum' => [ 'practice', 'sea' ], 'sanitize_callback' => 'sanitize_text_field' ],
                 'topic'      => [ 'required' => false, 'type' => 'string', 'default' => '', 'sanitize_callback' => 'sanitize_text_field' ],
+                'source'     => [ 'required' => false, 'type' => 'string', 'default' => 'self', 'enum' => [ 'self', 'teacher_assigned' ] ],
+                'task_id'    => [ 'required' => false, 'type' => 'integer', 'default' => null ],
             ],
         ] );
 
@@ -94,7 +96,9 @@ class Knowly_Exams_API extends Knowly_API_Base {
             $request->get_param( 'subject' ),
             $request->get_param( 'difficulty' ),
             $request->get_param( 'trial_type' ) ?: 'practice',
-            $request->get_param( 'topic' ) ?: ''
+            $request->get_param( 'topic' ) ?: '',
+            $request->get_param( 'source' ) ?: 'self',
+            $request->get_param( 'task_id' ) ? (int) $request->get_param( 'task_id' ) : null
         );
 
         return is_wp_error( $result ) ? $result : $this->success( $result );

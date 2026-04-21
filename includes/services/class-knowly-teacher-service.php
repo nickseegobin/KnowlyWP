@@ -215,6 +215,59 @@ class Knowly_Teacher_Service {
 
     // ── Private Helpers ───────────────────────────────────────────────────────
 
+    /**
+     * Update mutable fields on a teacher profile.
+     *
+     * @param  int   $teacher_id
+     * @param  array $data  Any subset of: first_name, last_name, avatar_index,
+     *                      school_name, class_name, phone,
+     *                      principal_name, principal_contact
+     * @return array|WP_Error  Updated profile on success.
+     */
+    public static function update_profile( int $teacher_id, array $data ): array|WP_Error {
+        $wp_update = [ 'ID' => $teacher_id ];
+
+        if ( isset( $data['first_name'] ) && $data['first_name'] !== null ) {
+            $wp_update['first_name'] = sanitize_text_field( $data['first_name'] );
+        }
+        if ( isset( $data['last_name'] ) && $data['last_name'] !== null ) {
+            $wp_update['last_name'] = sanitize_text_field( $data['last_name'] );
+        }
+
+        // Rebuild display_name if either name field changed
+        if ( isset( $wp_update['first_name'] ) || isset( $wp_update['last_name'] ) ) {
+            $first = $wp_update['first_name'] ?? get_user_meta( $teacher_id, 'first_name', true );
+            $last  = $wp_update['last_name']  ?? get_user_meta( $teacher_id, 'last_name', true );
+            $wp_update['display_name'] = trim( $first . ' ' . $last );
+        }
+
+        if ( count( $wp_update ) > 1 ) {
+            wp_update_user( $wp_update );
+        }
+
+        if ( isset( $data['avatar_index'] ) && $data['avatar_index'] !== null ) {
+            update_user_meta( $teacher_id, 'knowly_avatar_index', max( 1, min( 10, (int) $data['avatar_index'] ) ) );
+        }
+
+        $meta_map = [
+            'school_name'       => 'knowly_school_name',
+            'class_name'        => 'knowly_class_name',
+            'phone'             => 'knowly_phone',
+            'principal_name'    => 'knowly_principal_name',
+            'principal_contact' => 'knowly_principal_contact',
+        ];
+
+        foreach ( $meta_map as $key => $meta_key ) {
+            if ( isset( $data[ $key ] ) && $data[ $key ] !== null ) {
+                update_user_meta( $teacher_id, $meta_key, sanitize_text_field( $data[ $key ] ) );
+            }
+        }
+
+        Knowly_Debug::log( 'teacher.update_profile', 'Profile updated', [ 'teacher_id' => $teacher_id ], $teacher_id, 'info' );
+
+        return self::get_profile( $teacher_id );
+    }
+
     private static function format_teacher( WP_User $user ): array {
         return [
             'user_id'           => $user->ID,
@@ -223,6 +276,7 @@ class Knowly_Teacher_Service {
             'last_name'         => get_user_meta( $user->ID, 'last_name', true ),
             'email'             => $user->user_email,
             'role'              => 'teacher',
+            'avatar_index'      => max( 1, (int) ( get_user_meta( $user->ID, 'knowly_avatar_index', true ) ?: 1 ) ),
             'approval_status'   => get_user_meta( $user->ID, 'knowly_approval_status', true ) ?: 'pending_approval',
             'school_name'       => get_user_meta( $user->ID, 'knowly_school_name', true ),
             'class_name'        => get_user_meta( $user->ID, 'knowly_class_name', true ),

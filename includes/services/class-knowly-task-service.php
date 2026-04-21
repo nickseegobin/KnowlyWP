@@ -123,10 +123,13 @@ class Knowly_Task_Service {
     /**
      * List active, non-expired tasks for a class — child-safe view.
      * Excludes tasks past their due_date and non-active tasks.
+     * Annotates each task with `completed` (true if this child has a finished session for it).
      *
+     * @param  int $class_id
+     * @param  int $child_id  Used to derive per-student completion status.
      * @return array
      */
-    public static function list_for_class_child( int $class_id ): array {
+    public static function list_for_class_child( int $class_id, int $child_id = 0 ): array {
         global $wpdb;
 
         $today = current_time( 'Y-m-d' );
@@ -141,7 +144,52 @@ class Knowly_Task_Service {
             $today
         ), ARRAY_A );
 
-        return array_map( [ __CLASS__, 'format_task' ], $rows ?: [] );
+        if ( empty( $rows ) ) {
+            return [];
+        }
+
+        // ── Derive per-student completion in two bulk queries ─────────────────
+        $completed_task_ids = [];
+
+        if ( $child_id > 0 ) {
+            $task_ids     = array_column( $rows, 'id' );
+            $placeholders = implode( ',', array_fill( 0, count( $task_ids ), '%d' ) );
+
+            // Completed trials for these task IDs
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $trial_done = $wpdb->get_col( $wpdb->prepare(
+                "SELECT DISTINCT task_id FROM {$wpdb->prefix}knowly_exam_sessions
+                 WHERE child_id = %d
+                   AND state = 'completed'
+                   AND task_id IN ({$placeholders})",
+                array_merge( [ $child_id ], $task_ids )
+            ) );
+
+            // Completed quests for these task IDs
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $quest_done = $wpdb->get_col( $wpdb->prepare(
+                "SELECT DISTINCT task_id FROM {$wpdb->prefix}knowly_quest_sessions
+                 WHERE child_id = %d
+                   AND state = 'completed'
+                   AND task_id IN ({$placeholders})",
+                array_merge( [ $child_id ], $task_ids )
+            ) );
+
+            $completed_task_ids = array_flip(
+                array_merge(
+                    array_map( 'intval', $trial_done ?: [] ),
+                    array_map( 'intval', $quest_done  ?: [] )
+                )
+            );
+        }
+
+        return array_map(
+            fn( $row ) => array_merge(
+                self::format_task( $row ),
+                [ 'completed' => isset( $completed_task_ids[ (int) $row['id'] ] ) ]
+            ),
+            $rows
+        );
     }
 
     // ── List for Class ────────────────────────────────────────────────────────

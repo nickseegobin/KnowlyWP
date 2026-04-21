@@ -14,8 +14,8 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ────────────────────────────────────────────────────────────────
-define( 'KNOWLY_VERSION',            '1.9.6' );
-define( 'KNOWLY_DB_VERSION',         '1.9.6' );
+define( 'KNOWLY_VERSION',            '1.9.7' );
+define( 'KNOWLY_DB_VERSION',         '1.9.7' );
 define( 'KNOWLY_PLUGIN_FILE',        __FILE__ );
 define( 'KNOWLY_PLUGIN_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'KNOWLY_PLUGIN_URL',         plugin_dir_url( __FILE__ ) );

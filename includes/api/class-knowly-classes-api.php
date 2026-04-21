@@ -33,7 +33,9 @@ class Knowly_Classes_API extends Knowly_API_Base {
             'callback'            => [ $this, 'child_lookup' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'nickname' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'q'          => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ],
+                'first_name' => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ],
+                'last_name'  => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ],
             ],
         ] );
 
@@ -105,12 +107,15 @@ class Knowly_Classes_API extends Knowly_API_Base {
                 'callback'            => [ $this, 'create_task' ],
                 'permission_callback' => '__return_true',
                 'args'                => [
-                    'id'          => [ 'required' => true,  'type' => 'integer', 'minimum' => 1 ],
-                    'title'       => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
-                    'description' => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_textarea_field' ],
-                    'subject'     => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
-                    'difficulty'  => [ 'required' => false, 'type' => 'string',  'enum' => [ 'easy', 'medium', 'hard' ] ],
-                    'due_date'    => [ 'required' => false, 'type' => 'string' ],
+                    'id'           => [ 'required' => true,  'type' => 'integer', 'minimum' => 1 ],
+                    'title'        => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                    'type'         => [ 'required' => false, 'type' => 'string',  'enum' => [ 'quest', 'trial' ], 'default' => 'trial' ],
+                    'reference_id' => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                    'description'  => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_textarea_field' ],
+                    'subject'      => [ 'required' => false, 'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                    'difficulty'   => [ 'required' => false, 'type' => 'string',  'enum' => [ 'easy', 'medium', 'hard' ] ],
+                    'due_date'     => [ 'required' => false, 'type' => 'string' ],
+                    'gem_reward'   => [ 'required' => false, 'type' => 'integer', 'minimum' => 0 ],
                 ],
             ],
             [
@@ -182,7 +187,11 @@ class Knowly_Classes_API extends Knowly_API_Base {
         $teacher_id = $this->require_teacher( $request );
         if ( is_wp_error( $teacher_id ) ) return $teacher_id;
 
-        $results = Knowly_Class_Service::search_children( $request->get_param( 'nickname' ) );
+        $results = Knowly_Class_Service::search_children( [
+            'q'          => $request->get_param( 'q' ),
+            'first_name' => $request->get_param( 'first_name' ),
+            'last_name'  => $request->get_param( 'last_name' ),
+        ] );
         if ( is_wp_error( $results ) ) return $results;
 
         return $this->success( [ 'results' => $results, 'count' => count( $results ) ] );
@@ -244,11 +253,14 @@ class Knowly_Classes_API extends Knowly_API_Base {
         if ( is_wp_error( $teacher_id ) ) return $teacher_id;
 
         $task_id = Knowly_Task_Service::create( (int) $request['id'], $teacher_id, [
-            'title'       => $request->get_param( 'title' ),
-            'description' => $request->get_param( 'description' ),
-            'subject'     => $request->get_param( 'subject' ),
-            'difficulty'  => $request->get_param( 'difficulty' ),
-            'due_date'    => $request->get_param( 'due_date' ),
+            'title'        => $request->get_param( 'title' ),
+            'type'         => $request->get_param( 'type' ),
+            'reference_id' => $request->get_param( 'reference_id' ),
+            'description'  => $request->get_param( 'description' ),
+            'subject'      => $request->get_param( 'subject' ),
+            'difficulty'   => $request->get_param( 'difficulty' ),
+            'due_date'     => $request->get_param( 'due_date' ),
+            'gem_reward'   => $request->get_param( 'gem_reward' ),
         ] );
 
         if ( is_wp_error( $task_id ) ) return $task_id;
@@ -290,7 +302,7 @@ class Knowly_Classes_API extends Knowly_API_Base {
         $class = Knowly_Class_Service::get( $class_id );
         if ( is_wp_error( $class ) ) return $class;
 
-        $tasks = Knowly_Task_Service::list_for_class_child( $class_id );
+        $tasks = Knowly_Task_Service::list_for_class_child( $class_id, $child_id );
 
         return $this->success( [
             'class' => [

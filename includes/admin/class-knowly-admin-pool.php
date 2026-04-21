@@ -586,7 +586,10 @@ class Knowly_Admin_Pool {
 
     /**
      * Pull approved packages from Railway's pool into wp_knowly_trial_packages.
-     * Uses ?exclude= to only fetch packages WP doesn't already have (incremental).
+     *
+     * Normal sync: uses ?exclude= to only fetch packages WP doesn't already have (incremental).
+     * Force sync:  skips exclude, re-fetches ALL packages and replaces rows — use this to
+     *              backfill missing answer_sheet data on existing packages.
      */
     public static function ajax_sync_trials(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
@@ -598,17 +601,19 @@ class Knowly_Admin_Pool {
         $table      = $wpdb->prefix . 'knowly_trial_packages';
         $server_key = get_option( 'knowly_railway_server_key', '' );
         $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $force      = ! empty( $_POST['force'] );
 
         if ( ! $endpoint ) {
             wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] );
         }
         if ( ! $server_key ) {
-            wp_send_json_error( [ 'message' => 'Railway server key not configured.' ] );
+            wp_send_json_error( [ 'message' => 'Railway server key not configured. Set it in Knowly → Settings so answer sheets are included.' ] );
         }
 
-        // Get existing package IDs to skip
-        $existing_ids = $wpdb->get_col( "SELECT package_id FROM {$table}" );
-        $exclude_param = ! empty( $existing_ids ) ? implode( ',', $existing_ids ) : '';
+        // Incremental sync: exclude packages already in WP.
+        // Force sync: skip exclude so all packages are re-fetched (backfills answer_sheet).
+        $existing_ids  = $wpdb->get_col( "SELECT package_id FROM {$table}" );
+        $exclude_param = ( ! $force && ! empty( $existing_ids ) ) ? implode( ',', $existing_ids ) : '';
 
         $params = [ 'status' => 'approved', 'limit' => 200 ];
         if ( $exclude_param ) $params['exclude'] = $exclude_param;

@@ -20,6 +20,19 @@ class Knowly_Quests_API extends Knowly_API_Base {
         $ns = $this->namespace;
 
         // Static sub-routes must be registered before /{quest_id} to avoid collisions
+
+        // Teacher-only quest catalogue — no child context required
+        register_rest_route( $ns, '/quests/teacher/catalogue', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'teacher_catalogue' ],
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'level'   => [ 'required' => true,  'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'period'  => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'subject' => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+            ],
+        ] );
+
         register_rest_route( $ns, '/quests/start', [
             'methods'             => 'POST',
             'callback'            => [ $this, 'start' ],
@@ -28,6 +41,7 @@ class Knowly_Quests_API extends Knowly_API_Base {
                 'quest_id' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
                 'source'   => [ 'required' => false, 'type' => 'string', 'default' => 'direct',
                                 'enum' => [ 'direct', 'assignment' ] ],
+                'task_id'  => [ 'required' => false, 'type' => 'integer', 'default' => null ],
             ],
         ] );
 
@@ -103,6 +117,28 @@ class Knowly_Quests_API extends Knowly_API_Base {
         return $this->success( [ 'quests' => $quests, 'count' => count( $quests ) ] );
     }
 
+    /**
+     * GET /quests/teacher/catalogue?level=std_4&period=term_1&subject=math
+     * Teacher-only — returns approved student-variant quests for the given params.
+     */
+    public function teacher_catalogue( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $teacher_id = $this->require_teacher( $request );
+        if ( is_wp_error( $teacher_id ) ) return $teacher_id;
+
+        $level   = sanitize_text_field( $request->get_param( 'level' )   ?: '' );
+        $period  = sanitize_text_field( $request->get_param( 'period' )  ?: '' );
+        $subject = sanitize_text_field( $request->get_param( 'subject' ) ?: '' );
+
+        if ( ! $level ) {
+            return new WP_Error( 'knowly_missing_fields', 'level is required.', [ 'status' => 422 ] );
+        }
+
+        $quests = Knowly_Quest_Service::get_catalogue( $level, $period, 'tt_primary', $subject );
+        if ( is_wp_error( $quests ) ) return $quests;
+
+        return $this->success( [ 'quests' => $quests, 'count' => count( $quests ) ] );
+    }
+
     public function show( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $user_id = $this->authenticate( $request );
         if ( is_wp_error( $user_id ) ) return $user_id;
@@ -120,7 +156,8 @@ class Knowly_Quests_API extends Knowly_API_Base {
         $result = Knowly_Quest_Service::start(
             $ctx['child_id'],
             $request->get_param( 'quest_id' ),
-            $request->get_param( 'source' )
+            $request->get_param( 'source' ),
+            $request->get_param( 'task_id' ) ? (int) $request->get_param( 'task_id' ) : null
         );
 
         return is_wp_error( $result ) ? $result : $this->success( $result );
