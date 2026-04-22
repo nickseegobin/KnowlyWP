@@ -148,37 +148,66 @@ class Knowly_Task_Service {
             return [];
         }
 
-        // ── Derive per-student completion in two bulk queries ─────────────────
+        // ── Derive per-student completion ─────────────────────────────────────
+        // Two strategies are combined:
+        //   A) task_id match  — reliable for sessions started after the task_id
+        //                       column was added (v1.9.7).
+        //   B) reference_id JOIN — fallback for older quest sessions that were
+        //                       completed with source='assignment' before task_id
+        //                       was stored. Trials cannot use this fallback safely
+        //                       (subject is not unique across tasks).
         $completed_task_ids = [];
 
         if ( $child_id > 0 ) {
             $task_ids     = array_column( $rows, 'id' );
-            $placeholders = implode( ',', array_fill( 0, count( $task_ids ), '%d' ) );
+            $id_ph        = implode( ',', array_fill( 0, count( $task_ids ), '%d' ) );
 
-            // Completed trials for these task IDs
+            // ── A: task_id match (trials + quests) ────────────────────────────
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-            $trial_done = $wpdb->get_col( $wpdb->prepare(
+            $trial_by_id = $wpdb->get_col( $wpdb->prepare(
                 "SELECT DISTINCT task_id FROM {$wpdb->prefix}knowly_exam_sessions
                  WHERE child_id = %d
                    AND state = 'completed'
-                   AND task_id IN ({$placeholders})",
+                   AND task_id IN ({$id_ph})",
                 array_merge( [ $child_id ], $task_ids )
             ) );
 
-            // Completed quests for these task IDs
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-            $quest_done = $wpdb->get_col( $wpdb->prepare(
+            $quest_by_id = $wpdb->get_col( $wpdb->prepare(
                 "SELECT DISTINCT task_id FROM {$wpdb->prefix}knowly_quest_sessions
                  WHERE child_id = %d
                    AND state = 'completed'
-                   AND task_id IN ({$placeholders})",
+                   AND task_id IN ({$id_ph})",
                 array_merge( [ $child_id ], $task_ids )
             ) );
 
+            // ── B: reference_id JOIN fallback for older quest sessions ─────────
+            // Matches knowly_tasks.id for any quest task whose reference_id has a
+            // completed 'assignment' session for this child (even with NULL task_id).
+            $ref_ids = array_filter( array_column( $rows, 'reference_id' ) );
+            $quest_by_ref = [];
+            if ( ! empty( $ref_ids ) ) {
+                $ref_ph = implode( ',', array_fill( 0, count( $ref_ids ), '%s' ) );
+                // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+                $quest_by_ref = $wpdb->get_col( $wpdb->prepare(
+                    "SELECT DISTINCT t.id
+                     FROM {$wpdb->prefix}knowly_tasks t
+                     JOIN {$wpdb->prefix}knowly_quest_sessions qs
+                          ON qs.quest_id = t.reference_id
+                     WHERE qs.child_id = %d
+                       AND qs.state    = 'completed'
+                       AND qs.source   = 'assignment'
+                       AND t.id        IN ({$id_ph})
+                       AND t.reference_id IN ({$ref_ph})",
+                    array_merge( [ $child_id ], $task_ids, $ref_ids )
+                ) );
+            }
+
             $completed_task_ids = array_flip(
                 array_merge(
-                    array_map( 'intval', $trial_done ?: [] ),
-                    array_map( 'intval', $quest_done  ?: [] )
+                    array_map( 'intval', $trial_by_id  ?: [] ),
+                    array_map( 'intval', $quest_by_id  ?: [] ),
+                    array_map( 'intval', $quest_by_ref ?: [] )
                 )
             );
         }
