@@ -184,24 +184,21 @@ class Knowly_Task_Service {
             // ── B: reference_id JOIN fallback for older quest sessions ─────────
             // Matches knowly_tasks.id for any quest task whose reference_id has a
             // completed 'assignment' session for this child (even with NULL task_id).
-            $ref_ids = array_filter( array_column( $rows, 'reference_id' ) );
-            $quest_by_ref = [];
-            if ( ! empty( $ref_ids ) ) {
-                $ref_ph = implode( ',', array_fill( 0, count( $ref_ids ), '%s' ) );
-                // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-                $quest_by_ref = $wpdb->get_col( $wpdb->prepare(
-                    "SELECT DISTINCT t.id
-                     FROM {$wpdb->prefix}knowly_tasks t
-                     JOIN {$wpdb->prefix}knowly_quest_sessions qs
-                          ON qs.quest_id = t.reference_id
-                     WHERE qs.child_id = %d
-                       AND qs.state    = 'completed'
-                       AND qs.source   = 'assignment'
-                       AND t.id        IN ({$id_ph})
-                       AND t.reference_id IN ({$ref_ph})",
-                    array_merge( [ $child_id ], $task_ids, $ref_ids )
-                ) );
-            }
+            // The JOIN handles the matching — no IN (reference_ids) filter needed.
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $quest_by_ref = $wpdb->get_col( $wpdb->prepare(
+                "SELECT DISTINCT t.id
+                 FROM {$wpdb->prefix}knowly_tasks t
+                 INNER JOIN {$wpdb->prefix}knowly_quest_sessions qs
+                         ON qs.quest_id = t.reference_id
+                 WHERE qs.child_id    = %d
+                   AND qs.state       = 'completed'
+                   AND qs.source      = 'assignment'
+                   AND t.class_id     = %d
+                   AND t.reference_id IS NOT NULL",
+                $child_id,
+                $class_id
+            ) );
 
             $completed_task_ids = array_flip(
                 array_merge(
