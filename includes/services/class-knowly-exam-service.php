@@ -517,6 +517,75 @@ class Knowly_Exam_Service {
         return $session;
     }
 
+    // ── Resume ────────────────────────────────────────────────────────────────
+
+    /**
+     * Resume an active exam session — re-hydrates the package without re-deducting gems.
+     *
+     * Returns the same shape as start(): { session_id, external_session_id, package, checkpoint, balance_after }
+     *
+     * @param  int $session_id
+     * @param  int $child_id
+     * @return array|WP_Error
+     */
+    public static function resume( int $session_id, int $child_id ): array|WP_Error {
+        global $wpdb;
+
+        $session = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}knowly_exam_sessions
+                 WHERE session_id = %d AND child_id = %d AND state = 'active'",
+                $session_id,
+                $child_id
+            ),
+            ARRAY_A
+        );
+
+        if ( ! $session ) {
+            return new WP_Error( 'knowly_session_not_found', 'Active exam session not found.', [ 'status' => 404 ] );
+        }
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}knowly_trial_packages WHERE package_id = %s",
+                $session['package_id']
+            ),
+            ARRAY_A
+        );
+
+        if ( ! $row ) {
+            return new WP_Error( 'knowly_package_not_found', 'Trial package no longer available.', [ 'status' => 404 ] );
+        }
+
+        $package               = json_decode( $row['meta'], true ) ?? [];
+        $package['package_id'] = $row['package_id'];
+        $package['questions']  = json_decode( $row['questions'], true ) ?? [];
+        // answer_sheet intentionally excluded
+
+        $raw        = get_user_meta( $child_id, 'knowly_checkpoint', true );
+        $checkpoint = null;
+        if ( $raw ) {
+            $decoded = json_decode( $raw, true );
+            if ( (int) ( $decoded['session_id'] ?? 0 ) === $session_id ) {
+                $checkpoint = $decoded;
+            }
+        }
+
+        Knowly_Debug::log( 'exam.resume', 'Session resumed', [
+            'session_id'  => $session_id,
+            'child_id'    => $child_id,
+            'has_checkpoint' => (bool) $checkpoint,
+        ], $child_id, 'info' );
+
+        return [
+            'session_id'          => (int) $session['session_id'],
+            'external_session_id' => $session['external_session_id'],
+            'package'             => $package,
+            'checkpoint'          => $checkpoint,
+            'balance_after'       => Knowly_Gem_Service::get_balance( $child_id ),
+        ];
+    }
+
     // ── Cancel ────────────────────────────────────────────────────────────────
 
     /**

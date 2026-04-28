@@ -107,7 +107,7 @@ class Knowly_Quest_Service {
      *
      * @return array|WP_Error
      */
-    public static function get_quest( string $quest_id ): array|WP_Error {
+    public static function get_quest( string $quest_id, ?int $child_id = null ): array|WP_Error {
         global $wpdb;
         $table = $wpdb->prefix . 'knowly_quests';
 
@@ -128,6 +128,13 @@ class Knowly_Quest_Service {
 
         $row['content']    = ! empty( $row['content'] )    ? json_decode( $row['content'],    true ) : null;
         $row['objectives'] = ! empty( $row['objectives'] ) ? json_decode( $row['objectives'], true ) : [];
+
+        $curriculum        = get_option( 'knowly_default_curriculum', 'tt_primary' );
+        $is_retake         = $child_id ? self::has_prior_completion( $child_id, $quest_id ) : false;
+        $row['is_retake']  = $is_retake;
+        $row['gem_cost']   = $is_retake
+            ? self::get_retake_cost( $curriculum )
+            : self::get_first_attempt_cost( $curriculum );
 
         return $row;
     }

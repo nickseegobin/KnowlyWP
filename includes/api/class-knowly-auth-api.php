@@ -20,6 +20,7 @@
  *   POST  /knowly/v1/auth/pin/set           JWT parent Set / update PIN
  *   POST  /knowly/v1/auth/pin/verify        JWT        Verify parent PIN
  *   GET   /knowly/v1/auth/pin/status        JWT parent PIN status
+ *   POST  /knowly/v1/auth/autologin         JWT parent Generate one-time WP login token for WC hand-off
  *   GET   /knowly/v1/ping                   Open       Health check
  *
  * @package KnowlyAPI
@@ -152,6 +153,21 @@ class Knowly_Auth_API extends Knowly_API_Base {
             'permission_callback' => '__return_true',
         ] );
 
+        register_rest_route( $ns, '/auth/autologin', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'generate_autologin_token' ],
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'payment_url' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'esc_url_raw' ],
+            ],
+        ] );
+
+        register_rest_route( $ns, '/user/billing', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'get_billing' ],
+            'permission_callback' => '__return_true',
+        ] );
+
         register_rest_route( $ns, '/ping', [
             'methods'             => 'GET',
             'callback'            => [ $this, 'ping' ],
@@ -279,6 +295,71 @@ class Knowly_Auth_API extends Knowly_API_Base {
         if ( is_wp_error( $parent_id ) ) return $parent_id;
 
         return $this->success( Knowly_Auth_Service::get_pin_status( $parent_id ) );
+    }
+
+    /**
+     * Generate a one-time autologin token so React can hand off to the WC payment page
+     * without the parent needing to re-authenticate in WordPress.
+     *
+     * Token is a 32-byte random hex string stored as a transient (sha256-hashed key)
+     * with a 5-minute TTL. Deleted immediately on use — strictly one-time.
+     *
+     * The redirect endpoint lives at GET /?knowly_pay=TOKEN (handled via init hook
+     * in Knowly_WooCommerce::handle_autologin_redirect).
+     */
+    public function generate_autologin_token( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $user_id = $this->require_parent( $request );
+        if ( is_wp_error( $user_id ) ) return $user_id;
+
+        $payment_url = esc_url_raw( $request->get_param( 'payment_url' ) );
+
+        // Validate the redirect stays on this WP site
+        if ( empty( $payment_url ) || ! str_starts_with( $payment_url, home_url() ) ) {
+            return new WP_Error( 'knowly_invalid_redirect', 'Payment URL must be on this site.', [ 'status' => 400 ] );
+        }
+
+        $token = bin2hex( random_bytes( 32 ) );
+        $hash  = hash( 'sha256', $token );
+
+        set_transient( 'knowly_autologin_' . $hash, [
+            'user_id'      => $user_id,
+            'redirect_url' => $payment_url,
+        ], 5 * MINUTE_IN_SECONDS );
+
+        Knowly_Debug::log( 'auth.autologin', 'Autologin token generated', [
+            'user_id' => $user_id,
+        ], $user_id, 'info' );
+
+        return $this->success( [
+            'autologin_url' => add_query_arg( 'knowly_pay', $token, home_url( '/' ) ),
+        ] );
+    }
+
+    /**
+     * GET /user/billing — return the authenticated parent's saved WooCommerce billing address.
+     * Falls back to WP user name/email when billing meta hasn't been saved yet.
+     */
+    public function get_billing( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $user_id = $this->require_parent( $request );
+        if ( is_wp_error( $user_id ) ) return $user_id;
+
+        $keys    = [ 'first_name', 'last_name', 'email', 'phone', 'address_1', 'address_2', 'city', 'state', 'postcode', 'country' ];
+        $billing = [];
+        foreach ( $keys as $k ) {
+            $billing[ $k ] = (string) ( get_user_meta( $user_id, 'billing_' . $k, true ) ?: '' );
+        }
+
+        // Seed name and email from WP user when WC billing meta is empty
+        if ( ! $billing['first_name'] || ! $billing['last_name'] || ! $billing['email'] ) {
+            $user = get_userdata( $user_id );
+            if ( $user ) {
+                $billing['first_name'] = $billing['first_name'] ?: $user->first_name;
+                $billing['last_name']  = $billing['last_name']  ?: $user->last_name;
+                $billing['email']      = $billing['email']      ?: $user->user_email;
+            }
+        }
+
+        return $this->success( [ 'billing' => $billing ] );
     }
 
     public function ping(): WP_REST_Response {

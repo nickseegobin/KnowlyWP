@@ -5,6 +5,7 @@
  * Routes:
  *   GET    /knowly/v1/exams/active                   JWT  Active session for current child (or null)
  *   POST   /knowly/v1/exams/start                    JWT  Start exam (deduct token + serve package)
+ *   POST   /knowly/v1/exams/{session_id}/resume      JWT  Resume active session without re-deducting gems
  *   GET    /knowly/v1/exams/{session_id}/checkpoint  JWT  Get saved checkpoint
  *   POST   /knowly/v1/exams/{session_id}/checkpoint  JWT  Save mid-exam checkpoint
  *   POST   /knowly/v1/exams/{session_id}/submit      JWT  Submit exam answers
@@ -40,6 +41,12 @@ class Knowly_Exams_API extends Knowly_API_Base {
                 'source'     => [ 'required' => false, 'type' => 'string', 'default' => 'self', 'enum' => [ 'self', 'teacher_assigned' ] ],
                 'task_id'    => [ 'required' => false, 'type' => 'integer', 'default' => null ],
             ],
+        ] );
+
+        register_rest_route( $ns, '/exams/(?P<session_id>\d+)/resume', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'resume' ],
+            'permission_callback' => '__return_true',
         ] );
 
         register_rest_route( $ns, '/exams/(?P<session_id>\d+)/checkpoint', [
@@ -101,6 +108,14 @@ class Knowly_Exams_API extends Knowly_API_Base {
             $request->get_param( 'task_id' ) ? (int) $request->get_param( 'task_id' ) : null
         );
 
+        return is_wp_error( $result ) ? $result : $this->success( $result );
+    }
+
+    public function resume( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $ctx = $this->require_child_context( $request );
+        if ( is_wp_error( $ctx ) ) return $ctx;
+
+        $result = Knowly_Exam_Service::resume( (int) $request['session_id'], $ctx['child_id'] );
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }
 

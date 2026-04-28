@@ -29,6 +29,10 @@ class Knowly_Gem_Service {
         return 'knowly_gem_free_monthly_' . sanitize_key( $curriculum );
     }
 
+    public static function quest_cost_key( string $curriculum, string $attempt_type ): string {
+        return 'knowly_gem_cost_quest_' . sanitize_key( $attempt_type ) . '_' . sanitize_key( $curriculum );
+    }
+
     // ── Cost lookup (reads WP options, falls back to safe defaults) ───────────
 
     public static function get_exam_cost( string $curriculum, string $difficulty ): int {
@@ -49,6 +53,16 @@ class Knowly_Gem_Service {
             return (int) $stored;
         }
         return 10; // Safe fallback
+    }
+
+    public static function get_quest_cost( string $curriculum, bool $is_retake = false ): int {
+        $type   = $is_retake ? 'retake' : 'first';
+        $key    = self::quest_cost_key( $curriculum, $type );
+        $stored = get_option( $key );
+        if ( $stored !== false && (int) $stored >= 0 ) {
+            return (int) $stored;
+        }
+        return $is_retake ? 1 : 3;
     }
 
     // ── Balance ───────────────────────────────────────────────────────────────

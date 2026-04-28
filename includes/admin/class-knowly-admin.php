@@ -65,7 +65,7 @@ class Knowly_Admin {
         add_submenu_page( 'knowly-api', 'Settings',       'Settings',       'manage_options', 'knowly-settings',              [ 'Knowly_Admin_Settings',           'render' ] );
         add_submenu_page( 'knowly-api', 'Users',          'Users',          'manage_options', 'knowly-users',                 [ 'Knowly_Admin_Users',              'render' ] );
         add_submenu_page( 'knowly-api', 'Teachers',       'Teachers',       'manage_options', 'knowly-teachers',              [ 'Knowly_Admin_Teachers',           'render' ] );
-        add_submenu_page( 'knowly-api', 'Gems',           'Gems',           'manage_options', 'knowly-gems',                  [ 'Knowly_Admin_Gems',               'render' ] );
+        add_submenu_page( 'knowly-api', 'Gem Commerce',    'Gem Commerce',   'manage_options', 'knowly-gems',                  [ 'Knowly_Admin_Gems',               'render' ] );
         add_submenu_page( 'knowly-api', 'Classes',        'Classes',        'manage_options', 'knowly-classes',               [ 'Knowly_Admin_Classes',            'render' ] );
         add_submenu_page( 'knowly-api', 'Trials',         'Trials',         'manage_options', 'knowly-trials',                [ 'Knowly_Admin_Trials',             'render' ] );
         add_submenu_page( 'knowly-api', 'Quests',         'Quests',         'manage_options', 'knowly-quests-panel',          [ 'Knowly_Admin_Quests_Panel',       'render' ] );

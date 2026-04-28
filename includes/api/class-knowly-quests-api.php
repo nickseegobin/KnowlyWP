@@ -140,10 +140,11 @@ class Knowly_Quests_API extends Knowly_API_Base {
     }
 
     public function show( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-        $user_id = $this->authenticate( $request );
-        if ( is_wp_error( $user_id ) ) return $user_id;
+        $ctx = $this->require_child_context( $request );
+        // If child context resolution fails, fall back to unauthenticated view (no gem_cost personalisation)
+        $child_id = is_wp_error( $ctx ) ? null : $ctx['child_id'];
 
-        $quest = Knowly_Quest_Service::get_quest( $request['quest_id'] );
+        $quest = Knowly_Quest_Service::get_quest( $request['quest_id'], $child_id );
         if ( is_wp_error( $quest ) ) return $quest;
 
         return $this->success( $quest );
