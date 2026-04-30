@@ -138,6 +138,19 @@ class Knowly_Activator {
                 AFTER source" );
         }
 
+        // v2.0.0 — add sort_order to knowly_quests for single-topic quest ordering
+        $col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'sort_order'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_quests'
+        ) );
+        if ( empty( $col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_quests
+                ADD COLUMN sort_order INT DEFAULT NULL
+                AFTER module_title" );
+        }
+
         // v1.7.2 — add type column to knowly_tasks if missing
         $col = $wpdb->get_results( $wpdb->prepare(
             "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
@@ -474,6 +487,7 @@ class Knowly_Activator {
             topic            VARCHAR(200)        DEFAULT NULL,
             module_number    INT                 DEFAULT NULL,
             module_title     VARCHAR(200)        DEFAULT NULL,
+            sort_order       INT                 DEFAULT NULL,
             objectives       LONGTEXT            DEFAULT NULL,
             content          LONGTEXT            DEFAULT NULL,
             status           VARCHAR(20)         NOT NULL DEFAULT 'pending_review',

@@ -78,7 +78,7 @@ class Knowly_Quest_Service {
             $args[] = $subject;
         }
 
-        $sql .= ' ORDER BY module_number ASC';
+        $sql .= ' ORDER BY COALESCE(sort_order, 9999) ASC, topic ASC';
 
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
         $rows = $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A );

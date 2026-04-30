@@ -53,6 +53,16 @@ class Knowly_Analytics_API extends Knowly_API_Base {
                 'subject' => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
             ],
         ] );
+
+        register_rest_route( $ns, '/analytics/child-self', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'child_self_analytics' ],
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'period'  => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+                'subject' => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+            ],
+        ] );
     }
 
     // ── Handlers ──────────────────────────────────────────────────────────────
@@ -119,5 +129,30 @@ class Knowly_Analytics_API extends Knowly_API_Base {
         $result = Knowly_Analytics_Service::get_self_analytics( $user_id, $filters );
 
         return is_wp_error( $result ) ? $result : $this->success( $result );
+    }
+
+    /**
+     * GET /analytics/child-self[?period=term_1&subject=math]
+     *
+     * Accepts either a child JWT (child viewing their own stats) or a parent JWT
+     * (parent viewing their active child's stats). Uses require_child_context()
+     * to resolve the correct child_id for both cases.
+     */
+    public function child_self_analytics( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $ctx = $this->require_child_context( $request );
+        if ( is_wp_error( $ctx ) ) return $ctx;
+
+        $child_id = $ctx['child_id'];
+
+        $filters = [
+            'period'  => sanitize_text_field( $request->get_param( 'period' )  ?? '' ),
+            'subject' => sanitize_text_field( $request->get_param( 'subject' ) ?? '' ),
+        ];
+
+        $data                 = Knowly_Analytics_Service::get_student_data( $child_id, $filters );
+        $data['nickname']     = get_user_meta( $child_id, 'knowly_nickname',     true ) ?: '';
+        $data['avatar_index'] = (int) ( get_user_meta( $child_id, 'knowly_avatar_index', true ) ?: 1 );
+
+        return $this->success( $data );
     }
 }

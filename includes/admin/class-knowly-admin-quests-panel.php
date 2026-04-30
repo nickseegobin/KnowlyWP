@@ -551,6 +551,7 @@ class Knowly_Admin_Quests_Panel {
                 'topic'            => $meta['topic']         ?? null,
                 'module_number'    => $meta['module_number'] ?? null,
                 'module_title'     => $meta['module_title']  ?? null,
+                'sort_order'       => isset( $meta['sort_order'] ) ? (int) $meta['sort_order'] : null,
                 'objectives'       => wp_json_encode( $meta['objectives'] ?? [] ),
                 'content'          => $content ? wp_json_encode( $content ) : null,
                 'status'           => 'approved',
