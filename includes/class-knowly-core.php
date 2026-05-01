@@ -66,6 +66,7 @@ class Knowly_Core {
         ( new Knowly_Badges_API() )->register_routes();
         ( new Knowly_Analytics_API() )->register_routes();
         ( new Knowly_Editor_API() )->register_routes();
+        ( new Knowly_Curriculum_API() )->register_routes();
 
         Knowly_Debug::log( 'core.routes', 'All REST routes registered', [], null, 'debug' );
     }

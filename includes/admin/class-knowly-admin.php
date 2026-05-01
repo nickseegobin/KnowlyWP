@@ -44,6 +44,8 @@ class Knowly_Admin {
         Knowly_Admin_Training::boot();
         // Editor
         Knowly_Admin_Editor::boot();
+        // Phase 3 — Curriculum Management
+        Knowly_Admin_Curriculum::boot();
     }
 
     // ── Menu Registration ─────────────────────────────────────────────────────
@@ -70,6 +72,7 @@ class Knowly_Admin {
         add_submenu_page( 'knowly-api', 'Trials',         'Trials',         'manage_options', 'knowly-trials',                [ 'Knowly_Admin_Trials',             'render' ] );
         add_submenu_page( 'knowly-api', 'Quests',         'Quests',         'manage_options', 'knowly-quests-panel',          [ 'Knowly_Admin_Quests_Panel',       'render' ] );
         add_submenu_page( 'knowly-api', 'Editor',         'Editor',         'manage_options', 'knowly-editor',                [ 'Knowly_Admin_Editor',             'render' ] );
+        add_submenu_page( 'knowly-api', 'Curriculum',     'Curriculum',     'manage_options', 'knowly-curriculum',            [ 'Knowly_Admin_Curriculum',         'render' ] );
         add_submenu_page( 'knowly-api', 'Leaderboards',   'Leaderboards',   'manage_options', 'knowly-leaderboard',            [ 'Knowly_Admin_Leaderboard',        'render' ] );
         add_submenu_page( 'knowly-api', 'Notifications',  'Notifications',  'manage_options', 'knowly-notifications-panel',   [ 'Knowly_Admin_Notifications_Panel','render' ] );
         add_submenu_page( 'knowly-api', 'Analytics',      'Analytics',      'manage_options', 'knowly-analytics',             [ 'Knowly_Admin_Analytics',          'render' ] );
