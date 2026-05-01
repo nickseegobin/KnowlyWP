@@ -100,11 +100,11 @@ class Knowly_Admin_Spec_Tests {
     // =========================================================================
 
     private static function test_schema_topics_populated(): array {
-        $res = self::rest_get( '/editor/curriculum-topics', [ 'per_page' => 1 ] );
-        if ( $res['status'] !== 200 ) {
-            return self::fail( "Endpoint returned HTTP {$res['status']}.", $res );
+        $data = self::railway_get( '/api/v1/curriculum-topics', [ 'per_page' => 1 ] );
+        if ( isset( $data['error'] ) ) {
+            return self::fail( 'Railway call failed: ' . $data['error'] );
         }
-        $total = (int) ( $res['body']['total'] ?? 0 );
+        $total = (int) ( $data['total'] ?? 0 );
         if ( $total < 289 ) {
             return self::fail( "curriculum_topics has {$total} rows — expected ≥ 289.", [ 'total' => $total ] );
         }
@@ -112,16 +112,16 @@ class Knowly_Admin_Spec_Tests {
     }
 
     private static function test_schema_topics_std4(): array {
-        $res = self::rest_get( '/editor/curriculum-topics', [
+        $data = self::railway_get( '/api/v1/curriculum-topics', [
             'level'   => 'std_4',
             'period'  => 'term_1',
             'subject' => 'math',
             'per_page' => 50,
         ] );
-        if ( $res['status'] !== 200 ) {
-            return self::fail( "Endpoint returned HTTP {$res['status']}.", $res );
+        if ( isset( $data['error'] ) ) {
+            return self::fail( 'Railway call failed: ' . $data['error'] );
         }
-        $items = $res['body']['items'] ?? [];
+        $items = $data['items'] ?? [];
         if ( empty( $items ) ) {
             return self::fail( 'No std_4 / term_1 / math topics found.' );
         }
@@ -133,19 +133,19 @@ class Knowly_Admin_Spec_Tests {
         if ( ! empty( $missing_fields ) ) {
             return self::fail( 'Some rows are missing fields: ' . implode( ', ', array_unique( $missing_fields ) ) );
         }
-        return self::pass( "std_4/term_1/math: {$res['body']['total']} topics, all have module_title + sort_order." );
+        return self::pass( "std_4/term_1/math: {$data['total']} topics, all have module_title + sort_order." );
     }
 
     private static function test_schema_topics_std5(): array {
-        $res = self::rest_get( '/editor/curriculum-topics', [
+        $data = self::railway_get( '/api/v1/curriculum-topics', [
             'level'   => 'std_5',
             'subject' => 'math',
             'per_page' => 50,
         ] );
-        if ( $res['status'] !== 200 ) {
-            return self::fail( "Endpoint returned HTTP {$res['status']}.", $res );
+        if ( isset( $data['error'] ) ) {
+            return self::fail( 'Railway call failed: ' . $data['error'] );
         }
-        $items = $res['body']['items'] ?? [];
+        $items = $data['items'] ?? [];
         if ( empty( $items ) ) {
             return self::fail( 'No std_5 / math topics found.' );
         }
@@ -153,7 +153,7 @@ class Knowly_Admin_Spec_Tests {
         if ( ! empty( $non_null_periods ) ) {
             return self::fail( count( $non_null_periods ) . ' std_5 rows have non-null period — capstone topics must have period = null.' );
         }
-        return self::pass( "std_5/math: {$res['body']['total']} capstone topics, all have period = null." );
+        return self::pass( "std_5/math: {$data['total']} capstone topics, all have period = null." );
     }
 
     private static function test_schema_structure_via_catalogue(): array {
@@ -329,16 +329,16 @@ class Knowly_Admin_Spec_Tests {
     }
 
     private static function test_cdb_topic_list_shape(): array {
-        $res = self::rest_get( '/editor/curriculum-topics', [
+        $data = self::railway_get( '/api/v1/curriculum-topics', [
             'level'    => 'std_4',
             'period'   => 'term_1',
             'subject'  => 'math',
             'per_page' => 100,
         ] );
-        if ( $res['status'] !== 200 ) {
-            return self::fail( "Endpoint returned HTTP {$res['status']}." );
+        if ( isset( $data['error'] ) ) {
+            return self::fail( 'Railway call failed: ' . $data['error'] );
         }
-        $items = $res['body']['items'] ?? [];
+        $items = $data['items'] ?? [];
         if ( count( $items ) < 3 ) {
             return self::fail( 'Only ' . count( $items ) . ' topics returned for std_4/term_1/math — expected at least 3.' );
         }
@@ -351,15 +351,15 @@ class Knowly_Admin_Spec_Tests {
     }
 
     private static function test_cdb_capstone_topic_count(): array {
-        $res = self::rest_get( '/editor/curriculum-topics', [
+        $data = self::railway_get( '/api/v1/curriculum-topics', [
             'level'    => 'std_5',
             'subject'  => 'math',
             'per_page' => 100,
         ] );
-        if ( $res['status'] !== 200 ) {
-            return self::fail( "Endpoint returned HTTP {$res['status']}." );
+        if ( isset( $data['error'] ) ) {
+            return self::fail( 'Railway call failed: ' . $data['error'] );
         }
-        $items  = $res['body']['items'] ?? [];
+        $items  = $data['items'] ?? [];
         $titles = array_unique( array_filter( array_column( $items, 'module_title' ) ) );
         $count  = count( $titles );
 
@@ -815,9 +815,9 @@ class Knowly_Admin_Spec_Tests {
                 'label' => '🗄️ Group 1 — DB Schema',
                 'slow'  => false,
                 'tests' => [
-                    'schema_topics_populated'        => [ 'label' => 'curriculum_topics has ≥ 289 rows',                        'method' => 'GET',   'route' => '/editor/curriculum-topics' ],
-                    'schema_topics_std4'             => [ 'label' => 'std_4/term_1/math topics present with module_title',       'method' => 'GET',   'route' => '/editor/curriculum-topics' ],
-                    'schema_topics_std5'             => [ 'label' => 'std_5/math capstone topics have period = null',            'method' => 'GET',   'route' => '/editor/curriculum-topics' ],
+                    'schema_topics_populated'        => [ 'label' => 'curriculum_topics has ≥ 289 rows',                        'method' => 'GET',   'route' => '/api/v1/curriculum-topics' ],
+                    'schema_topics_std4'             => [ 'label' => 'std_4/term_1/math topics present with module_title',       'method' => 'GET',   'route' => '/api/v1/curriculum-topics' ],
+                    'schema_topics_std5'             => [ 'label' => 'std_5/math capstone topics have period = null',            'method' => 'GET',   'route' => '/api/v1/curriculum-topics' ],
                     'schema_structure_via_catalogue' => [ 'label' => 'curriculum_structure drives catalogue (≥ 36 combos, sea_paper present)', 'method' => 'GET', 'route' => '/api/v1/catalogue' ],
                     'schema_capstone_weightings'     => [ 'label' => 'SEA paper subjects are math + english only',               'method' => 'GET',   'route' => '/api/v1/catalogue' ],
                     'schema_fingerprints_table'      => [ 'label' => 'question_fingerprints renamed + all Phase 3 tables exist', 'method' => 'GET',   'route' => '/api/v1/health/db-check' ],
@@ -831,8 +831,8 @@ class Knowly_Admin_Spec_Tests {
                     'cdb_std4_no_topic'          => [ 'label' => 'std_4 combos have period, no topic',                          'method' => 'GET', 'route' => '/api/v1/catalogue' ],
                     'cdb_std5_has_topic'         => [ 'label' => 'std_5 practice combos have topic, no period',                 'method' => 'GET', 'route' => '/api/v1/catalogue' ],
                     'cdb_sea_paper_only_std5'    => [ 'label' => 'All sea_paper entries are std_5',                             'method' => 'GET', 'route' => '/api/v1/catalogue' ],
-                    'cdb_topic_list_shape'       => [ 'label' => 'std_4/term_1/math has ≥ 3 distinct module_titles',            'method' => 'GET', 'route' => '/editor/curriculum-topics' ],
-                    'cdb_capstone_topic_count'   => [ 'label' => 'std_5/math has 5–15 capstone module_titles',                  'method' => 'GET', 'route' => '/editor/curriculum-topics' ],
+                    'cdb_topic_list_shape'       => [ 'label' => 'std_4/term_1/math has ≥ 3 distinct module_titles',            'method' => 'GET', 'route' => '/api/v1/curriculum-topics' ],
+                    'cdb_capstone_topic_count'   => [ 'label' => 'std_5/math has 5–15 capstone module_titles',                  'method' => 'GET', 'route' => '/api/v1/curriculum-topics' ],
                 ],
             ],
             'crud' => [
