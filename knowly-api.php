@@ -114,6 +114,7 @@ spl_autoload_register( static function ( string $class ): void {
         // Phase 3 — Curriculum Management
         'Knowly_Curriculum_API'               => 'includes/api/class-knowly-curriculum-api.php',
         'Knowly_Admin_Curriculum'             => 'includes/admin/class-knowly-admin-curriculum.php',
+        'Knowly_Admin_Spec_Tests'             => 'includes/admin/class-knowly-admin-spec-tests.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {
