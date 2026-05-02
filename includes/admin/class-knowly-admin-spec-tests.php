@@ -811,15 +811,16 @@ class Knowly_Admin_Spec_Tests {
             }
         }
 
-        // 1. Create a test topic — the route should fire-and-forget a Pinecone upsert
-        $create = self::railway_post( '/api/v1/curriculum-topics', [
+        // 1. Create a test topic — random sort_order in 9M range avoids conflicts with stale archived rows
+        $sort_order = 9000000 + mt_rand( 0, 999999 );
+        $create     = self::railway_post( '/api/v1/curriculum-topics', [
             'curriculum'    => 'tt_primary',
             'level'         => 'std_4',
             'period'        => 'term_1',
             'subject'       => 'math',
             'module_number' => 99,
             'module_title'  => '_SPECTEST_PCSYNC_',
-            'sort_order'    => 9998,
+            'sort_order'    => $sort_order,
             'topic'         => '_SPECTEST_PINECONE_SYNC_',
             'source'        => 'manual',
         ] );
