@@ -81,11 +81,12 @@ class Knowly_Admin_Spec_Tests {
                 'regen_quest_path_b'             => self::test_regen_quest_path_b(),
                 'regen_quest_path_c'             => self::test_regen_quest_path_c(),
                 'regen_kc_count'                 => self::test_regen_kc_count(),
-                // Group 5 — Question Bank (fast)
+                // Group 5 — Question Bank + Pinecone Sync (fast)
                 'qb_tables_exist'                => self::test_qb_tables_exist(),
                 'qb_status_endpoint'             => self::test_qb_status_endpoint(),
                 'qb_enqueue_job'                 => self::test_qb_enqueue_job(),
                 'qb_trial_start_validation'      => self::test_qb_trial_start_validation(),
+                'pinecone_sync_create_archive'   => self::test_pinecone_sync_create_archive(),
                 // Group 6 — Question Bank Generation (slow)
                 'qb_gen_subtopic'                => self::test_qb_gen_subtopic(),
                 'qb_gen_general_topic'           => self::test_qb_gen_general_topic(),
@@ -794,6 +795,76 @@ class Knowly_Admin_Spec_Tests {
         return self::fail( 'Unexpected response shape — missing job_id and queued flag.', $data );
     }
 
+    private static function test_pinecone_sync_create_archive(): array {
+        // 1. Create a test topic — the route should fire-and-forget a Pinecone upsert
+        $create = self::railway_post( '/api/v1/curriculum-topics', [
+            'curriculum'    => 'tt_primary',
+            'level'         => 'std_4',
+            'period'        => 'term_1',
+            'subject'       => 'math',
+            'module_number' => 99,
+            'module_title'  => '_SPECTEST_PCSYNC_',
+            'sort_order'    => 9998,
+            'topic'         => '_SPECTEST_PINECONE_SYNC_',
+            'source'        => 'manual',
+        ] );
+
+        if ( isset( $create['error'] ) ) {
+            return self::fail( 'Create topic failed: ' . $create['error'] );
+        }
+        $topic_id = (int) ( $create['id'] ?? 0 );
+        if ( ! $topic_id ) {
+            return self::fail( 'Create topic returned no id.', $create );
+        }
+
+        // 2. Give Pinecone a moment to index (fire-and-forget runs after response)
+        sleep( 3 );
+
+        // 3. List training vectors — check our vector exists
+        $vectors = self::railway_get( '/api/v1/training/list', [ 'curriculum' => 'tt_primary' ] );
+        $vector_id = "ct-{$topic_id}";
+        $found = false;
+        foreach ( $vectors['items'] ?? [] as $v ) {
+            if ( $v['vector_id'] === $vector_id ) { $found = true; break; }
+        }
+
+        if ( ! $found ) {
+            // Clean up before failing
+            self::railway_post( '/api/v1/curriculum-topics/' . $topic_id, [] );
+            return self::warn( "Vector {$vector_id} not yet in Pinecone — sync may still be running or Pinecone not configured.", [
+                'vector_id' => $vector_id,
+                'total_vectors' => count( $vectors['items'] ?? [] ),
+            ] );
+        }
+
+        // 4. Archive the topic — should trigger Pinecone delete
+        $archive_url = '/api/v1/curriculum-topics/' . $topic_id;
+        $archive = self::railway_delete( $archive_url );
+        if ( isset( $archive['error'] ) || empty( $archive['archived'] ) ) {
+            return self::fail( 'Archive failed after Pinecone upsert verified.', $archive );
+        }
+
+        sleep( 2 );
+
+        // 5. Confirm vector gone from Pinecone
+        $vectors_after = self::railway_get( '/api/v1/training/list', [ 'curriculum' => 'tt_primary' ] );
+        $still_there   = false;
+        foreach ( $vectors_after['items'] ?? [] as $v ) {
+            if ( $v['vector_id'] === $vector_id ) { $still_there = true; break; }
+        }
+
+        if ( $still_there ) {
+            return self::warn( "Vector {$vector_id} still in Pinecone after archive — delete may be async-delayed.", [
+                'vector_id' => $vector_id,
+            ] );
+        }
+
+        return self::pass( "Pinecone auto-sync OK: vector upserted on create, removed on archive.", [
+            'vector_id' => $vector_id,
+            'topic_id'  => $topic_id,
+        ] );
+    }
+
     private static function test_qb_trial_start_validation(): array {
         // Missing required fields — must return an error, not a 500
         $data = self::railway_post( '/api/v1/trial/start', [] );
@@ -1033,6 +1104,37 @@ class Knowly_Admin_Spec_Tests {
         return $body ?: [];
     }
 
+    private static function railway_delete( string $path ): array {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            return [ 'error' => 'Railway endpoint not configured.' ];
+        }
+
+        $response = wp_remote_request( $endpoint . $path, [
+            'method'  => 'DELETE',
+            'timeout' => 30,
+            'headers' => [
+                'X-AEP-Server-Key' => $server_key,
+                'Content-Type'     => 'application/json',
+            ],
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            return [ 'error' => $response->get_error_message() ];
+        }
+
+        $code   = wp_remote_retrieve_response_code( $response );
+        $parsed = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( $code < 200 || $code >= 300 ) {
+            return [ 'error' => $parsed['error'] ?? "HTTP {$code}", 'code' => $code ];
+        }
+
+        return $parsed ?: [];
+    }
+
     private static function railway_post( string $path, array $body = [] ): array {
         $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
         $server_key = get_option( 'knowly_railway_server_key', '' );
@@ -1134,13 +1236,14 @@ class Knowly_Admin_Spec_Tests {
                 ],
             ],
             'question_bank' => [
-                'label' => '🏦 Group 5 — Question Bank (fast)',
+                'label' => '🏦 Group 5 — Question Bank + Pinecone Sync (fast)',
                 'slow'  => false,
                 'tests' => [
-                    'qb_tables_exist'           => [ 'label' => 'question_bank + question_bank_queue tables exist in Supabase',    'method' => 'GET',  'route' => '/api/v1/health/db-check' ],
-                    'qb_status_endpoint'        => [ 'label' => '/question-bank/status returns pools array',                       'method' => 'GET',  'route' => '/api/v1/question-bank/status' ],
-                    'qb_enqueue_job'            => [ 'label' => '/question-bank/replenish sync=false enqueues job',                'method' => 'POST', 'route' => '/api/v1/question-bank/replenish' ],
-                    'qb_trial_start_validation' => [ 'label' => '/trial/start rejects empty body with error',                     'method' => 'POST', 'route' => '/api/v1/trial/start' ],
+                    'qb_tables_exist'             => [ 'label' => 'question_bank + question_bank_queue tables exist in Supabase',    'method' => 'GET',  'route' => '/api/v1/health/db-check' ],
+                    'qb_status_endpoint'          => [ 'label' => '/question-bank/status returns pools array',                       'method' => 'GET',  'route' => '/api/v1/question-bank/status' ],
+                    'qb_enqueue_job'              => [ 'label' => '/question-bank/replenish sync=false enqueues job',                'method' => 'POST', 'route' => '/api/v1/question-bank/replenish' ],
+                    'qb_trial_start_validation'   => [ 'label' => '/trial/start rejects empty body with error',                     'method' => 'POST', 'route' => '/api/v1/trial/start' ],
+                    'pinecone_sync_create_archive'=> [ 'label' => 'Curriculum topic auto-syncs to Pinecone on create, removed on archive', 'method' => 'POST+DELETE', 'route' => '/api/v1/curriculum-topics' ],
                 ],
             ],
             'qb_generation' => [

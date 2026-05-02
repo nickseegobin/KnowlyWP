@@ -35,7 +35,8 @@ class Knowly_Admin_Curriculum {
             <div class="knowly-curriculum-actions" style="margin: 12px 0;">
                 <button class="button button-primary" id="btn-load-topics">Load Topics</button>
                 <button class="button button-secondary" id="btn-add-topic" style="margin-left:8px;" disabled>+ Add Topic</button>
-                <button class="button" id="btn-sync-pinecone" style="margin-left:8px;" disabled title="Phase A3 — not yet implemented">Sync to Pinecone</button>
+                <button class="button" id="btn-sync-pinecone" style="margin-left:8px;" disabled title="Sync loaded topics to Pinecone vector index">Sync to Pinecone</button>
+                <span id="sync-pinecone-status" style="margin-left:10px;font-size:13px;color:#777;"></span>
                 <span id="curriculum-loading" style="display:none;margin-left:12px;">Loading…</span>
             </div>
 
@@ -93,6 +94,7 @@ class Knowly_Admin_Curriculum {
                     .then(function(resp) {
                         renderTopicsTable(resp.items || []);
                         $('#btn-add-topic').prop('disabled', false);
+                        $('#btn-sync-pinecone').prop('disabled', false);
                     })
                     .catch(function(err) {
                         $('#curriculum-results').html('<div class="notice notice-error inline"><p>' + err.message + '</p></div>');
@@ -246,10 +248,33 @@ class Knowly_Admin_Curriculum {
                     .finally(function() { $('#btn-save-add').prop('disabled', false).text('Add Topic'); });
             });
 
-            // ── Sync to Pinecone (Phase A3 stub) ──────────────────────────────
+            // ── Sync to Pinecone ──────────────────────────────────────────────
 
             $('#btn-sync-pinecone').on('click', function() {
-                alert('Pinecone sync will be available in Phase A3.');
+                var f = getFilters();
+                var scope = [f.level, f.period, f.subject].filter(Boolean).join('/') || 'all topics';
+                if (!confirm('Sync ' + scope + ' to Pinecone? This re-embeds and upserts all active topics in the current filter scope. Continue?')) return;
+
+                var $btn    = $('#btn-sync-pinecone');
+                var $status = $('#sync-pinecone-status');
+                $btn.prop('disabled', true).text('Syncing…');
+                $status.text('Sending to Pinecone…').css('color', '#2271b1');
+
+                var body = { curriculum: f.curriculum || 'tt_primary' };
+                if (f.level)   body.level   = f.level;
+                if (f.period)  body.period  = f.period;
+                if (f.subject) body.subject = f.subject;
+
+                apiFetch('POST', REST_BASE + '/sync-pinecone', body)
+                    .then(function(r) {
+                        $status.text('✓ ' + r.synced + ' synced, ' + r.failed + ' failed of ' + r.total + ' topics.').css('color', r.failed > 0 ? '#dba617' : '#00a32a');
+                    })
+                    .catch(function(err) {
+                        $status.text('✗ Sync failed: ' + err.message).css('color', '#d63638');
+                    })
+                    .finally(function() {
+                        $btn.prop('disabled', false).text('Sync to Pinecone');
+                    });
             });
 
         })(jQuery);

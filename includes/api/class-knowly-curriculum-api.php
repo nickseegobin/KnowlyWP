@@ -118,8 +118,28 @@ class Knowly_Curriculum_API extends Knowly_API_Base {
     }
 
     public function sync_pinecone( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-        // Phase A3 stub — will call Railway POST /api/v1/curriculum/sync-pinecone
-        return new WP_REST_Response( [ 'message' => 'Pinecone sync not yet implemented (Phase A3).' ], 501 );
+        $body = array_filter( [
+            'curriculum' => $request->get_param( 'curriculum' ) ?: 'tt_primary',
+            'level'      => $request->get_param( 'level' ),
+            'period'     => $request->get_param( 'period' ),
+            'subject'    => $request->get_param( 'subject' ),
+        ], fn( $v ) => $v !== null && $v !== '' );
+
+        $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        if ( ! $endpoint ) {
+            return new WP_Error( 'knowly_railway_not_configured', 'Railway endpoint not configured.', [ 'status' => 503 ] );
+        }
+
+        $response = wp_remote_post( $endpoint . '/api/v1/curriculum-topics/sync', [
+            'timeout' => 120,
+            'headers' => $this->base_headers(),
+            'body'    => wp_json_encode( $body ),
+        ] );
+
+        $result = $this->parse_railway_response( $response );
+        if ( is_wp_error( $result ) ) return $result;
+
+        return new WP_REST_Response( $result, 200 );
     }
 
     // ── Auth ──────────────────────────────────────────────────────────────────
