@@ -925,7 +925,7 @@ class Knowly_Admin_Spec_Tests {
             return self::fail( 'No questions available for shape validation.' );
         }
 
-        $required = [ 'question_id', 'question', 'options', 'difficulty' ];
+        $required = [ 'question_id', 'question', 'options' ];
         $problems = [];
         foreach ( $questions as $i => $q ) {
             foreach ( $required as $field ) {
@@ -939,6 +939,10 @@ class Knowly_Admin_Spec_Tests {
                 if ( empty( $opts[ $letter ] ) ) {
                     $problems[] = "q[{$i}] options missing {$letter}";
                 }
+            }
+            // difficulty lives inside meta.difficulty (not top-level)
+            if ( empty( $q['meta']['difficulty'] ) ) {
+                $problems[] = "q[{$i}] missing meta.difficulty";
             }
             // correct_answer must NOT be in the questions array (hidden from student)
             if ( isset( $q['correct_answer'] ) ) {
