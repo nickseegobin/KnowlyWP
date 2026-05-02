@@ -796,6 +796,21 @@ class Knowly_Admin_Spec_Tests {
     }
 
     private static function test_pinecone_sync_create_archive(): array {
+        // 0. Clean up any stale test row from a previous failed run
+        $existing = self::railway_get( '/api/v1/curriculum-topics', [
+            'curriculum' => 'tt_primary',
+            'level'      => 'std_4',
+            'period'     => 'term_1',
+            'subject'    => 'math',
+            'per_page'   => 200,
+            'status'     => 'active',
+        ] );
+        foreach ( $existing['items'] ?? [] as $item ) {
+            if ( ( $item['module_title'] ?? '' ) === '_SPECTEST_PCSYNC_' ) {
+                self::railway_delete( '/api/v1/curriculum-topics/' . (int) $item['id'] );
+            }
+        }
+
         // 1. Create a test topic — the route should fire-and-forget a Pinecone upsert
         $create = self::railway_post( '/api/v1/curriculum-topics', [
             'curriculum'    => 'tt_primary',
