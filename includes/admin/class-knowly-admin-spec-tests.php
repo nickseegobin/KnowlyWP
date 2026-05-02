@@ -817,41 +817,39 @@ class Knowly_Admin_Spec_Tests {
             return self::fail( 'Create topic returned no id.', $create );
         }
 
-        // 2. Give Pinecone a moment to index (fire-and-forget runs after response)
-        sleep( 3 );
-
-        // 3. List training vectors — check our vector exists
-        $vectors = self::railway_get( '/api/v1/training/list', [ 'curriculum' => 'tt_primary' ] );
         $vector_id = "ct-{$topic_id}";
-        $found = false;
-        foreach ( $vectors['items'] ?? [] as $v ) {
-            if ( $v['vector_id'] === $vector_id ) { $found = true; break; }
+
+        // 2. Give Pinecone a moment to index (fire-and-forget runs after response)
+        sleep( 4 );
+
+        // 3. Fetch the specific vector by ID — works for ct-* prefix which training/list doesn't cover
+        $fetch = self::railway_get( '/api/v1/training/fetch', [ 'id' => $vector_id ] );
+        if ( isset( $fetch['error'] ) ) {
+            self::railway_delete( '/api/v1/curriculum-topics/' . $topic_id );
+            return self::warn( "Could not check Pinecone vector — training/fetch returned error: " . $fetch['error'], [
+                'vector_id' => $vector_id,
+            ] );
         }
 
-        if ( ! $found ) {
-            // Clean up before failing
-            self::railway_post( '/api/v1/curriculum-topics/' . $topic_id, [] );
-            return self::warn( "Vector {$vector_id} not yet in Pinecone — sync may still be running or Pinecone not configured.", [
+        if ( ! ( $fetch['exists'] ?? false ) ) {
+            self::railway_delete( '/api/v1/curriculum-topics/' . $topic_id );
+            return self::warn( "Vector {$vector_id} not yet in Pinecone — sync may be delayed or Pinecone not configured.", [
                 'vector_id' => $vector_id,
-                'total_vectors' => count( $vectors['items'] ?? [] ),
+                'fetch'     => $fetch,
             ] );
         }
 
         // 4. Archive the topic — should trigger Pinecone delete
-        $archive_url = '/api/v1/curriculum-topics/' . $topic_id;
-        $archive = self::railway_delete( $archive_url );
+        $archive = self::railway_delete( '/api/v1/curriculum-topics/' . $topic_id );
         if ( isset( $archive['error'] ) || empty( $archive['archived'] ) ) {
             return self::fail( 'Archive failed after Pinecone upsert verified.', $archive );
         }
 
-        sleep( 2 );
+        sleep( 3 );
 
         // 5. Confirm vector gone from Pinecone
-        $vectors_after = self::railway_get( '/api/v1/training/list', [ 'curriculum' => 'tt_primary' ] );
-        $still_there   = false;
-        foreach ( $vectors_after['items'] ?? [] as $v ) {
-            if ( $v['vector_id'] === $vector_id ) { $still_there = true; break; }
-        }
+        $fetch_after = self::railway_get( '/api/v1/training/fetch', [ 'id' => $vector_id ] );
+        $still_there = $fetch_after['exists'] ?? false;
 
         if ( $still_there ) {
             return self::warn( "Vector {$vector_id} still in Pinecone after archive — delete may be async-delayed.", [
