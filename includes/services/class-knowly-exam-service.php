@@ -42,7 +42,9 @@ class Knowly_Exam_Service {
         string $trial_type = 'practice',
         string $topic = '',
         string $source = 'self',
-        ?int   $task_id = null
+        ?int   $task_id = null,
+        string $scope = '',
+        string $scope_ref = ''
     ): array|WP_Error {
         Knowly_Debug::log( 'exam.start', 'Trial start requested', [
             'parent_id'  => $parent_id,
@@ -55,6 +57,8 @@ class Knowly_Exam_Service {
             'topic'      => $topic,
             'source'     => $source,
             'task_id'    => $task_id,
+            'scope'      => $scope,
+            'scope_ref'  => $scope_ref,
         ], $parent_id, 'info' );
 
         // ── 1. Pre-check gem balance ──────────────────────────────────────────
@@ -74,8 +78,14 @@ class Knowly_Exam_Service {
             ] );
         }
 
-        // ── 2. Fetch from Railway sequential pool ─────────────────────────────
-        $package = self::fetch_from_railway( $child_id, $level, $period, $subject, $difficulty, $trial_type, $topic );
+        // ── 2. Fetch package — question_bank path or legacy WP pool ──────────
+        if ( $scope && $scope_ref ) {
+            $package = self::fetch_from_question_bank(
+                $level, $period ?: null, $subject, $scope, $scope_ref, $difficulty
+            );
+        } else {
+            $package = self::fetch_from_railway( $child_id, $level, $period, $subject, $difficulty, $trial_type, $topic );
+        }
 
         if ( is_wp_error( $package ) ) {
             return $package;
@@ -124,10 +134,15 @@ class Knowly_Exam_Service {
         // ── 5b. UPDATE new columns if they exist (added in v1.9.4 migration) ──
         // Separated from the INSERT so older DB schemas don't break.
         if ( $session_id ) {
-            $raw_answer_sheet = $wpdb->get_var( $wpdb->prepare(
-                "SELECT answer_sheet FROM {$wpdb->prefix}knowly_trial_packages WHERE package_id = %s",
-                $package['package_id']
-            ) );
+            // QB path: answer_sheet is already in the package; legacy path: read from WP pool table.
+            if ( ! empty( $package['answer_sheet'] ) ) {
+                $raw_answer_sheet = wp_json_encode( $package['answer_sheet'] );
+            } else {
+                $raw_answer_sheet = $wpdb->get_var( $wpdb->prepare(
+                    "SELECT answer_sheet FROM {$wpdb->prefix}knowly_trial_packages WHERE package_id = %s",
+                    $package['package_id']
+                ) );
+            }
 
             $new_cols = $wpdb->get_col( $wpdb->prepare(
                 "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
@@ -436,6 +451,92 @@ class Knowly_Exam_Service {
         Knowly_Debug::log( 'exam.pool', 'WP pool package served', [
             'child_id'   => $child_id,
             'package_id' => $row['package_id'],
+        ], null, 'info' );
+
+        return $package;
+    }
+
+    /**
+     * Fetch a trial from the Railway question_bank via POST /api/v1/trial/start.
+     *
+     * Used when scope + scope_ref params are present in the start request.
+     * Railway assembles individual questions by scope, returns { meta, questions, answer_sheet }.
+     *
+     * @param  string $level
+     * @param  string|null $period
+     * @param  string $subject
+     * @param  string $scope       'subtopic' | 'general_topic' | 'period'
+     * @param  string $scope_ref   slugified topic/module/period key
+     * @param  string $difficulty
+     * @param  int    $question_count
+     * @return array|WP_Error  { package_id, questions, answer_sheet, meta } or WP_Error
+     */
+    public static function fetch_from_question_bank(
+        string $level,
+        ?string $period,
+        string $subject,
+        string $scope,
+        string $scope_ref,
+        string $difficulty,
+        int    $question_count = 10
+    ): array|WP_Error {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            return new WP_Error( 'knowly_railway_not_configured', 'Railway endpoint not configured.', [ 'status' => 503 ] );
+        }
+
+        $body = [
+            'curriculum'     => get_option( 'knowly_default_curriculum', 'tt_primary' ),
+            'level'          => $level,
+            'period'         => $period ?: null,
+            'subject'        => self::normalise_subject( $subject ),
+            'scope'          => $scope,
+            'scope_ref'      => $scope_ref,
+            'difficulty'     => $difficulty,
+            'question_count' => $question_count,
+        ];
+
+        $response = wp_remote_post( $endpoint . '/api/v1/trial/start', [
+            'timeout' => 120,
+            'headers' => [
+                'Content-Type'     => 'application/json',
+                'X-AEP-Server-Key' => $server_key,
+            ],
+            'body' => wp_json_encode( $body ),
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            Knowly_Debug::log( 'exam.qb', 'Railway /trial/start HTTP error', [ 'error' => $response->get_error_message() ], null, 'error' );
+            return new WP_Error( 'knowly_railway_error', 'Failed to connect to content service.', [ 'status' => 503 ] );
+        }
+
+        $code = wp_remote_retrieve_response_code( $response );
+        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( $code === 503 ) {
+            return new WP_Error( 'knowly_pool_empty', $data['error'] ?? 'Question bank is being populated. Please try again shortly.', [ 'status' => 503 ] );
+        }
+
+        if ( $code < 200 || $code >= 300 ) {
+            Knowly_Debug::log( 'exam.qb', 'Railway /trial/start error', [ 'http_code' => $code, 'body' => $data ], null, 'error' );
+            return new WP_Error( 'knowly_railway_error', $data['error'] ?? 'Content service returned an error.', [ 'status' => 502 ] );
+        }
+
+        // Normalise into a package-like shape the rest of start() can consume
+        $package = [
+            'package_id'   => 'qb-' . uniqid(),
+            'questions'    => $data['questions']    ?? [],
+            'answer_sheet' => $data['answer_sheet'] ?? [],
+            'meta'         => $data['meta']         ?? [],
+            'source'       => 'question_bank',
+        ];
+
+        Knowly_Debug::log( 'exam.qb', 'QB package assembled', [
+            'scope'          => $scope,
+            'scope_ref'      => $scope_ref,
+            'question_count' => count( $package['questions'] ),
         ], null, 'info' );
 
         return $package;

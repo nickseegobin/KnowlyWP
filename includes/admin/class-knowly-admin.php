@@ -48,6 +48,8 @@ class Knowly_Admin {
         Knowly_Admin_Curriculum::boot();
         // Phase 3 — Spec Tests
         Knowly_Admin_Spec_Tests::boot();
+        // Phase 3B — Question Bank
+        Knowly_Admin_QB::boot();
     }
 
     // ── Menu Registration ─────────────────────────────────────────────────────
@@ -75,6 +77,7 @@ class Knowly_Admin {
         add_submenu_page( 'knowly-api', 'Quests',         'Quests',         'manage_options', 'knowly-quests-panel',          [ 'Knowly_Admin_Quests_Panel',       'render' ] );
         add_submenu_page( 'knowly-api', 'Editor',         'Editor',         'manage_options', 'knowly-editor',                [ 'Knowly_Admin_Editor',             'render' ] );
         add_submenu_page( 'knowly-api', 'Curriculum',     'Curriculum',     'manage_options', 'knowly-curriculum',            [ 'Knowly_Admin_Curriculum',         'render' ] );
+        add_submenu_page( 'knowly-api', 'Question Bank',  'Question Bank',  'manage_options', 'knowly-question-bank',          [ 'Knowly_Admin_QB',                 'render' ] );
         add_submenu_page( 'knowly-api', 'Spec Tests',     'Spec Tests',     'manage_options', 'knowly-spec-tests',             [ 'Knowly_Admin_Spec_Tests',         'render' ] );
         add_submenu_page( 'knowly-api', 'Leaderboards',   'Leaderboards',   'manage_options', 'knowly-leaderboard',            [ 'Knowly_Admin_Leaderboard',        'render' ] );
         add_submenu_page( 'knowly-api', 'Notifications',  'Notifications',  'manage_options', 'knowly-notifications-panel',   [ 'Knowly_Admin_Notifications_Panel','render' ] );

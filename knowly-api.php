@@ -115,6 +115,7 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Curriculum_API'               => 'includes/api/class-knowly-curriculum-api.php',
         'Knowly_Admin_Curriculum'             => 'includes/admin/class-knowly-admin-curriculum.php',
         'Knowly_Admin_Spec_Tests'             => 'includes/admin/class-knowly-admin-spec-tests.php',
+        'Knowly_Admin_QB'                     => 'includes/admin/class-knowly-admin-qb.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {

@@ -23,6 +23,7 @@ class Knowly_Admin_Spec_Tests {
     const TRANSIENT_TOPIC_ID    = 'knowly_spectest_topic_id';
     const TRANSIENT_TOPIC_STR   = 'knowly_spectest_topic_str';
     const TRANSIENT_QUEST_DATA  = 'knowly_spectest_quest_data';
+    const TRANSIENT_QB_TRIAL    = 'knowly_spectest_qb_trial';
 
     const TEST_TOPIC_ACTIVE   = '_SPECTEST_TOPIC_';
     const TEST_TOPIC_UPDATED  = '_SPECTEST_TOPIC_UPDATED_';
@@ -80,6 +81,16 @@ class Knowly_Admin_Spec_Tests {
                 'regen_quest_path_b'             => self::test_regen_quest_path_b(),
                 'regen_quest_path_c'             => self::test_regen_quest_path_c(),
                 'regen_kc_count'                 => self::test_regen_kc_count(),
+                // Group 5 — Question Bank (fast)
+                'qb_tables_exist'                => self::test_qb_tables_exist(),
+                'qb_status_endpoint'             => self::test_qb_status_endpoint(),
+                'qb_enqueue_job'                 => self::test_qb_enqueue_job(),
+                'qb_trial_start_validation'      => self::test_qb_trial_start_validation(),
+                // Group 6 — Question Bank Generation (slow)
+                'qb_gen_subtopic'                => self::test_qb_gen_subtopic(),
+                'qb_gen_general_topic'           => self::test_qb_gen_general_topic(),
+                'qb_trial_start_from_bank'       => self::test_qb_trial_start_from_bank(),
+                'qb_trial_start_question_shape'  => self::test_qb_trial_start_question_shape(),
                 default                          => [ 'pass' => false, 'message' => "Unknown test: {$test_id}" ],
             };
         } catch ( Throwable $e ) {
@@ -717,6 +728,233 @@ class Knowly_Admin_Spec_Tests {
     }
 
     // =========================================================================
+    // Group 5 — Question Bank (fast)
+    // =========================================================================
+
+    private static function test_qb_tables_exist(): array {
+        $data = self::railway_get( '/api/v1/health/db-check' );
+        if ( isset( $data['error'] ) ) {
+            return self::fail( 'db-check failed: ' . $data['error'] );
+        }
+        $tables = $data['tables'] ?? [];
+
+        foreach ( [ 'question_bank', 'question_bank_queue' ] as $tbl ) {
+            if ( ! ( $tables[ $tbl ]['exists'] ?? false ) ) {
+                return self::fail( "{$tbl} table not found — run migration 002_question_bank_tables.sql in Supabase.", $tables[ $tbl ] ?? [] );
+            }
+        }
+
+        return self::pass( 'question_bank + question_bank_queue tables confirmed.', [
+            'question_bank'       => $tables['question_bank']['count']       ?? '?',
+            'question_bank_queue' => $tables['question_bank_queue']['count'] ?? '?',
+        ] );
+    }
+
+    private static function test_qb_status_endpoint(): array {
+        $data = self::railway_get( '/api/v1/question-bank/status' );
+        if ( isset( $data['error'] ) ) {
+            return self::fail( '/question-bank/status failed: ' . $data['error'] );
+        }
+        if ( ! array_key_exists( 'pools', $data ) ) {
+            return self::fail( 'Response missing pools key.', $data );
+        }
+        $pools = $data['pools'];
+        if ( ! is_array( $pools ) ) {
+            return self::fail( 'pools is not an array.', [ 'type' => gettype( $pools ) ] );
+        }
+        $count = count( $pools );
+        return self::pass( "/question-bank/status OK — {$count} pool slot(s) tracked.", [ 'pool_count' => $count ] );
+    }
+
+    private static function test_qb_enqueue_job(): array {
+        $data = self::railway_post( '/api/v1/question-bank/replenish', [
+            'curriculum'   => 'tt_primary',
+            'level'        => 'std_4',
+            'period'       => 'term_1',
+            'subject'      => 'math',
+            'scope'        => 'subtopic',
+            'scope_ref'    => 'spectest_enqueue_probe',
+            'difficulty'   => 'easy',
+            'target_count' => 5,
+            'sync'         => false,
+        ] );
+
+        if ( isset( $data['error'] ) ) {
+            return self::fail( 'Replenish enqueue failed: ' . $data['error'] );
+        }
+
+        // Either a new job_id or already_queued — both are valid outcomes
+        if ( ! empty( $data['job_id'] ) ) {
+            return self::pass( 'Replenish queued. job_id=' . $data['job_id'], [ 'job_id' => $data['job_id'] ] );
+        }
+        if ( isset( $data['queued'] ) && $data['queued'] === false ) {
+            return self::pass( 'Replenish deduped (already_queued). Endpoint reachable and responding correctly.', $data );
+        }
+
+        return self::fail( 'Unexpected response shape — missing job_id and queued flag.', $data );
+    }
+
+    private static function test_qb_trial_start_validation(): array {
+        // Missing required fields — must return an error, not a 500
+        $data = self::railway_post( '/api/v1/trial/start', [] );
+
+        // Should be an error (missing required fields)
+        if ( isset( $data['error'] ) || isset( $data['errors'] ) ) {
+            return self::pass( '/trial/start validation working — missing params rejected.', [
+                'error' => $data['error'] ?? array_key_first( $data['errors'] ?? [] ),
+            ] );
+        }
+        if ( isset( $data['questions'] ) ) {
+            return self::fail( '/trial/start accepted empty body and returned questions — validation missing.' );
+        }
+        return self::fail( 'Unexpected response from /trial/start with empty body.', $data );
+    }
+
+    // =========================================================================
+    // Group 6 — Question Bank Generation (slow — calls Claude)
+    // =========================================================================
+
+    private static function test_qb_gen_subtopic(): array {
+        $data = self::railway_post( '/api/v1/question-bank/replenish', [
+            'curriculum'   => 'tt_primary',
+            'level'        => 'std_4',
+            'period'       => 'term_1',
+            'subject'      => 'math',
+            'scope'        => 'subtopic',
+            'scope_ref'    => 'place_value_up_to_1_000_000',
+            'difficulty'   => 'easy',
+            'target_count' => 5,
+            'sync'         => true,
+        ] );
+
+        if ( isset( $data['error'] ) ) {
+            return self::fail( 'Subtopic sync gen failed: ' . $data['error'] );
+        }
+        $inserted = (int) ( $data['inserted'] ?? 0 );
+        if ( $inserted < 1 ) {
+            return self::warn( "Sync gen returned inserted={$inserted} — pool may already be full or generation partially failed.", $data );
+        }
+        return self::pass( "Subtopic generation OK — {$inserted} questions inserted.", [
+            'inserted'  => $inserted,
+            'scope_ref' => 'place_value_up_to_1_000_000',
+        ] );
+    }
+
+    private static function test_qb_gen_general_topic(): array {
+        $data = self::railway_post( '/api/v1/question-bank/replenish', [
+            'curriculum'   => 'tt_primary',
+            'level'        => 'std_4',
+            'period'       => 'term_1',
+            'subject'      => 'math',
+            'scope'        => 'general_topic',
+            'scope_ref'    => 'number_and_place_value',
+            'difficulty'   => 'medium',
+            'target_count' => 5,
+            'sync'         => true,
+        ] );
+
+        if ( isset( $data['error'] ) ) {
+            return self::fail( 'General topic sync gen failed: ' . $data['error'] );
+        }
+        $inserted = (int) ( $data['inserted'] ?? 0 );
+        if ( $inserted < 1 ) {
+            return self::warn( "Sync gen returned inserted={$inserted} — pool may already be full.", $data );
+        }
+        return self::pass( "General topic generation OK — {$inserted} questions inserted.", [
+            'inserted'  => $inserted,
+            'scope_ref' => 'number_and_place_value',
+        ] );
+    }
+
+    private static function test_qb_trial_start_from_bank(): array {
+        $data = self::railway_post( '/api/v1/trial/start', [
+            'curriculum'     => 'tt_primary',
+            'level'          => 'std_4',
+            'period'         => 'term_1',
+            'subject'        => 'math',
+            'scope'          => 'subtopic',
+            'scope_ref'      => 'place_value_up_to_1_000_000',
+            'difficulty'     => 'easy',
+            'question_count' => 5,
+        ] );
+
+        if ( isset( $data['error'] ) ) {
+            return self::fail( '/trial/start failed: ' . $data['error'], $data );
+        }
+        $questions    = $data['questions']    ?? null;
+        $answer_sheet = $data['answer_sheet'] ?? null;
+
+        if ( ! is_array( $questions ) || empty( $questions ) ) {
+            return self::fail( '/trial/start returned no questions.', $data );
+        }
+        if ( ! is_array( $answer_sheet ) || empty( $answer_sheet ) ) {
+            return self::fail( '/trial/start returned no answer_sheet.', $data );
+        }
+
+        // Store for shape check
+        set_transient( self::TRANSIENT_QB_TRIAL, $data, HOUR_IN_SECONDS );
+
+        return self::pass( '/trial/start OK — ' . count( $questions ) . ' questions + answer_sheet.', [
+            'question_count'    => count( $questions ),
+            'answer_sheet_keys' => count( $answer_sheet ),
+            'meta'              => $data['meta'] ?? [],
+        ] );
+    }
+
+    private static function test_qb_trial_start_question_shape(): array {
+        $trial = get_transient( self::TRANSIENT_QB_TRIAL );
+        if ( ! $trial ) {
+            // Re-run inline so this test isn't dependent on order
+            $trial = self::railway_post( '/api/v1/trial/start', [
+                'curriculum'     => 'tt_primary',
+                'level'          => 'std_4',
+                'period'         => 'term_1',
+                'subject'        => 'math',
+                'scope'          => 'subtopic',
+                'scope_ref'      => 'place_value_up_to_1_000_000',
+                'difficulty'     => 'easy',
+                'question_count' => 5,
+            ] );
+            if ( isset( $trial['error'] ) ) {
+                return self::fail( '/trial/start (inline) failed: ' . $trial['error'] );
+            }
+        }
+
+        $questions = $trial['questions'] ?? [];
+        if ( empty( $questions ) ) {
+            return self::fail( 'No questions available for shape validation.' );
+        }
+
+        $required = [ 'question_id', 'question', 'options', 'difficulty' ];
+        $problems = [];
+        foreach ( $questions as $i => $q ) {
+            foreach ( $required as $field ) {
+                if ( empty( $q[ $field ] ) ) {
+                    $problems[] = "q[{$i}] missing {$field}";
+                }
+            }
+            // options must have A, B, C, D
+            $opts = $q['options'] ?? [];
+            foreach ( [ 'A', 'B', 'C', 'D' ] as $letter ) {
+                if ( empty( $opts[ $letter ] ) ) {
+                    $problems[] = "q[{$i}] options missing {$letter}";
+                }
+            }
+            // correct_answer must NOT be in the questions array (hidden from student)
+            if ( isset( $q['correct_answer'] ) ) {
+                $problems[] = "q[{$i}] exposes correct_answer — must be answer_sheet only";
+            }
+        }
+
+        if ( ! empty( $problems ) ) {
+            return self::fail( count( $problems ) . ' shape problem(s).', [ 'problems' => array_slice( $problems, 0, 10 ) ] );
+        }
+        return self::pass( count( $questions ) . ' questions — all well-formed; correct_answer hidden.', [
+            'count' => count( $questions ),
+        ] );
+    }
+
+    // =========================================================================
     // HTTP Helpers
     // =========================================================================
 
@@ -791,6 +1029,37 @@ class Knowly_Admin_Spec_Tests {
         return $body ?: [];
     }
 
+    private static function railway_post( string $path, array $body = [] ): array {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            return [ 'error' => 'Railway endpoint not configured.' ];
+        }
+
+        $response = wp_remote_post( $endpoint . $path, [
+            'timeout' => 120,
+            'headers' => [
+                'X-AEP-Server-Key' => $server_key,
+                'Content-Type'     => 'application/json',
+            ],
+            'body' => wp_json_encode( $body ),
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            return [ 'error' => $response->get_error_message() ];
+        }
+
+        $code   = wp_remote_retrieve_response_code( $response );
+        $parsed = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( $code < 200 || $code >= 300 ) {
+            return [ 'error' => $parsed['error'] ?? "HTTP {$code}", 'code' => $code ];
+        }
+
+        return $parsed ?: [];
+    }
+
     // ── Result Builders ───────────────────────────────────────────────────────
 
     private static function pass( string $message, array $data = [] ): array {
@@ -858,6 +1127,26 @@ class Knowly_Admin_Spec_Tests {
                     'regen_quest_path_b'    => [ 'label' => 'Quest Path B (capstone topic): sections present',           'method' => 'POST', 'route' => '/editor/quests/generate' ],
                     'regen_quest_path_c'    => [ 'label' => 'Quest Path C (single subtopic): exactly 1 section',        'method' => 'POST', 'route' => '/editor/quests/generate' ],
                     'regen_kc_count'        => [ 'label' => 'Phase D: each section has exactly 3 knowledge checks',     'method' => 'CHECK', 'route' => '' ],
+                ],
+            ],
+            'question_bank' => [
+                'label' => '🏦 Group 5 — Question Bank (fast)',
+                'slow'  => false,
+                'tests' => [
+                    'qb_tables_exist'           => [ 'label' => 'question_bank + question_bank_queue tables exist in Supabase',    'method' => 'GET',  'route' => '/api/v1/health/db-check' ],
+                    'qb_status_endpoint'        => [ 'label' => '/question-bank/status returns pools array',                       'method' => 'GET',  'route' => '/api/v1/question-bank/status' ],
+                    'qb_enqueue_job'            => [ 'label' => '/question-bank/replenish sync=false enqueues job',                'method' => 'POST', 'route' => '/api/v1/question-bank/replenish' ],
+                    'qb_trial_start_validation' => [ 'label' => '/trial/start rejects empty body with error',                     'method' => 'POST', 'route' => '/api/v1/trial/start' ],
+                ],
+            ],
+            'qb_generation' => [
+                'label' => '🧠 Group 6 — Question Bank Generation (SLOW — calls Claude)',
+                'slow'  => true,
+                'tests' => [
+                    'qb_gen_subtopic'               => [ 'label' => 'Subtopic sync gen: ≥ 1 questions inserted',                      'method' => 'POST', 'route' => '/api/v1/question-bank/replenish' ],
+                    'qb_gen_general_topic'          => [ 'label' => 'General topic sync gen: ≥ 1 questions inserted',                 'method' => 'POST', 'route' => '/api/v1/question-bank/replenish' ],
+                    'qb_trial_start_from_bank'      => [ 'label' => '/trial/start assembles questions + answer_sheet from QB',        'method' => 'POST', 'route' => '/api/v1/trial/start' ],
+                    'qb_trial_start_question_shape' => [ 'label' => 'QB questions have required fields; correct_answer is hidden',    'method' => 'CHECK', 'route' => '' ],
                 ],
             ],
         ];
@@ -930,10 +1219,14 @@ class Knowly_Admin_Spec_Tests {
             var FAST_TESTS = <?= wp_json_encode( array_keys( array_merge(
                 $groups['schema']['tests'],
                 $groups['curriculumdb']['tests'],
-                $groups['crud']['tests']
+                $groups['crud']['tests'],
+                $groups['question_bank']['tests']
             ) ) ) ?>;
 
-            var SLOW_TESTS = <?= wp_json_encode( array_keys( $groups['generation']['tests'] ) ) ?>;
+            var SLOW_TESTS = <?= wp_json_encode( array_keys( array_merge(
+                $groups['generation']['tests'],
+                $groups['qb_generation']['tests']
+            ) ) ) ?>;
 
             var pass_counts = { pass: 0, fail: 0, warn: 0, total: 0 };
 
