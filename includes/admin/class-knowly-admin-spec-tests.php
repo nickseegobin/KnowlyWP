@@ -842,8 +842,11 @@ class Knowly_Admin_Spec_Tests {
         $fetch = self::railway_get( '/api/v1/training/fetch', [ 'id' => $vector_id ] );
         if ( isset( $fetch['error'] ) ) {
             self::railway_delete( '/api/v1/curriculum-topics/' . $topic_id );
-            return self::warn( "Could not check Pinecone vector — training/fetch returned error: " . $fetch['error'], [
+            return self::warn( "Could not check Pinecone vector — training/fetch error: " . $fetch['error'], [
                 'vector_id' => $vector_id,
+                'details'   => $fetch['details'] ?? null,
+                'cause'     => $fetch['cause']   ?? null,
+                'hint'      => 'Check Railway logs for [training/fetch] and [pineconeSync] lines. Verify PINECONE_API_KEY and PINECONE_INDEX are set in Railway env vars.',
             ] );
         }
 
@@ -1112,7 +1115,12 @@ class Knowly_Admin_Spec_Tests {
         $body = json_decode( wp_remote_retrieve_body( $response ), true );
 
         if ( $code < 200 || $code >= 300 ) {
-            return [ 'error' => $body['error'] ?? "HTTP {$code}", 'code' => $code ];
+            return array_filter( [
+                'error'   => $body['error']   ?? "HTTP {$code}",
+                'details' => $body['details'] ?? null,
+                'cause'   => $body['cause']   ?? null,
+                'code'    => $code,
+            ] );
         }
 
         return $body ?: [];
