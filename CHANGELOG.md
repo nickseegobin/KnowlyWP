@@ -1,5 +1,130 @@
 # KnowlyAPI Plugin — Changelog
 
+## [1.6.0] — 2026-05-11 — Phase 3C: Trials System — Pack Builder, Question Bank Editor, Admin Tooling
+
+Full buildout of the WP admin Trials system and supporting Railway endpoints. Covers
+pack delivery infrastructure, a full question bank editor, and curriculum-driven admin UI.
+
+### Railway — `src/routes/trialPacks.js`
+
+**Difficulty mix rewrite (3-pool explicit draw):**
+
+Previous implementation only drew from `easy` and `hard` pools for easy packs (no medium
+questions were being included). Rewritten to fetch each pool independently via `Promise.all`:
+
+| Pack type | Total Qs | Easy | Medium | Hard |
+|-----------|----------|------|--------|------|
+| easy      | 12       | 9    | 2      | 1    |
+| medium    | 18       | 4    | 9      | 5    |
+| hard      | 24       | 3    | 9      | 12   |
+
+Shortfalls per pool are now reported in `shortfalls[]` rather than aborting the build.
+
+**New endpoint — `POST /trial-packs/dynamic-preview`:**
+Multi-topic preview for admin use. Accepts `modules[]` and `questions_per_module`.
+Randomly assigns a difficulty to each module (simulating live React exam behaviour).
+Nothing is saved. Returns `module_assignments[]` (with `difficulty_drawn`, `questions_drawn`)
+plus the full shuffled question list.
+
+**Updated — `PATCH /trial-packs/:id`:**
+Now accepts `release_questions: true` in the body. When set, NULLs `assigned_pack_id`
+on all questions belonging to the pack before archiving — returning them to the available pool.
+
+**New endpoint — `DELETE /trial-packs/:id` (Disband Pack):**
+Permanently deletes a pack row and releases all locked questions back to the pool.
+Works on active or archived packs. Returns `{ disbanded: true, released: N }`.
+
+### Railway — `src/routes/questionBank.js`
+
+**New endpoint — `GET /question-bank/modules`:**
+Returns `[{ module_number, module_title }]` for a given level/subject/period scope.
+Used by WP Admin dropdowns to show named modules instead of bare numbers.
+
+**Expanded — `PATCH /question-bank/questions/:id`:**
+Previously status-only. Now accepts any combination of: `question`, `options` (A/B/C/D),
+`correct_answer`, `difficulty`, `explanation`, `tip`, `topic`, `status`.
+
+**Fixed — `GET /question-bank/questions` missing fields:**
+Supabase select was missing `explanation` and `tip`, causing blank fields in the QB Editor
+modal. Both fields added to the select list.
+
+### WP Admin — `class-knowly-admin-trials.php`
+
+**New tab: Pack Library**
+- Filter bar (level, period, subject, difficulty, status) with paginated pack table
+- "View Qs" button expands a drawer showing full question cards (with explanation + tip) for any pack
+- Inline archive confirmation row: choose "Archive — keep questions locked" or "Disband Pack — release Qs to pool"
+- Archived packs show Reactivate and Disband Pack buttons (previously showed nothing)
+- Collapsible Pack Builder section at the top of the tab (same functionality as Simulations)
+- Module dropdown populated via `GET /question-bank/modules` AJAX — shows module titles not numbers
+
+**Rebuilt: Simulations tab**
+- "Load Modules" AJAX button replaces the old module number text input
+- Named module select dropdown populated from QB
+- **Dynamic Preview section** — select multiple modules via checkboxes; system randomly assigns
+  a difficulty per module and draws `questions_per_module` questions. Preview only, nothing saved.
+- Instruction guide (collapsible) explains pack types, difficulty mix ratios, and the Load Modules flow
+- Static Pack Builder moved to Simulations tab
+
+**New: `curriculum_parts()` private helper:**
+Reads `knowly_curriculum_subjects` WP option and returns `[levels, periods, subjects]` as
+associative arrays. Replaces all hardcoded dropdown options — adding a new curriculum (e.g. secondary
+school) to the WP option automatically propagates to all Trials dropdowns.
+
+**All level / period / subject dropdowns now curriculum-driven:**
+Pack Library filters, Pack Builder, and Simulations all use `curriculum_parts()` output.
+No more drift when secondary school content is added.
+
+**New AJAX handlers registered:**
+- `knowly_trials_packs_list` — paginated pack list with filters
+- `knowly_trials_pack_detail` — full question list for one pack
+- `knowly_trials_pack_archive` — archive with optional question release
+- `knowly_trials_pack_reactivate` — restore archived pack to active
+- `knowly_trials_pack_disband` — permanently delete pack + release questions
+- `knowly_trials_get_modules` — proxy to `GET /question-bank/modules`
+- `knowly_dynamic_preview` — proxy to `POST /trial-packs/dynamic-preview`
+
+**Bug fix — Disband Pack button not firing:**
+Duplicate `class=` attribute on the button HTML (`class="button"` followed by a second
+`class="pl-archive-release-btn"` on the same element). HTML ignores duplicate attributes
+so the jQuery event handler never matched. Fixed by merging into a single `class=` attribute.
+
+### WP Admin — `class-knowly-admin-editor.php`
+
+**Tab restructure:**
+- "Training Materials" tab removed — Pinecone-backed content store was not curriculum-driven
+  and created drift risk relative to the curriculum page. QB generation uses curriculum taxonomy
+  directly in prompts; a separate content store is redundant.
+- "Trials" tab renamed → "Question Bank"
+- "Lessons" placeholder tab added (rich-text lesson authoring per module — deferred build)
+- Default tab changed from `training` → `trials`
+
+**Question Bank Editor (rebuilt Trials tab):**
+- Filter bar: Level, Period, Subject, "Load Modules" AJAX button, Module dropdown (named), Difficulty, Status
+- Paginated question table with columns: Mod, Topic, Question (truncated), Difficulty, Status,
+  Times Served, Actions
+- Edit modal — full field editing: question text, all four options (A/B/C/D), correct answer,
+  difficulty, explanation, tip, topic, status
+- Module dropdown uses `knowly_trials_get_modules` AJAX action — shows named module titles
+
+**Level / period / subject dropdowns now curriculum-driven:**
+Extracted from the `$taxonomy` parameter (same `knowly_curriculum_subjects` option). Replaces
+the hardcoded std_1–std_5 / term_1–term_4 / math-english-science-social_studies option tags.
+
+**New AJAX handlers:**
+- `knowly_qb_load` — proxies `GET /question-bank/questions` with all filter params
+- `knowly_qb_edit` — proxies `PATCH /question-bank/questions/:id` with all editable fields
+
+### Docs
+
+- `KnowlyAPI/docs/api-reference.md` — created as canonical React-client reference; covers all
+  trial, pack, QB, progress, leaderboard, and progression endpoints with request/response examples
+- Updated `api-reference.md` to reflect all endpoint changes from this phase:
+  `DELETE /trial-packs/:id`, `PATCH /:id` with `release_questions`, `POST /dynamic-preview`,
+  expanded `PATCH /question-bank/questions/:id`, `GET /question-bank/modules`
+
+---
+
 ## [1.5.0] — 2026-04-06 — Block 5: Class Management
 
 ### New Database Tables
