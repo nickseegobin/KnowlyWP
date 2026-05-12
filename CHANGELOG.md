@@ -1,5 +1,78 @@
 # KnowlyAPI Plugin — Changelog
 
+## [1.7.0] — 2026-05-11 — Phase 4: Sequential Trial Delivery
+
+Pre-built, sequentially numbered packs replace per-request generation. Children always
+receive the next unplayed pack in their branch; packs are shared across children (one pack
+built once, served to many). Auto-generation fires in the background after every submission
+to maintain a ready queue.
+
+### Supabase Migration — `migration_phase4_trial_delivery.sql`
+
+- `trial_packs.branch` (TEXT) — `'easy' | 'medium' | 'hard' | 'dynamic'`; backfilled from `difficulty` for existing packs
+- `trial_packs.pack_sequence_number` (INT) — sequential per `(curriculum, level, period, subject, branch)`; backfilled from 1 for existing packs
+- `trial_packs.module_assignments` (JSONB) — per-module difficulty lock for dynamic packs
+- `child_pack_history` table — `(child_id BIGINT, pack_id UUID)` UNIQUE constraint; records which packs a child has completed
+- Index: `idx_trial_packs_next_pack` on `(curriculum, level, subject, branch, pack_sequence_number ASC) WHERE status = 'active'`
+
+### Railway — `src/services/packBuilder.js` (new)
+
+Extracted shared pack-building logic from the route layer:
+- `buildPack()` — draws 3 difficulty pools, assigns `branch` + `sequence_number`, saves to `trial_packs`, locks questions via `assigned_pack_id`
+- `buildDynamicPack()` — randomly assigns a difficulty per module at build time, draws `questions_per_module` per module, saves as `branch='dynamic'`
+- `getNextSeq()` — queries `MAX(pack_sequence_number)` for the scope+branch and returns `+1`
+
+### Railway — `src/services/autoGenerate.js` (new)
+
+Background pipeline triggered after every `POST /submit-pack-exam`:
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `QUESTION_MIN.easy` | 6 | Min unassigned questions per (module × easy) slot |
+| `QUESTION_MIN.medium` | 9 | Min unassigned questions per (module × medium) slot |
+| `QUESTION_MIN.hard` | 12 | Min unassigned questions per (module × hard) slot |
+| `PACK_MIN` | 3 | Min active packs to maintain per scope+branch |
+| `DYNAMIC_QPM` | 4 | Questions per module in auto-built dynamic packs |
+
+`checkAndAutoGenerate()` fires four parallel checks: easy, medium, hard, and dynamic branches.
+Each check tops up question slots first, then builds a pack if below `PACK_MIN`.
+
+### Railway — New endpoints
+
+**`GET /trial/next-pack`** (server key)
+Finds the lowest-sequence active pack in the requested branch that the child has not yet
+completed. Returns questions shuffled for delivery + the full answer sheet for WP session
+storage. On 503 (`no_pack_available`) automatically queues background generation.
+
+**`POST /submit-pack-exam`** (Bearer JWT — child)
+Scores answers against the pack's answer sheet in `question_bank`. Writes `exam_sessions`
+(`source='pack'`), upserts `child_pack_history`, fires `checkAndAutoGenerate` in background.
+Returns `{ score, total, percentage, topic_breakdown, answer_sheet }`.
+
+**`DELETE /trial/child-history`** (server key)
+Admin reset — deletes all `child_pack_history` rows for a child, restarting them from
+Pack #1 on every branch. Returns `{ deleted, child_id }`.
+
+### Railway — Updated endpoints
+
+**`GET /trial-packs/list`** — now returns `branch` and `pack_sequence_number` per pack.
+
+**`POST /trial-packs/build`** — delegates to `buildPack()` service; response now includes `sequence_number`.
+
+### WP Admin — `class-knowly-admin-users.php`
+
+- **Reset Pack History button** added to the child History panel (amber, alongside "Remove All Trials")
+- Clicking confirms, then calls `knowly_admin_reset_pack_history` WP AJAX handler
+- Handler calls `DELETE /trial/child-history?child_id=X` on Railway with server key
+
+### Spec Tests — Group 15 (11 fast tests)
+
+Covers auth guards for all three new endpoints, input validation (missing fields, invalid branch),
+503 behaviour for unknown scope, `deleted: 0` noop for nonexistent child, schema column presence
+for `branch` and `pack_sequence_number`, and WP AJAX action registration.
+
+---
+
 ## [1.6.0] — 2026-05-11 — Phase 3C: Trials System — Pack Builder, Question Bank Editor, Admin Tooling
 
 Full buildout of the WP admin Trials system and supporting Railway endpoints. Covers
