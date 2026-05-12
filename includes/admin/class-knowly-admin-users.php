@@ -13,11 +13,12 @@ defined( 'ABSPATH' ) || exit;
 class Knowly_Admin_Users {
 
     public static function boot(): void {
-        add_action( 'wp_ajax_knowly_admin_update_child',  [ __CLASS__, 'ajax_update_child' ] );
-        add_action( 'wp_ajax_knowly_admin_update_parent', [ __CLASS__, 'ajax_update_parent' ] );
-        add_action( 'wp_ajax_knowly_admin_add_child',     [ __CLASS__, 'ajax_add_child' ] );
-        add_action( 'wp_ajax_knowly_admin_remove_child',  [ __CLASS__, 'ajax_remove_child' ] );
-        add_action( 'wp_ajax_knowly_admin_remove_gems',   [ __CLASS__, 'ajax_remove_gems' ] );
+        add_action( 'wp_ajax_knowly_admin_update_child',        [ __CLASS__, 'ajax_update_child' ] );
+        add_action( 'wp_ajax_knowly_admin_update_parent',       [ __CLASS__, 'ajax_update_parent' ] );
+        add_action( 'wp_ajax_knowly_admin_add_child',           [ __CLASS__, 'ajax_add_child' ] );
+        add_action( 'wp_ajax_knowly_admin_remove_child',        [ __CLASS__, 'ajax_remove_child' ] );
+        add_action( 'wp_ajax_knowly_admin_remove_gems',         [ __CLASS__, 'ajax_remove_gems' ] );
+        add_action( 'wp_ajax_knowly_admin_reset_pack_history',  [ __CLASS__, 'ajax_reset_pack_history' ] );
     }
 
     public static function render(): void {
@@ -590,8 +591,12 @@ class Knowly_Admin_Users {
                 <?php if ( $trial_count > 0 ) : ?>
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
                     <strong style="font-size:13px;">Trial History (<?= esc_html( $trial_count ) ?>)</strong>
-                    <button class="button button-small" style="color:#dc2626;border-color:#dc2626;"
-                        onclick="knowlyChildren.deleteHistory(<?= (int) $child->ID ?>, 'trials', this)">Remove All Trials</button>
+                    <div style="display:flex;gap:6px;">
+                        <button class="button button-small" style="color:#d97706;border-color:#d97706;"
+                            onclick="knowlyChildren.resetPackHistory(<?= (int) $child->ID ?>, this)">Reset Pack History</button>
+                        <button class="button button-small" style="color:#dc2626;border-color:#dc2626;"
+                            onclick="knowlyChildren.deleteHistory(<?= (int) $child->ID ?>, 'trials', this)">Remove All Trials</button>
+                    </div>
                 </div>
                 <?php
                 $sessions = $wpdb->get_results( $wpdb->prepare(
@@ -730,6 +735,23 @@ class Knowly_Admin_Users {
                     btn.disabled = false;
                     if (r.success) { alert('History removed.'); location.reload(); }
                     else { alert(r.data?.message || 'Error'); }
+                });
+            },
+            resetPackHistory(childId, btn) {
+                if (!confirm('Reset pack history for this child?\n\nThis clears their progress through the sequential pack queue — they will restart from Pack #1 on all branches.\n\nThis cannot be undone.')) return;
+                btn.disabled = true;
+                jQuery.post(ajaxurl, {
+                    action:   'knowly_admin_reset_pack_history',
+                    nonce:    _childNonce,
+                    child_id: childId,
+                }, r => {
+                    btn.disabled = false;
+                    if (r.success) {
+                        alert('Pack history reset. ' + (r.data?.deleted || 0) + ' record(s) cleared.');
+                        location.reload();
+                    } else {
+                        alert(r.data?.message || 'Error resetting pack history.');
+                    }
                 });
             },
         };
@@ -925,6 +947,51 @@ class Knowly_Admin_Users {
             'refunded'       => $child_gems,
             'parent_balance' => $parent_after,
         ] );
+    }
+
+    // ── AJAX: Reset pack history ──────────────────────────────────────────────
+
+    public static function ajax_reset_pack_history(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $child_id   = (int) ( $_POST['child_id'] ?? 0 );
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $child_id ) {
+            wp_send_json_error( [ 'message' => 'Invalid child.' ] );
+        }
+        if ( ! $endpoint ) {
+            wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] );
+        }
+
+        $resp = wp_remote_request(
+            $endpoint . '/api/v1/trial/child-history?' . http_build_query( [ 'child_id' => $child_id ] ),
+            [
+                'method'  => 'DELETE',
+                'timeout' => 15,
+                'headers' => [ 'X-AEP-Server-Key' => $server_key ],
+            ]
+        );
+
+        if ( is_wp_error( $resp ) ) {
+            wp_send_json_error( [ 'message' => $resp->get_error_message() ] );
+        }
+
+        $code   = wp_remote_retrieve_response_code( $resp );
+        $parsed = json_decode( wp_remote_retrieve_body( $resp ), true );
+
+        if ( $code >= 400 ) {
+            wp_send_json_error( [ 'message' => $parsed['error'] ?? "HTTP {$code}" ] );
+        }
+
+        Knowly_Debug::log( 'admin.users', 'Child pack history reset via admin', [
+            'child_id' => $child_id,
+            'deleted'  => $parsed['deleted'] ?? 0,
+        ], null, 'info' );
+
+        wp_send_json_success( $parsed );
     }
 
     // ── AJAX: Update parent ───────────────────────────────────────────────────
