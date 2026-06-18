@@ -44,44 +44,82 @@ class Knowly_Admin {
         Knowly_Admin_Training::boot();
         // Editor
         Knowly_Admin_Editor::boot();
+        // Data Management (Danger Zone purge controls)
+        Knowly_Admin_Data_Management::boot();
         // Phase 3 — Curriculum Management
         Knowly_Admin_Curriculum::boot();
         // Phase 3 — Spec Tests
         Knowly_Admin_Spec_Tests::boot();
         // Phase 3B — Question Bank
         Knowly_Admin_QB::boot();
+        // Lessons
+        Knowly_Admin_Lessons_Panel::boot();
+        // Sound Design
+        Knowly_Admin_Sound_Design::boot();
+        // Badges
+        Knowly_Admin_Badges::boot();
     }
 
     // ── Menu Registration ─────────────────────────────────────────────────────
 
     public static function register_menus(): void {
+
+        // ── Single top-level entry ────────────────────────────────────────────
         add_menu_page(
-            'KnowlyAPI',
-            'KnowlyAPI',
-            'manage_options',
-            'knowly-api',
-            [ __CLASS__, 'render_dashboard' ],
-            'dashicons-rest-api',
-            30
+            'Knowly', 'Knowly', 'manage_options',
+            'knowly-api', [ __CLASS__, 'render_dashboard' ],
+            'dashicons-welcome-learn-more', 30
         );
 
-        // ── Primary navigation — ordered per Production Spec ─────────────────
-        add_submenu_page( 'knowly-api', 'Dashboard',      'Dashboard',      'manage_options', 'knowly-api',                   [ __CLASS__,                         'render_dashboard' ] );
-        add_submenu_page( 'knowly-api', 'System',         'System',         'manage_options', 'knowly-system',                [ 'Knowly_Admin_System',             'render' ] );
-        add_submenu_page( 'knowly-api', 'Settings',       'Settings',       'manage_options', 'knowly-settings',              [ 'Knowly_Admin_Settings',           'render' ] );
-        add_submenu_page( 'knowly-api', 'Users',          'Users',          'manage_options', 'knowly-users',                 [ 'Knowly_Admin_Users',              'render' ] );
-        add_submenu_page( 'knowly-api', 'Teachers',       'Teachers',       'manage_options', 'knowly-teachers',              [ 'Knowly_Admin_Teachers',           'render' ] );
-        add_submenu_page( 'knowly-api', 'Gem Commerce',    'Gem Commerce',   'manage_options', 'knowly-gems',                  [ 'Knowly_Admin_Gems',               'render' ] );
-        add_submenu_page( 'knowly-api', 'Classes',        'Classes',        'manage_options', 'knowly-classes',               [ 'Knowly_Admin_Classes',            'render' ] );
-        add_submenu_page( 'knowly-api', 'Trials',         'Trials',         'manage_options', 'knowly-trials',                [ 'Knowly_Admin_Trials',             'render' ] );
-        add_submenu_page( 'knowly-api', 'Quests',         'Quests',         'manage_options', 'knowly-quests-panel',          [ 'Knowly_Admin_Quests_Panel',       'render' ] );
-        add_submenu_page( 'knowly-api', 'Editor',         'Editor',         'manage_options', 'knowly-editor',                [ 'Knowly_Admin_Editor',             'render' ] );
-        add_submenu_page( 'knowly-api', 'Curriculum',     'Curriculum',     'manage_options', 'knowly-curriculum',            [ 'Knowly_Admin_Curriculum',         'render' ] );
-        add_submenu_page( 'knowly-api', 'Question Bank',  'Question Bank',  'manage_options', 'knowly-question-bank',          [ 'Knowly_Admin_QB',                 'render' ] );
-        add_submenu_page( 'knowly-api', 'Spec Tests',     'Spec Tests',     'manage_options', 'knowly-spec-tests',             [ 'Knowly_Admin_Spec_Tests',         'render' ] );
-        add_submenu_page( 'knowly-api', 'Leaderboards',   'Leaderboards',   'manage_options', 'knowly-leaderboard',            [ 'Knowly_Admin_Leaderboard',        'render' ] );
-        add_submenu_page( 'knowly-api', 'Notifications',  'Notifications',  'manage_options', 'knowly-notifications-panel',   [ 'Knowly_Admin_Notifications_Panel','render' ] );
-        add_submenu_page( 'knowly-api', 'Analytics',      'Analytics',      'manage_options', 'knowly-analytics',             [ 'Knowly_Admin_Analytics',          'render' ] );
+        add_submenu_page( 'knowly-api', 'Dashboard', 'Dashboard', 'manage_options', 'knowly-api', [ __CLASS__, 'render_dashboard' ] );
+
+        // ── General Settings ──────────────────────────────────────────────────
+        add_submenu_page( 'knowly-api', '', 'General Settings', 'manage_options', 'knowly-sep-settings',  '__return_false' );
+        add_submenu_page( 'knowly-api', 'System',          'System',          'manage_options', 'knowly-system',           [ 'Knowly_Admin_System',           'render' ] );
+        add_submenu_page( 'knowly-api', 'Settings',        'Settings',        'manage_options', 'knowly-settings',         [ 'Knowly_Admin_Settings',         'render' ] );
+        add_submenu_page( 'knowly-api', 'Sound Design',    'Sound Design',    'manage_options', 'knowly-sound-design',     [ 'Knowly_Admin_Sound_Design',     'render' ] );
+        add_submenu_page( 'knowly-api', 'Analytics',       'Analytics',       'manage_options', 'knowly-analytics',        [ 'Knowly_Admin_Analytics',        'render' ] );
+        add_submenu_page( 'knowly-api', 'Data Management', 'Data Management', 'manage_options', 'knowly-data-management',  [ 'Knowly_Admin_Data_Management',  'render' ] );
+
+        // ── Content Pipeline ──────────────────────────────────────────────────
+        add_submenu_page( 'knowly-api', '', 'Content Pipeline', 'manage_options', 'knowly-sep-pipeline', '__return_false' );
+        add_submenu_page( 'knowly-api', 'Curriculum',    'Curriculum',    'manage_options', 'knowly-curriculum',    [ 'Knowly_Admin_Curriculum', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Question Bank', 'Question Bank', 'manage_options', 'knowly-question-bank', [ 'Knowly_Admin_QB',         'render' ] );
+
+        // ── Content ───────────────────────────────────────────────────────────
+        add_submenu_page( 'knowly-api', '', 'Content', 'manage_options', 'knowly-sep-content', '__return_false' );
+        add_submenu_page( 'knowly-api', 'Quests',  'Quests',  'manage_options', 'knowly-quests-panel', [ 'Knowly_Admin_Quests_Panel', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Lessons', 'Lessons', 'manage_options', 'knowly-lessons',      [ 'Knowly_Admin_Lessons_Panel', 'render' ] );
+        add_submenu_page( 'knowly-api', 'Trials',  'Trials',  'manage_options', 'knowly-trials',       [ 'Knowly_Admin_Trials',       'render' ] );
+        add_submenu_page( 'knowly-api', 'Badges',  'Badges',  'manage_options', 'knowly-badges',       [ 'Knowly_Admin_Badges',       'render' ] );
+        add_submenu_page( 'knowly-api', 'Editor',  'Editor',  'manage_options', 'knowly-editor',       [ 'Knowly_Admin_Editor',       'render' ] );
+
+        // ── Classroom ─────────────────────────────────────────────────────────
+        add_submenu_page( 'knowly-api', '', 'Classroom', 'manage_options', 'knowly-sep-classroom', '__return_false' );
+        add_submenu_page( 'knowly-api', 'Students',      'Students',      'manage_options', 'knowly-users',               [ 'Knowly_Admin_Users',               'render' ] );
+        add_submenu_page( 'knowly-api', 'Teachers',      'Teachers',      'manage_options', 'knowly-teachers',            [ 'Knowly_Admin_Teachers',            'render' ] );
+        add_submenu_page( 'knowly-api', 'Classes',       'Classes',       'manage_options', 'knowly-classes',             [ 'Knowly_Admin_Classes',             'render' ] );
+        add_submenu_page( 'knowly-api', 'Gem Commerce',  'Gem Commerce',  'manage_options', 'knowly-gems',                [ 'Knowly_Admin_Gems',                'render' ] );
+        add_submenu_page( 'knowly-api', 'Leaderboards',  'Leaderboards',  'manage_options', 'knowly-leaderboard',         [ 'Knowly_Admin_Leaderboard',         'render' ] );
+        add_submenu_page( 'knowly-api', 'Notifications', 'Notifications', 'manage_options', 'knowly-notifications-panel', [ 'Knowly_Admin_Notifications_Panel', 'render' ] );
+
+        // ── Developer ─────────────────────────────────────────────────────────
+        add_submenu_page( 'knowly-api', '', 'Developer', 'manage_options', 'knowly-sep-developer', '__return_false' );
+        add_submenu_page( 'knowly-api', 'Spec Tests', 'Spec Tests', 'manage_options', 'knowly-spec-tests', [ 'Knowly_Admin_Spec_Tests', 'render' ] );
+    }
+
+    // ── Lessons placeholder ───────────────────────────────────────────────────
+
+    public static function render_lessons_placeholder(): void {
+        ?>
+        <div class="wrap knowly-wrap">
+            <h1>Lessons</h1>
+            <p style="margin-top:12px;color:#777;">
+                Lessons let students pick any curriculum topic for a targeted study session with application-level questions (Bloom's 3–4).<br>
+                This section is under construction.
+            </p>
+        </div>
+        <?php
     }
 
     // ── Assets ────────────────────────────────────────────────────────────────
@@ -204,17 +242,24 @@ class Knowly_Admin {
             </div>
 
             <div class="knowly-quick-links">
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-system' ) ) ?>" class="button button-primary">System</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-users' ) ) ?>" class="button button-primary">Users</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-teachers' ) ) ?>" class="button button-primary<?= $pending_teachers > 0 ? ' knowly-alert-btn' : '' ?>">Teachers<?= $pending_teachers > 0 ? " ({$pending_teachers})" : '' ?></a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-gems' ) ) ?>" class="button button-primary">Gems</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-classes' ) ) ?>" class="button button-primary">Classes</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-trials' ) ) ?>" class="button button-primary">Trials</a>
+                <span class="knowly-ql-heading">Content Pipeline</span>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-curriculum' ) ) ?>" class="button button-primary">Curriculum</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-question-bank' ) ) ?>" class="button button-primary">Question Bank</a>
+                <span class="knowly-ql-heading">Content</span>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-quests-panel' ) ) ?>" class="button button-primary">Quests</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-leaderboard' ) ) ?>" class="button button-primary">Leaderboard</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-lessons' ) ) ?>" class="button button-primary">Lessons</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-trials' ) ) ?>" class="button button-primary">Trials</a>
+                <span class="knowly-ql-heading">Classroom</span>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-users' ) ) ?>" class="button button-primary">Students</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-teachers' ) ) ?>" class="button button-primary<?= $pending_teachers > 0 ? ' knowly-alert-btn' : '' ?>">Teachers<?= $pending_teachers > 0 ? " ({$pending_teachers})" : '' ?></a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-classes' ) ) ?>" class="button button-primary">Classes</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-gems' ) ) ?>" class="button button-primary">Gem Commerce</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-leaderboard' ) ) ?>" class="button button-primary">Leaderboards</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-notifications-panel' ) ) ?>" class="button button-primary">Notifications</a>
-                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-analytics' ) ) ?>" class="button button-primary">Analytics</a>
+                <span class="knowly-ql-heading">General Settings</span>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-system' ) ) ?>" class="button">System</a>
                 <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-settings' ) ) ?>" class="button">Settings</a>
+                <a href="<?= esc_url( admin_url( 'admin.php?page=knowly-analytics' ) ) ?>" class="button">Analytics</a>
             </div>
 
             <div class="knowly-api-table-wrapper">
@@ -344,6 +389,9 @@ class Knowly_Admin {
             // Block 10 — Training Material (Pinecone vector management)
             [ 'POST',   '/training/upsert',                          'Server Key',  'Upsert a training vector into Pinecone (embed + index)' ],
             [ 'DELETE', '/training/delete',                          'Server Key',  'Delete a training vector from Pinecone by vector_id' ],
+            [ 'POST',   '/training/import',                          'Server Key',  'Bulk CSV import — embed + upsert multiple rows to Pinecone' ],
+            // Phase C — Child Progression
+            [ 'GET',    '/child/progression',                        'JWT',         'Curriculum path map — coverage, mastery, weak areas, recommendations' ],
         ];
     }
 }

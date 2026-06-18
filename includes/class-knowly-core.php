@@ -21,9 +21,6 @@ class Knowly_Core {
         // Register REST routes
         add_action( 'rest_api_init', [ __CLASS__, 'register_routes' ] );
 
-        // Register custom post types
-        add_action( 'init', [ 'Knowly_Badge_Service', 'register_post_type' ] );
-
         // Inject CORS headers into REST responses
         add_filter( 'rest_pre_serve_request', [ __CLASS__, 'send_cors_headers' ], 10, 4 );
 
@@ -63,10 +60,13 @@ class Knowly_Core {
         ( new Knowly_Notifications_API() )->register_routes();
         ( new Knowly_Classes_API() )->register_routes();
         ( new Knowly_Quests_API() )->register_routes();
+        ( new Knowly_Lessons_API() )->register_routes();
         ( new Knowly_Badges_API() )->register_routes();
         ( new Knowly_Analytics_API() )->register_routes();
         ( new Knowly_Editor_API() )->register_routes();
         ( new Knowly_Curriculum_API() )->register_routes();
+        ( new Knowly_Progression_API() )->register_routes();
+        ( new Knowly_Sound_Design_API() )->register_routes();
 
         Knowly_Debug::log( 'core.routes', 'All REST routes registered', [], null, 'debug' );
     }

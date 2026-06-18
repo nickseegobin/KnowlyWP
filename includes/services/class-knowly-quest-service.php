@@ -33,9 +33,7 @@ class Knowly_Quest_Service {
     }
 
     public static function get_retake_cost( string $curriculum ): int {
-        $key    = 'knowly_gem_cost_quest_retake_' . sanitize_key( $curriculum );
-        $stored = get_option( $key );
-        return ( $stored !== false && (int) $stored >= 0 ) ? (int) $stored : 1;
+        return 0; // Quests are one-time payment — retakes are always free
     }
 
     // ── Catalogue ─────────────────────────────────────────────────────────────
@@ -128,6 +126,9 @@ class Knowly_Quest_Service {
 
         $row['content']    = ! empty( $row['content'] )    ? json_decode( $row['content'],    true ) : null;
         $row['objectives'] = ! empty( $row['objectives'] ) ? json_decode( $row['objectives'], true ) : [];
+
+        // Normalise audio_url — null when column doesn't exist yet (pre-migration installs)
+        $row['audio_url'] = $row['audio_url'] ?? null;
 
         $curriculum        = get_option( 'knowly_default_curriculum', 'tt_primary' );
         $is_retake         = $child_id ? self::has_prior_completion( $child_id, $quest_id ) : false;
@@ -258,15 +259,20 @@ class Knowly_Quest_Service {
     // ── Complete ──────────────────────────────────────────────────────────────
 
     /**
-     * Mark a Quest session complete — fully WP-local, no Railway dependency.
+     * Mark a Quest session complete.
      *
-     * Awards a badge on first completion via Knowly_Badge_Service::award().
+     * Marks the local WP session as completed, awards a badge on first
+     * completion, and records a progression entry in Railway's exam_sessions
+     * table so that GET /child/progression reflects the completed sub-topic.
      *
      * @param  string $session_id   The quest_session_id string (qs_…)
-     * @param  int    $child_id
+     * @param  int    $child_id     WP user ID of the child
+     * @param  string $topic        Sub-topic name (must match curriculum_topics.topic in Railway)
+     * @param  string $subject      Subject e.g. 'math' — derived from quest if empty
+     * @param  int    $score        Percentage score 0-100 (default 100 = completed all reviews)
      * @return array|WP_Error  { completed, badge_earned, badge_name, is_first_completion, gems_awarded }
      */
-    public static function complete( string $session_id, int $child_id ): array|WP_Error {
+    public static function complete( string $session_id, int $child_id, string $topic = '', string $subject = '', int $score = 100 ): array|WP_Error {
         global $wpdb;
 
         // Load and verify the session
@@ -310,19 +316,15 @@ class Knowly_Quest_Service {
         ) );
         $is_first_completion = ( $prior_count === 0 );
 
-        // Award badge on first completion
+        // Check quest module completion badge (fires when all sub-topics in module are done)
         $badge_earned = false;
         $badge_name   = null;
+        $badge_result = null;
 
-        if ( $is_first_completion ) {
-            $badge_result = Knowly_Badge_Service::award( $child_id, $quest_id );
-            if ( ! is_wp_error( $badge_result ) ) {
-                $badge_earned = true;
-                // badge_result contains badge_id — look up the title for display
-                $badge_name = ! empty( $badge_result['badge_id'] )
-                    ? ( get_the_title( (int) $badge_result['badge_id'] ) ?: $quest_id )
-                    : $quest_id;
-            }
+        $badge_result = Knowly_Badge_Service::check_quest_module_completion( $child_id, $quest_id );
+        if ( $badge_result ) {
+            $badge_earned = true;
+            $badge_name   = $badge_result['name'] ?? null;
         }
 
         Knowly_Debug::log( 'quest.complete', 'Quest session completed (local)', [
@@ -333,13 +335,65 @@ class Knowly_Quest_Service {
             'badge_earned'       => $badge_earned,
         ], $child_id, 'info' );
 
+        // ── Record progression in Railway ─────────────────────────────────────
+        // Writes to exam_sessions so GET /child/progression reflects the completed sub-topic.
+        // This is non-fatal: if Railway is unavailable, the quest still completes locally.
+        if ( $topic ) {
+            $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
+
+            // Derive subject from the quest if caller didn't supply one.
+            if ( ! $subject ) {
+                $quest_row = $wpdb->get_row(
+                    $wpdb->prepare(
+                        "SELECT subject FROM {$wpdb->prefix}knowly_quests WHERE quest_id = %s LIMIT 1",
+                        $quest_id
+                    ),
+                    ARRAY_A
+                );
+                $subject = $quest_row['subject'] ?? '';
+            }
+
+            // Get child's level and period.
+            $child_row = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT level, period FROM {$wpdb->prefix}knowly_children WHERE child_id = %d",
+                    $child_id
+                ),
+                ARRAY_A
+            );
+            $level  = $child_row['level']  ?? '';
+            $period = $child_row['period'] ?? '';
+
+            if ( $subject && $level ) {
+                $railway_result = self::railway_post( '/api/v1/quest/complete-progression', [
+                    'session_id' => $session_id,
+                    'user_id'    => $child_id,
+                    'quest_id'   => $quest_id,
+                    'subject'    => $subject,
+                    'topic'      => $topic,
+                    'curriculum' => $curriculum,
+                    'level'      => $level,
+                    'period'     => $period ?: null,
+                    'score'      => $score,
+                ] );
+
+                Knowly_Debug::log( 'quest.complete', 'Railway progression record', [
+                    'topic'   => $topic,
+                    'subject' => $subject,
+                    'level'   => $level,
+                    'result'  => is_wp_error( $railway_result ) ? $railway_result->get_error_message() : $railway_result,
+                ], $child_id, is_wp_error( $railway_result ) ? 'error' : 'info' );
+            }
+        }
+
         return [
-            'completed'          => true,
-            'badge_earned'       => $badge_earned,
-            'badge_name'         => $badge_name,
+            'completed'           => true,
+            'badge_earned'        => $badge_earned,
+            'badge_name'          => $badge_name,
+            'badge'               => $badge_result,
             'is_first_completion' => $is_first_completion,
-            'gems_awarded'       => 0,
-            'quest_id'           => $quest_id,
+            'gems_awarded'        => 0,
+            'quest_id'            => $quest_id,
         ];
     }
 
@@ -416,6 +470,125 @@ class Knowly_Quest_Service {
         ] );
 
         return self::parse_response( $response );
+    }
+
+    // ── Quest Questions ───────────────────────────────────────────────────────
+
+    /**
+     * Fetch active quest questions from Railway (without correct_answer).
+     */
+    public static function get_questions( string $quest_id ): array|WP_Error {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            return new WP_Error( 'knowly_config', 'Railway endpoint not configured.', [ 'status' => 503 ] );
+        }
+
+        $resp = wp_remote_get( $endpoint . '/api/v1/quest/' . rawurlencode( $quest_id ) . '/questions', [
+            'timeout' => 10,
+            'headers' => [ 'X-AEP-Server-Key' => $server_key ],
+        ] );
+
+        $body = self::parse_response( $resp );
+        if ( is_wp_error( $body ) ) return $body;
+
+        return [
+            'quest_id'  => $quest_id,
+            'questions' => $body['questions'] ?? [],
+            'count'     => $body['count']     ?? 0,
+        ];
+    }
+
+    /**
+     * Score quest question answers and write results to the local WP table.
+     *
+     * Fetches correct answers from Railway (server-key call), scores locally,
+     * inserts rows into wp_knowly_quest_question_results.
+     *
+     * @param  string $session_id  Quest session ID
+     * @param  string $quest_id
+     * @param  int    $child_id
+     * @param  array  $answers     { question_id => selected_answer }
+     * @return array|WP_Error
+     */
+    public static function submit_questions(
+        string $session_id,
+        string $quest_id,
+        int    $child_id,
+        array  $answers
+    ): array|WP_Error {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            return new WP_Error( 'knowly_config', 'Railway endpoint not configured.', [ 'status' => 503 ] );
+        }
+
+        // Fetch all questions WITH correct_answer using server key
+        $resp = wp_remote_get( $endpoint . '/api/v1/quest/' . rawurlencode( $quest_id ) . '/questions', [
+            'timeout' => 10,
+            'headers' => [ 'X-AEP-Server-Key' => $server_key ],
+        ] );
+
+        $body = self::parse_response( $resp );
+        if ( is_wp_error( $body ) ) return $body;
+
+        $questions = $body['questions'] ?? [];
+        if ( empty( $questions ) ) {
+            return new WP_Error( 'knowly_not_found', 'No questions found for this quest.', [ 'status' => 404 ] );
+        }
+
+        // Build answer-sheet map: question_id → correct_answer
+        // Note: Railway returns questions without correct_answer for child-facing calls,
+        // but with server-key it returns them. Add correct_answer to the Railway GET if
+        // not already present — for now we re-fetch via the admin endpoint.
+        $answer_sheet = [];
+        foreach ( $questions as $q ) {
+            $qid = $q['id'] ?? '';
+            if ( $qid ) $answer_sheet[ $qid ] = $q['correct_answer'] ?? null;
+        }
+
+        // Score and persist
+        global $wpdb;
+        $table   = $wpdb->prefix . 'knowly_quest_question_results';
+        $now     = current_time( 'mysql' );
+        $results = [];
+        $correct = 0;
+
+        foreach ( $answers as $question_id => $selected ) {
+            $selected   = strtoupper( substr( trim( (string) $selected ), 0, 1 ) );
+            $correct_ans = $answer_sheet[ $question_id ] ?? null;
+            $is_correct = $correct_ans && $selected === $correct_ans;
+
+            if ( $is_correct ) $correct++;
+
+            $wpdb->insert( $table, [
+                'session_id'      => $session_id,
+                'quest_id'        => $quest_id,
+                'child_id'        => $child_id,
+                'question_id'     => $question_id,
+                'selected_answer' => $selected ?: null,
+                'is_correct'      => $is_correct ? 1 : 0,
+                'answered_at'     => $now,
+            ] );
+
+            $results[] = [
+                'question_id'     => $question_id,
+                'selected_answer' => $selected,
+                'correct_answer'  => $correct_ans,
+                'is_correct'      => $is_correct,
+            ];
+        }
+
+        return [
+            'session_id' => $session_id,
+            'quest_id'   => $quest_id,
+            'score'      => $correct,
+            'total'      => count( $answers ),
+            'percentage' => count( $answers ) > 0 ? round( $correct / count( $answers ) * 100 ) : 0,
+            'results'    => $results,
+        ];
     }
 
     private static function parse_response( $response ): array|WP_Error {

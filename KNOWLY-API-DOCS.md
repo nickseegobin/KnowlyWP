@@ -1,6 +1,6 @@
 # KnowlyAPI — React / Next.js Integration Guide
 
-> **Version:** 1.1.0
+> **Version:** 2.2.0
 > **Base namespace:** `knowly/v1`
 > **Full REST base:** `{WORDPRESS_URL}/wp-json/knowly/v1`
 
@@ -32,6 +32,8 @@
 13. [Session State Machine](#13-session-state-machine)
 14. [PIN Setup Recovery Flow (React)](#14-pin-setup-recovery-flow-react)
 15. [Endpoints — Leaderboard](#15-endpoints--leaderboard)
+16. [Endpoints — Quests](#16-endpoints--quests)
+17. [Endpoints — Lessons](#17-endpoints--lessons)
 
 ---
 
@@ -60,18 +62,17 @@ All subsequent requests  →  Authorization: Bearer {token}
 
 ### Token storage
 
-Store the JWT in an HttpOnly, Secure, SameSite=Strict cookie. Never use localStorage for token storage.:
+WordPress sets the JWT as an `httpOnly`, `Secure`, `SameSite=Lax` cookie on login. The cookie is sent automatically on all same-origin requests — no client-side storage is needed or allowed.
 
 ```ts
-// store
-localStorage.setItem('knowly_token', data.token)
+// ✅ Correct — cookie is set by WordPress, sent automatically
+// No client-side token read/write required
 
-// retrieve
-const token = localStorage.getItem('knowly_token')
-
-// clear on logout
-localStorage.removeItem('knowly_token')
+// ❌ Never do this
+// localStorage.setItem('knowly_token', data.token)
 ```
+
+All Next.js Route Handlers forward the cookie to WordPress server-side. React never reads, stores, or passes the token explicitly.
 
 ### Parent vs. Child context
 
@@ -83,6 +84,8 @@ A **parent** account holds the wallet and can manage children. A **child** profi
 
 ### Axios instance (recommended)
 
+JWT is in an `httpOnly` cookie — never in localStorage. Use `withCredentials: true` so the cookie is included on every request.
+
 ```ts
 // lib/api.ts
 import axios from 'axios'
@@ -90,23 +93,14 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE,
   headers: { 'Content-Type': 'application/json' },
-})
-
-// Attach JWT from storage on every request
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('knowly_token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
+  withCredentials: true, // sends the httpOnly JWT cookie automatically
 })
 
 // Global error handler
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    const status = err.response?.status
-    if (status === 401) {
-      // Token expired — redirect to login
-      localStorage.removeItem('knowly_token')
+    if (err.response?.status === 401) {
       window.location.href = '/login'
     }
     return Promise.reject(err)
@@ -122,20 +116,15 @@ export default api
 // lib/fetchApi.ts
 const BASE = process.env.NEXT_PUBLIC_API_BASE
 
-function getToken() {
-  return typeof window !== 'undefined' ? localStorage.getItem('knowly_token') : null
-}
-
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getToken()
   const res = await fetch(`${BASE}${path}`, {
     ...options,
+    credentials: 'include', // sends the httpOnly JWT cookie automatically
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   })
@@ -309,6 +298,117 @@ export interface NoeyError {
   message: string
   data?: { status: number; [key: string]: unknown }
 }
+
+// ── Quest / Lesson types ─────────────────────────────────────────────────────
+
+export interface QuestCatalogueEntry {
+  quest_id: string
+  module_number: number
+  module_title: string
+  topic: string
+  subject: string
+  objectives: string[]
+  status: 'approved'
+  gem_cost?: number          // present on quest catalogue; absent from lessons
+  is_completed?: boolean     // true if child has ever completed this quest
+}
+
+export type LessonCatalogueEntry = Omit<QuestCatalogueEntry, 'gem_cost'>
+
+export interface QuestContent {
+  quest_id: string
+  module_number: number
+  module_title: string
+  topic: string
+  subject: string
+  level: string
+  period: string
+  curriculum: string
+  objectives: string[]
+  sections: QuestSection[]
+  worked_examples: WorkedExample[]
+  knowledge_checks: KnowledgeCheck[]
+  gem_cost?: number
+  is_completed?: boolean
+}
+
+export type LessonContent = Omit<QuestContent, 'gem_cost'>
+
+export interface QuestSection {
+  section_id: string
+  title: string
+  body: string              // Markdown / HTML
+  sort_order: number
+}
+
+export interface WorkedExample {
+  example_id: string
+  title: string
+  steps: string[]
+  answer: string
+}
+
+export interface KnowledgeCheck {
+  check_id: string
+  question: string
+  options: Record<string, string>
+  correct_answer: string    // present in full content; strip before showing to student
+  explanation: string
+}
+
+export interface QuestQuestion {
+  id: string
+  quest_id: string
+  sort_order: number        // 1=comprehension, 2=application, 3=analysis
+  difficulty: string
+  topic: string
+  question: string
+  options: Record<string, string>
+  // correct_answer: string  — NOT returned to child; only returned via server key
+  explanation: string
+  tip: string
+  cognitive_level: 'comprehension' | 'application' | 'analysis'
+}
+
+export interface QuestStartResult {
+  session_id: string        // 'qs_...' prefix
+  gem_cost: number
+  balance_after: number
+  is_first_attempt: boolean
+}
+
+export interface LessonStartResult {
+  session_id: string        // 'ls_...' prefix
+  is_first_attempt: boolean
+}
+
+export interface QuestCompleteResult {
+  completed: true
+  badge_awarded: boolean
+  badge?: {
+    badge_id: number
+    title: string
+    description: string
+    icon_url: string
+  }
+}
+
+export interface QuestSubmitQuestionsResult {
+  score: number
+  total: number
+  percentage: number
+  results: Array<{
+    question_id: string
+    is_correct: boolean
+    correct_answer: string
+    explanation: string
+  }>
+}
+
+export interface LessonSubmitQuestionsResult {
+  recorded: true
+  // Score is NOT returned — silently stored server-side only
+}
 ```
 
 ---
@@ -402,7 +502,7 @@ const res = await api.get('/ping')
 ```ts
 async function login(username: string, password: string) {
   const { data } = await api.post('/auth/login', { username, password })
-  localStorage.setItem('knowly_token', data.data.token)
+  // WordPress sets the JWT as an httpOnly cookie — no client-side storage needed
   return data.data
 }
 ```
@@ -1237,7 +1337,7 @@ import api from '@/lib/api'
 
 // 1. Login
 const { data: auth } = await api.post('/auth/login', { username, password })
-localStorage.setItem('knowly_token', auth.data.token)
+// JWT is set as an httpOnly cookie by WordPress — no client-side storage needed
 
 // 2. Load profile (includes children list and token balance)
 const { data: profile } = await api.get('/auth/me')
@@ -1592,4 +1692,568 @@ Every child has a **Caribbean-themed nickname** used on the leaderboard instead 
 
 ---
 
-*Generated for KnowlyAPI v1.0.0 — updated 2026-04-02*
+---
+
+## 16. Endpoints — Quests
+
+> All Quest endpoints require a **JWT with an active child context** (parent must switch to a child via `POST /children/{id}/switch`), except the teacher catalogue which requires a teacher JWT.
+>
+> Quests are sequentially locked within a level+period+subject scope. A child must complete quests in order. Gem costs apply on first attempt and retake.
+
+### `GET /quests` — Quest catalogue
+
+Returns all approved quests in the child's enrolled level + period. The API auto-resolves level/period from the child profile if not supplied.
+
+**Auth:** JWT (child context required)
+
+**Query params (all optional):**
+
+| Param | Type | Notes |
+|---|---|---|
+| `level` | string | e.g. `std_4` — defaults to child's enrolled level |
+| `period` | string | e.g. `term_1` — defaults to child's enrolled period |
+| `subject` | string | Filter by subject slug |
+
+```ts
+const { data } = await api.get('/quests')
+// or
+const { data } = await api.get('/quests', { params: { subject: 'math' } })
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "quests": [
+      {
+        "quest_id": "q-std_4-math-a1b2c3d4",
+        "module_number": 4,
+        "module_title": "Number Patterns",
+        "topic": "Sequences",
+        "subject": "math",
+        "objectives": ["Identify patterns", "Extend sequences"],
+        "status": "approved",
+        "gem_cost": 3,
+        "is_completed": false
+      }
+    ],
+    "count": 12
+  }
+}
+```
+
+---
+
+### `GET /quests/teacher/catalogue` — Teacher quest catalogue
+
+Returns all approved quests for a given scope. Does **not** require a child context — uses a teacher JWT instead.
+
+**Auth:** JWT (teacher role)
+
+**Query params:**
+
+| Param | Required | Notes |
+|---|---|---|
+| `level` | ✓ | e.g. `std_4` |
+| `period` | — | e.g. `term_1` |
+| `subject` | — | Filter by subject |
+
+---
+
+### `GET /quests/{quest_id}` — Quest content
+
+Returns full training content for a single quest: sections, worked examples, and knowledge checks.
+
+**Auth:** JWT (child context — optional; unauthenticated access returns content without personalisation)
+
+```ts
+const { data } = await api.get(`/quests/${questId}`)
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "quest_id": "q-std_4-math-a1b2c3d4",
+    "module_number": 4,
+    "module_title": "Number Patterns",
+    "topic": "Sequences",
+    "subject": "math",
+    "level": "std_4",
+    "period": "term_1",
+    "curriculum": "tt_primary",
+    "objectives": ["Identify patterns", "Extend sequences"],
+    "sections": [
+      { "section_id": "sec_1", "title": "Introduction", "body": "...", "sort_order": 1 }
+    ],
+    "worked_examples": [
+      { "example_id": "ex_1", "title": "Example 1", "steps": ["Step 1..."], "answer": "16" }
+    ],
+    "knowledge_checks": [
+      {
+        "check_id": "kc_1",
+        "question": "What comes next: 2, 4, 8, ?",
+        "options": { "A": "10", "B": "16", "C": "12", "D": "14" },
+        "correct_answer": "B",
+        "explanation": "Each term doubles."
+      }
+    ],
+    "gem_cost": 3,
+    "is_completed": false
+  }
+}
+```
+
+---
+
+### `GET /quests/{quest_id}/questions` — Quest questions (3 MCQs)
+
+Returns 3 active comprehension questions for the quest. `correct_answer` is **not** included in the response — scoring is done server-side on submit.
+
+**Auth:** JWT (child context required)
+
+```ts
+const { data } = await api.get(`/quests/${questId}/questions`)
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "questions": [
+      {
+        "id": "qq-uuid",
+        "quest_id": "q-std_4-math-a1b2c3d4",
+        "sort_order": 1,
+        "difficulty": "easy",
+        "topic": "Sequences",
+        "question": "What is the next term in 2, 4, 8?",
+        "options": { "A": "10", "B": "16", "C": "12", "D": "14" },
+        "explanation": "Each term doubles.",
+        "tip": "Look at the ratio between terms.",
+        "cognitive_level": "comprehension"
+      }
+    ],
+    "count": 3
+  }
+}
+```
+
+**Error:** `404 knowly_no_questions` — no questions have been generated for this quest yet.
+
+---
+
+### `POST /quests/start` — Start a quest
+
+Creates a quest session. Deducts gems (3 for first attempt, 1 for retakes). Assignments bypass the gem cost entirely.
+
+**Auth:** JWT (child context required)
+
+**Request body:**
+```json
+{
+  "quest_id": "q-std_4-math-a1b2c3d4",
+  "source":   "direct"
+}
+```
+
+| Field | Required | Values | Notes |
+|---|---|---|---|
+| `quest_id` | ✓ | string | |
+| `source` | — | `direct` \| `assignment` | Default `direct`; `assignment` skips gem deduction |
+| `task_id` | — | integer | Class task ID — required when `source=assignment` |
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "session_id":      "qs_a1b2c3d4e5f6",
+    "gem_cost":        3,
+    "balance_after":   12,
+    "is_first_attempt": true
+  }
+}
+```
+
+**Errors:**
+- `402 knowly_insufficient_gems` — gem balance too low
+- `422 knowly_missing_fields` — `quest_id` missing
+
+---
+
+### `POST /quests/{session_id}/section-complete` — Mark a section done
+
+Records that the child has completed a training section within the quest.
+
+**Auth:** JWT (child context required)
+
+**Request body:**
+```json
+{ "section_id": "sec_1" }
+```
+
+**Response:** `{ "success": true, "data": { "recorded": true } }`
+
+---
+
+### `POST /quests/complete` — Complete a quest
+
+Marks the quest session as completed. Awards a badge if this is the child's first completion.
+
+**Auth:** JWT (child context required)
+
+**Request body:**
+```json
+{ "session_id": "qs_a1b2c3d4e5f6" }
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "completed": true,
+    "badge_awarded": true,
+    "badge": {
+      "badge_id": 7,
+      "title": "Number Patterns Master",
+      "description": "Completed the Number Patterns quest for the first time.",
+      "icon_url": "https://example.com/badges/number-patterns.png"
+    }
+  }
+}
+```
+
+> `badge_awarded: false` and `badge: null` when the child has completed this quest before.
+
+---
+
+### `POST /quests/submit-questions` — Submit quest answers (scored)
+
+Submits the child's answers to the 3 MCQs. Scored server-side. **Returns the score and correct answers** — unlike lessons, quest question results are shown to the student.
+
+**Auth:** JWT (child context required)
+
+**Request body:**
+```json
+{
+  "session_id": "qs_a1b2c3d4e5f6",
+  "quest_id":   "q-std_4-math-a1b2c3d4",
+  "answers": {
+    "qq-uuid-1": "B",
+    "qq-uuid-2": "A",
+    "qq-uuid-3": "C"
+  }
+}
+```
+
+`answers` — object mapping `question_id → selected letter (A–D)`.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "score":      2,
+    "total":      3,
+    "percentage": 66.67,
+    "results": [
+      {
+        "question_id":    "qq-uuid-1",
+        "is_correct":     true,
+        "correct_answer": "B",
+        "explanation":    "Each term doubles."
+      }
+    ]
+  }
+}
+```
+
+---
+
+### Quest flow (React)
+
+```ts
+// 1. Load catalogue
+const { data: catalogue } = await api.get('/quests', { params: { subject: 'math' } })
+const quest = catalogue.data.quests[0]
+
+// 2. Fetch quest content
+const { data: content } = await api.get(`/quests/${quest.quest_id}`)
+
+// 3. Start quest (deducts gems)
+const { data: session } = await api.post('/quests/start', {
+  quest_id: quest.quest_id,
+  source: 'direct',
+})
+const sessionId = session.data.session_id
+
+// 4. As child works through sections, mark each done
+await api.post(`/quests/${sessionId}/section-complete`, { section_id: 'sec_1' })
+
+// 5. After completing training, fetch questions
+const { data: qs } = await api.get(`/quests/${quest.quest_id}/questions`)
+
+// 6. Submit answers (returns score)
+const { data: score } = await api.post('/quests/submit-questions', {
+  session_id: sessionId,
+  quest_id: quest.quest_id,
+  answers: { [qs.data.questions[0].id]: 'B', ... },
+})
+
+// 7. Complete the quest (badge if first time)
+const { data: completion } = await api.post('/quests/complete', { session_id: sessionId })
+if (completion.data.badge_awarded) {
+  showBadgeCelebration(completion.data.badge)
+}
+```
+
+---
+
+## 17. Endpoints — Lessons
+
+> Lessons reuse Quest training content (same sections, worked examples, and knowledge checks) but have their own testing questions. Key differences from Quests:
+>
+> - **No gem cost** — free to access
+> - **No sequential lock** — child can access any approved quest as a lesson, in any order
+> - **No badge** on completion
+> - **Silent scoring** — `submit-questions` records results server-side but does **not** return the score to the child
+
+### `GET /lessons` — Lesson catalogue
+
+Returns all approved quests available as lessons for the child's enrolled level + period.
+
+**Auth:** JWT (child context required)
+
+**Query params (all optional):**
+
+| Param | Type | Notes |
+|---|---|---|
+| `level` | string | Defaults to child's enrolled level |
+| `period` | string | Defaults to child's enrolled period |
+| `subject` | string | Filter by subject slug |
+
+```ts
+const { data } = await api.get('/lessons')
+const { data } = await api.get('/lessons', { params: { subject: 'math' } })
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "lessons": [
+      {
+        "quest_id": "q-std_4-math-a1b2c3d4",
+        "module_number": 4,
+        "module_title": "Number Patterns",
+        "topic": "Sequences",
+        "subject": "math",
+        "objectives": ["Identify patterns"],
+        "status": "approved"
+      }
+    ],
+    "count": 12
+  }
+}
+```
+
+---
+
+### `GET /lessons/teacher/catalogue` — Teacher lesson catalogue
+
+**Auth:** JWT (teacher role)
+
+**Query params:**
+
+| Param | Required | Notes |
+|---|---|---|
+| `level` | ✓ | e.g. `std_4` |
+| `period` | — | e.g. `term_1` |
+| `subject` | — | Filter |
+
+---
+
+### `GET /lessons/{quest_id}` — Lesson content
+
+Returns the full training content for a lesson (identical structure to Quest content).
+
+**Auth:** JWT (child context — optional)
+
+```ts
+const { data } = await api.get(`/lessons/${questId}`)
+```
+
+**Response:** Same shape as `GET /quests/{quest_id}` with no `gem_cost` field.
+
+---
+
+### `GET /lessons/{quest_id}/questions` — Lesson questions (3 MCQs)
+
+Returns 3 active lesson comprehension questions. `correct_answer` is **never** returned to the client — scoring happens silently on submit.
+
+**Auth:** JWT (child context required)
+
+```ts
+const { data } = await api.get(`/lessons/${questId}/questions`)
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "questions": [
+      {
+        "id": "lq-uuid",
+        "quest_id": "q-std_4-math-a1b2c3d4",
+        "sort_order": 1,
+        "difficulty": "easy",
+        "topic": "Sequences",
+        "question": "What does the term 'sequence' mean?",
+        "options": { "A": "A random list", "B": "An ordered list following a rule", "C": "Any numbers", "D": "A set of shapes" },
+        "explanation": "A sequence is an ordered list of numbers that follows a rule.",
+        "tip": "Think about what makes something 'in order'.",
+        "cognitive_level": "comprehension"
+      }
+    ],
+    "count": 3
+  }
+}
+```
+
+---
+
+### `POST /lessons/start` — Start a lesson
+
+Creates a lesson session. No gem deduction. No prerequisite check.
+
+**Auth:** JWT (child context required)
+
+**Request body:**
+```json
+{
+  "quest_id": "q-std_4-math-a1b2c3d4",
+  "source":   "direct"
+}
+```
+
+| Field | Required | Values |
+|---|---|---|
+| `quest_id` | ✓ | string |
+| `source` | — | `direct` \| `assignment` — default `direct` |
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "session_id":      "ls_a1b2c3d4e5f6",
+    "is_first_attempt": true
+  }
+}
+```
+
+---
+
+### `POST /lessons/complete` — Complete a lesson
+
+Marks the lesson session as completed. No badge is awarded.
+
+**Auth:** JWT (child context required)
+
+**Request body:**
+```json
+{ "session_id": "ls_a1b2c3d4e5f6" }
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": { "completed": true }
+}
+```
+
+---
+
+### `POST /lessons/submit-questions` — Submit lesson answers (silent)
+
+Submits the child's answers to the 3 lesson MCQs. Scored server-side and stored silently. The response confirms recording only — **no score is returned**.
+
+**Auth:** JWT (child context required)
+
+**Request body:**
+```json
+{
+  "session_id": "ls_a1b2c3d4e5f6",
+  "quest_id":   "q-std_4-math-a1b2c3d4",
+  "answers": {
+    "lq-uuid-1": "B",
+    "lq-uuid-2": "A",
+    "lq-uuid-3": "C"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": { "recorded": true }
+}
+```
+
+> The score is stored in `wp_knowly_lesson_question_results` and visible to admins via the WP panel, but is never sent to the React client. This is by design — lessons are for reinforcement, not assessment.
+
+---
+
+### Lesson flow (React)
+
+```ts
+// 1. Load catalogue — no sequential lock
+const { data: catalogue } = await api.get('/lessons', { params: { subject: 'math' } })
+
+// 2. Child picks any lesson freely
+const lesson = catalogue.data.lessons[3]
+
+// 3. Fetch lesson content
+const { data: content } = await api.get(`/lessons/${lesson.quest_id}`)
+
+// 4. Start lesson (no gem cost)
+const { data: session } = await api.post('/lessons/start', {
+  quest_id: lesson.quest_id,
+  source: 'direct',
+})
+const sessionId = session.data.session_id
+
+// 5. Child reads sections + worked examples (no section-complete calls needed)
+
+// 6. Fetch questions for the lesson
+const { data: qs } = await api.get(`/lessons/${lesson.quest_id}/questions`)
+
+// 7. Submit answers — silently recorded, score NOT returned
+await api.post('/lessons/submit-questions', {
+  session_id: sessionId,
+  quest_id: lesson.quest_id,
+  answers: {
+    [qs.data.questions[0].id]: 'B',
+    [qs.data.questions[1].id]: 'C',
+    [qs.data.questions[2].id]: 'A',
+  },
+})
+// → { recorded: true }  — do NOT show a score screen
+
+// 8. Complete the lesson
+await api.post('/lessons/complete', { session_id: sessionId })
+// → { completed: true }  — no badge shown
+```
+
+---
+
+*Updated for KnowlyAPI v2.2.0 — 2026-05-12*

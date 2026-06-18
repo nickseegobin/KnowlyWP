@@ -38,6 +38,9 @@ class Knowly_Admin_Pool {
         add_action( 'wp_ajax_knowly_pool_approve_package', [ __CLASS__, 'ajax_approve_package' ] );
         add_action( 'wp_ajax_knowly_pool_approve_quest',  [ __CLASS__, 'ajax_approve_quest' ] );
         add_action( 'wp_ajax_knowly_pool_sync_trials',    [ __CLASS__, 'ajax_sync_trials' ] );
+        add_action( 'wp_ajax_knowly_pool_sync_quests',    [ __CLASS__, 'ajax_sync_quests' ] );
+        add_action( 'wp_ajax_knowly_pool_quest_board',    [ __CLASS__, 'ajax_quest_board' ] );
+        add_action( 'wp_ajax_knowly_quests_gen_questions', [ __CLASS__, 'ajax_gen_questions' ] );
 
         // Legacy handlers referenced elsewhere — re-route to new implementations
         add_action( 'wp_ajax_knowly_pool_packages',      [ __CLASS__, 'ajax_trial_packages' ] );
@@ -98,50 +101,44 @@ class Knowly_Admin_Pool {
                 </div>
             </div>
 
-            <!-- ── QUEST CATALOGUE ────────────────────────────────────────── -->
+            <!-- ── QUEST BOARD ────────────────────────────────────────────── -->
             <div id="knowly-tab-quests" class="knowly-pool-panel" style="display:none;border:1px solid #c3c4c7;border-top:none;padding:20px;background:#fff;">
-                <p style="font-size:12px;color:#666;margin:0 0 12px;">Quest data is served from the <strong>WP local store</strong> (wp_knowly_quests). Railway is only called to generate new quests.</p>
+                <p style="font-size:12px;color:#666;margin:0 0 12px;">
+                    Slots are derived from your training data — one quest per module. Generation fires asynchronously.
+                    Click <strong>↻ Re-check</strong> after ~2 minutes to pull results from Railway.
+                </p>
+                <div id="quest-board-generating-notice" style="display:none;padding:8px 12px;background:#fef3c7;border:1px solid #d97706;border-radius:4px;margin-bottom:12px;font-size:12px;color:#92400e;">
+                    ⏳ Quest generation in progress. Click <strong>↻ Re-check</strong> to pull the result when ready.
+                </div>
                 <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-                    <select id="knowly-quest-level" style="height:30px;">
-                        <option value="">All levels</option>
+                    <select id="quest-board-level" style="height:30px;">
                         <option value="std_1">std_1</option>
                         <option value="std_2">std_2</option>
                         <option value="std_3">std_3</option>
                         <option value="std_4" selected>std_4</option>
                         <option value="std_5">std_5</option>
                     </select>
-                    <select id="knowly-quest-period-filter" style="height:30px;">
-                        <option value="">All periods</option>
-                        <option value="term_1">term_1</option>
+                    <select id="quest-board-period" style="height:30px;">
+                        <option value="term_1" selected>term_1</option>
                         <option value="term_2">term_2</option>
                         <option value="term_3">term_3</option>
+                        <option value="">capstone</option>
                     </select>
-                    <select id="knowly-quest-status-filter" style="height:30px;">
-                        <option value="">All statuses</option>
-                        <option value="pending_review">pending_review</option>
-                        <option value="approved">approved</option>
-                        <option value="archived">archived</option>
-                        <option value="rejected">rejected</option>
-                    </select>
-                    <button id="knowly-load-quests" class="button button-primary">
-                        ↓ Load Quest Catalogue
+                    <button id="quest-board-load" class="button button-primary" <?= $server_key ? '' : 'disabled' ?>>
+                        ↓ Load Quest Board
                     </button>
-                    <span id="knowly-quest-summary-text" style="color:#666;font-size:13px;"></span>
+                    <button id="quest-board-recheck" class="button" <?= $server_key ? '' : 'disabled' ?>>
+                        ↻ Re-check
+                    </button>
+                    <span id="quest-board-summary" style="color:#666;font-size:13px;"></span>
                 </div>
-                <div id="knowly-quest-results">
-                    <p style="color:#888;">Click "Load Quest Catalogue" to fetch quests from the WP local store.</p>
+                <div id="quest-board-sync-result" style="margin-bottom:10px;font-size:13px;"></div>
+                <div id="quest-board-tabs" style="display:none;">
+                    <div id="quest-subject-tabs" style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;margin-bottom:0;"></div>
+                    <div id="quest-board-table" style="border:1px solid #e5e7eb;border-top:none;padding:16px;background:#fafafa;min-height:80px;"></div>
                 </div>
-                <div style="margin-top:20px;padding:16px;background:#f6f7f7;border-radius:4px;border:1px solid #e5e7eb;">
-                    <h3 style="margin:0 0 12px;">Generate Quest</h3>
-                    <p style="font-size:12px;color:#666;margin:0 0 10px;">Calls Railway to generate a quest, then stores both student and teacher variants in WP as <strong>pending_review</strong>. Requires Railway server key.</p>
-                    <div style="display:grid;grid-template-columns:repeat(4,1fr) auto;gap:8px;align-items:end;">
-                        <label style="font-size:12px;">Level<br><input type="text" id="gen-quest-level" class="regular-text" placeholder="std_4" style="margin-top:4px;" /></label>
-                        <label style="font-size:12px;">Period<br><input type="text" id="gen-quest-period" class="regular-text" placeholder="term_1 or blank" style="margin-top:4px;" /></label>
-                        <label style="font-size:12px;">Subject<br><input type="text" id="gen-quest-subject" class="regular-text" placeholder="math" style="margin-top:4px;" /></label>
-                        <label style="font-size:12px;">Module Index (0-based)<br><input type="number" id="gen-quest-module-index" class="regular-text" value="0" min="0" style="margin-top:4px;" /></label>
-                        <button id="knowly-generate-quest" class="button button-primary" style="height:30px;align-self:end;" <?= ( $railway_ok && $server_key ) ? '' : 'disabled' ?>>Generate</button>
-                    </div>
-                    <div id="knowly-quest-gen-result" style="margin-top:10px;font-size:13px;"></div>
+                <div id="quest-board-placeholder">
+                    <p style="color:#888;">Select a level and period, then click "↓ Load Quest Board".</p>
                 </div>
             </div>
 
@@ -262,75 +259,166 @@ class Knowly_Admin_Pool {
                 });
             });
 
-            // ── Quest catalogue ───────────────────────────────────────────────
-            $('#knowly-load-quests').on('click', function() {
-                var $btn = $(this).prop('disabled', true).text('Loading…');
-                var level  = $('#knowly-quest-level').val();
-                var period = $('#knowly-quest-period-filter').val();
-                var status = $('#knowly-quest-status-filter').val();
-                $.post(ajaxUrl, { action: 'knowly_pool_quest_catalogue', nonce: nonce, level: level, period: period, status: status }, function(res) {
-                    $btn.prop('disabled', false).text('↓ Load Quest Catalogue');
-                    if (!res.success) { $('#knowly-quest-results').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown error') + '</p>'); return; }
-                    renderQuestTable(res.data);
+            // ── Quest Board ───────────────────────────────────────────────────
+            var questBoardData = null;
+            var activeSubject  = null;
+            var canGenerate    = <?= ( $railway_ok && $server_key ) ? 'true' : 'false' ?>;
+
+            function slotBadge(status) {
+                var cfg = {
+                    fulfilled:      { bg:'#dcfce7', color:'#166534', label:'✅ Fulfilled' },
+                    pending_review: { bg:'#fef3c7', color:'#92400e', label:'🔍 Review' },
+                    rejected:       { bg:'#fee2e2', color:'#991b1b', label:'✗ Rejected' },
+                    archived:       { bg:'#f3f4f6', color:'#6b7280', label:'Archived' },
+                    generating:     { bg:'#e0f2fe', color:'#0369a1', label:'⏳ Generating' },
+                    empty:          { bg:'#f9fafb', color:'#9ca3af', label:'— empty —' },
+                };
+                var c = cfg[status] || cfg.empty;
+                return '<span style="font-size:11px;background:' + c.bg + ';color:' + c.color + ';padding:2px 8px;border-radius:3px;white-space:nowrap;">' + c.label + '</span>';
+            }
+
+            function renderSubjectTabs(subjects, active) {
+                var html = '';
+                subjects.forEach(function(s) {
+                    var isActive = s === active;
+                    var label = s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ');
+                    html += '<button class="quest-subject-tab" data-subject="' + s + '" style="'
+                        + 'padding:8px 20px;border:none;cursor:pointer;font-size:13px;background:transparent;'
+                        + (isActive ? 'border-bottom:3px solid #2563eb;color:#2563eb;font-weight:600;margin-bottom:-2px;'
+                                    : 'border-bottom:3px solid transparent;color:#6b7280;')
+                        + '">' + label + '</button>';
+                });
+                $('#quest-subject-tabs').html(html);
+            }
+
+            function renderSlotTable(slots, level, period, subject) {
+                if (!slots || !slots.length) {
+                    $('#quest-board-table').html('<p style="color:#888;padding:8px 0;">No curriculum modules found for this subject. Import training data first (Training tab).</p>');
+                    $('#quest-board-summary').text('');
+                    return;
+                }
+                var fulfilled = slots.filter(function(s) { return s.status === 'fulfilled'; }).length;
+                $('#quest-board-summary').text(fulfilled + ' / ' + slots.length + ' modules fulfilled · ' + subject);
+
+                var html = '<table class="widefat" style="font-size:12px;border-collapse:collapse;">'
+                    + '<thead><tr style="background:#f3f4f6;">'
+                    + '<th style="padding:8px 10px;width:44px;">#</th>'
+                    + '<th style="padding:8px 10px;">Module Title</th>'
+                    + '<th style="padding:8px 10px;width:110px;">Training</th>'
+                    + '<th style="padding:8px 10px;width:140px;">Status</th>'
+                    + '<th style="padding:8px 10px;width:190px;">Actions</th>'
+                    + '</tr></thead><tbody>';
+
+                slots.forEach(function(slot, i) {
+                    var bg = i % 2 === 0 ? '#fff' : '#f9fafb';
+                    var actions = '';
+                    var trainingBadge = slot.has_training
+                        ? '<span class="knowly-badge ok" title="Training data found in WP — Pinecone vectors exist">✅ Ready</span>'
+                        : '<span class="knowly-badge warn" title="No training data — quest will use AI general knowledge">⚠️ No data</span>';
+
+                    if (slot.status === 'empty' || slot.status === 'rejected') {
+                        if (canGenerate) {
+                            actions = '<button class="button button-small button-primary quest-gen-btn"'
+                                + ' data-level="' + level + '"'
+                                + ' data-period="' + (period || '') + '"'
+                                + ' data-subject="' + subject + '"'
+                                + ' data-module-index="' + (slot.module_number - 1) + '"'
+                                + ' data-module-num="' + slot.module_number + '">'
+                                + 'Generate</button>';
+                        }
+                    } else if (slot.status === 'pending_review') {
+                        actions = '<button class="button button-small" style="color:#16a34a;margin-right:4px;"'
+                            + ' onclick="knowlyQuestBoardAction(\'' + slot.quest_id + '\',\'approve\',this)">✓ Approve</button>'
+                            + '<button class="button button-small" style="color:#dc2626;"'
+                            + ' onclick="knowlyQuestBoardAction(\'' + slot.quest_id + '\',\'reject\',this)">✗ Reject</button>';
+                    } else if (slot.status === 'fulfilled') {
+                        actions = '<span style="font-size:11px;color:#9ca3af;">Locked</span>';
+                    } else if (slot.status === 'generating') {
+                        actions = '<span style="font-size:11px;color:#0369a1;">Waiting for Railway…</span>';
+                    }
+
+                    html += '<tr id="qboard-row-' + slot.module_number + '" style="background:' + bg + ';border-bottom:1px solid #e5e7eb;">'
+                        + '<td style="padding:8px 10px;color:#9ca3af;">' + slot.module_number + '</td>'
+                        + '<td style="padding:8px 10px;' + (slot.status === 'fulfilled' ? 'font-weight:600;' : '') + '">' + slot.module_title + '</td>'
+                        + '<td style="padding:8px 10px;">' + trainingBadge + '</td>'
+                        + '<td style="padding:8px 10px;">' + slotBadge(slot.status) + '</td>'
+                        + '<td style="padding:8px 10px;">' + actions + '</td>'
+                        + '</tr>';
+                });
+
+                html += '</tbody></table>';
+                $('#quest-board-table').html(html);
+            }
+
+            function loadQuestBoard() {
+                var level  = $('#quest-board-level').val();
+                var period = $('#quest-board-period').val();
+                $('#quest-board-load').prop('disabled', true).text('Loading…');
+                $('#quest-board-placeholder').hide();
+                $('#quest-board-table').html('<p style="color:#888;padding:8px 0;">Loading…</p>');
+
+                $.post(ajaxUrl, { action: 'knowly_pool_quest_board', nonce: nonce, level: level, period: period }, function(res) {
+                    $('#quest-board-load').prop('disabled', false).text('↓ Load Quest Board');
+                    if (!res.success) {
+                        $('#quest-board-table').html('<p style="color:#dc2626;">Error: ' + (res.data.message || 'Unknown') + '</p>');
+                        return;
+                    }
+                    questBoardData = res.data;
+                    var subjects = res.data.subjects || [];
+                    if (!activeSubject || subjects.indexOf(activeSubject) === -1) {
+                        activeSubject = subjects[0] || null;
+                    }
+                    $('#quest-board-tabs').show();
+                    renderSubjectTabs(subjects, activeSubject);
+                    var slots = (res.data.slots_by_subject || {})[activeSubject] || [];
+                    renderSlotTable(slots, res.data.level, res.data.period || '', activeSubject);
+                });
+            }
+
+            $('#quest-board-load').on('click', loadQuestBoard);
+
+            $(document).on('click', '.quest-subject-tab', function() {
+                activeSubject = $(this).data('subject');
+                if (!questBoardData) return;
+                renderSubjectTabs(questBoardData.subjects || [], activeSubject);
+                var slots = (questBoardData.slots_by_subject || {})[activeSubject] || [];
+                renderSlotTable(slots, questBoardData.level, questBoardData.period || '', activeSubject);
+            });
+
+            $(document).on('click', '.quest-gen-btn', function() {
+                var $btn    = $(this).prop('disabled', true).text('Starting…');
+                var level   = $(this).data('level');
+                var period  = $(this).data('period');
+                var subject = $(this).data('subject');
+                var mIndex  = $(this).data('module-index');
+                var mNum    = $(this).data('module-num');
+
+                $.post(ajaxUrl, {
+                    action: 'knowly_pool_generate_quest', nonce: nonce,
+                    level: level, period: period, subject: subject, module_index: mIndex
+                }, function(res) {
+                    if (res.success) {
+                        var $row = $('#qboard-row-' + mNum);
+                        $row.find('td:nth-child(4)').html(slotBadge('generating'));
+                        $row.find('td:nth-child(5)').html('<span style="font-size:11px;color:#0369a1;">Waiting for Railway…</span>');
+                        $('#quest-board-generating-notice').show();
+                    } else {
+                        $btn.prop('disabled', false).text('Generate');
+                        alert('Error: ' + (res.data.message || 'Generation failed'));
+                    }
                 });
             });
 
-            function statusBadge(s) {
-                var cfg = {
-                    approved:       { bg:'#dcfce7', color:'#16a34a' },
-                    pending_review: { bg:'#fef3c7', color:'#d97706' },
-                    rejected:       { bg:'#fee2e2', color:'#dc2626' },
-                    archived:       { bg:'#f3f4f6', color:'#6b7280' },
-                };
-                var c = cfg[s] || { bg:'#f3f4f6', color:'#374151' };
-                return '<span style="font-size:11px;background:' + c.bg + ';color:' + c.color + ';padding:2px 6px;border-radius:3px;">' + s + '</span>';
-            }
-
-            function renderQuestTable(data) {
-                var quests = data.quests || [];
-                $('#knowly-quest-summary-text').text(quests.length + ' quest(s)');
-                if (!quests.length) {
-                    $('#knowly-quest-results').html('<p style="color:#666;">No quests found. Generate some using the form below.</p>');
-                    return;
-                }
-                var html = '<table class="knowly-table widefat" style="font-size:12px;">';
-                html += '<thead><tr><th>Quest ID</th><th>Level</th><th>Period</th><th>Subject</th><th>Module</th><th>Title / Topic</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
-                $.each(quests, function(i, q) {
-                    var rowId = 'quest-row-' + q.quest_id.replace(/[^a-z0-9]/gi, '_');
-                    var actions = '';
-                    if (q.status === 'pending_review') {
-                        actions = '<button class="button button-small" style="color:#16a34a;margin-right:4px;" onclick="knowlyQuestAction(\'' + q.quest_id + '\',\'approve\',this)">✓ Approve</button>'
-                                + '<button class="button button-small" style="color:#dc2626;" onclick="knowlyQuestAction(\'' + q.quest_id + '\',\'reject\',this)">✗ Reject</button>';
-                    } else if (q.status === 'approved') {
-                        actions = '<button class="button button-small" style="color:#6b7280;" onclick="knowlyQuestAction(\'' + q.quest_id + '\',\'archive\',this)">Archive</button>';
-                    }
-                    html += '<tr id="' + rowId + '">'
-                        + '<td style="font-family:monospace;font-size:11px;">' + q.quest_id + '</td>'
-                        + '<td>' + (q.level||'') + '</td>'
-                        + '<td>' + (q.period||'<em>capstone</em>') + '</td>'
-                        + '<td><strong>' + (q.subject||'') + '</strong></td>'
-                        + '<td style="text-align:center;">' + (q.module_number != null ? q.module_number : '—') + '</td>'
-                        + '<td>' + (q.module_title||q.topic||'—') + '</td>'
-                        + '<td>' + statusBadge(q.status) + '</td>'
-                        + '<td style="white-space:nowrap;">' + actions + '</td>'
-                        + '</tr>';
-                });
-                html += '</tbody></table>';
-                $('#knowly-quest-results').html(html);
-            }
-
-            window.knowlyQuestAction = function(questId, action, btn) {
-                var labels = { approve: 'Approve', reject: 'Reject', archive: 'Archive' };
-                if (!confirm(labels[action] + ' quest ' + questId + '?')) return;
+            window.knowlyQuestBoardAction = function(questId, action, btn) {
+                if (!confirm((action === 'approve' ? 'Approve' : 'Reject') + ' this quest?')) return;
                 $(btn).prop('disabled', true);
                 $.post(ajaxUrl, { action: 'knowly_pool_approve_quest', nonce: nonce, quest_id: questId, quest_action: action }, function(res) {
                     if (res.success) {
-                        var rowId = '#quest-row-' + questId.replace(/[^a-z0-9]/gi, '_');
-                        $(rowId).find('td:nth-last-child(2)').html(statusBadge(res.data.status));
-                        $(rowId).find('td:last-child').html(
-                            res.data.status === 'approved'
-                                ? '<button class="button button-small" style="color:#6b7280;" onclick="knowlyQuestAction(\'' + questId + '\',\'archive\',this)">Archive</button>'
-                                : ''
+                        var newStatus = res.data.status === 'approved' ? 'fulfilled' : res.data.status;
+                        var $row = $(btn).closest('tr');
+                        $row.find('td:nth-child(4)').html(slotBadge(newStatus));
+                        $row.find('td:nth-child(5)').html(
+                            newStatus === 'fulfilled' ? '<span style="font-size:11px;color:#9ca3af;">Locked</span>' : ''
                         );
                     } else {
                         alert('Error: ' + (res.data.message || 'Failed'));
@@ -339,26 +427,21 @@ class Knowly_Admin_Pool {
                 });
             };
 
-            $('#knowly-generate-quest').on('click', function() {
-                var level = $('#gen-quest-level').val().trim();
-                var period = $('#gen-quest-period').val().trim();
-                var subject = $('#gen-quest-subject').val().trim();
-                var moduleIndex = parseInt($('#gen-quest-module-index').val(), 10);
-                if (!level || !subject) { alert('Level and Subject are required.'); return; }
-
-                var $btn = $(this).prop('disabled', true).text('Generating…');
-                var $result = $('#knowly-quest-gen-result');
-                $result.html('<em>Generating… this may take 10–20 seconds.</em>');
-
-                $.post(ajaxUrl, {
-                    action: 'knowly_pool_generate_quest', nonce: nonce,
-                    level: level, period: period, subject: subject, module_index: moduleIndex
-                }, function(res) {
-                    $btn.prop('disabled', false).text('Generate');
+            $('#quest-board-recheck').on('click', function() {
+                var $btn    = $(this).prop('disabled', true).text('Checking…');
+                var $result = $('#quest-board-sync-result');
+                $result.html('<em>Pulling from Railway…</em>');
+                $.post(ajaxUrl, { action: 'knowly_pool_sync_quests', nonce: nonce }, function(res) {
+                    $btn.prop('disabled', false).text('↻ Re-check');
                     if (res.success) {
-                        $result.html('<span style="color:#16a34a;">✓ Stored in WP: <strong>' + res.data.quest_id + '</strong> — both variants saved as <strong>' + res.data.status + '</strong>. Load Quest Catalogue to review.</span>');
+                        var d = res.data;
+                        $result.html('<span style="color:#16a34a;">↻ ' + d.synced + ' new, ' + d.updated + ' updated.</span>');
+                        if (d.synced > 0 || d.updated > 0) {
+                            $('#quest-board-generating-notice').hide();
+                            loadQuestBoard();
+                        }
                     } else {
-                        $result.html('<span style="color:#dc2626;">✗ ' + (res.data.message || 'Generation failed') + '</span>');
+                        $result.html('<span style="color:#dc2626;">✗ ' + (res.data.message || 'Sync failed') + '</span>');
                     }
                 });
             });
@@ -444,11 +527,11 @@ class Knowly_Admin_Pool {
             wp_send_json_error( [ 'message' => "Curriculum config not found for '{$curriculum}'. Check Settings or run plugin re-activation." ] );
         }
 
-        $levels    = $cfg['levels']                ?? [ 'std_4', 'std_5' ];
-        $periods   = $cfg['periods']               ?? [ 'term_1', 'term_2', 'term_3' ];
-        $std_diffs = $cfg['standard_difficulties'] ?? [ 'easy', 'medium', 'hard' ];
-        $sea_diffs = $cfg['capstone_difficulties'] ?? [ 'sea_paper' ];
-        $subjects  = array_column( $cfg['subjects'] ?? [], 'value' );
+        $levels    = array_column( $cfg['levels']                ?? [], 'value' ) ?: [ 'std_4', 'std_5' ];
+        $periods   = array_column( $cfg['periods']               ?? [], 'value' ) ?: [ 'term_1', 'term_2', 'term_3' ];
+        $std_diffs = array_column( $cfg['standard_difficulties'] ?? [], 'value' ) ?: [ 'easy', 'medium', 'hard' ];
+        $sea_diffs = array_column( $cfg['capstone_difficulties'] ?? [], 'value' ) ?: [ 'sea_paper' ];
+        $subjects  = array_column( $cfg['subjects']              ?? [], 'value' );
 
         // Build full expected matrix: level × (period + capstone) × subject × difficulty
         $expected = [];
@@ -695,6 +778,313 @@ class Knowly_Admin_Pool {
         ] );
     }
 
+    // ── AJAX: Sync Quests from Railway/Supabase ───────────────────────────────
+    // Pulls recent quests from Railway's /quest/list endpoint and upserts any
+    // that are not yet in wp_knowly_quests. Designed to be called after a
+    // non-blocking generate to pick up the result once Railway finishes.
+
+    public static function ajax_sync_quests(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        @set_time_limit( 120 );
+
+        global $wpdb;
+        $table      = $wpdb->prefix . 'knowly_quests';
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] );
+        }
+        if ( ! $server_key ) {
+            wp_send_json_error( [ 'message' => 'Railway server key not configured.' ] );
+        }
+
+        // Fetch list of all pending_review quests from Railway (most recent 50)
+        $list_url = $endpoint . '/api/v1/quest/list?' . http_build_query( [
+            'status'   => 'pending_review',
+            'per_page' => 50,
+        ] );
+
+        $list_response = wp_remote_get( $list_url, [
+            'timeout' => 30,
+            'headers' => [ 'X-AEP-Server-Key' => $server_key ],
+        ] );
+
+        if ( is_wp_error( $list_response ) ) {
+            wp_send_json_error( [ 'message' => 'Railway connection failed: ' . $list_response->get_error_message() ] );
+        }
+
+        $list_code = wp_remote_retrieve_response_code( $list_response );
+        $list_body = json_decode( wp_remote_retrieve_body( $list_response ), true );
+
+        if ( $list_code !== 200 ) {
+            wp_send_json_error( [ 'message' => 'Railway returned HTTP ' . $list_code ] );
+        }
+
+        $remote_quests = $list_body['quests'] ?? [];
+        $synced  = 0;
+        $updated = 0;
+        $failed  = 0;
+        $now     = current_time( 'mysql' );
+
+        foreach ( $remote_quests as $rq ) {
+            $quest_id = $rq['quest_id'] ?? null;
+            if ( ! $quest_id ) { $failed++; continue; }
+
+            // Check whether this quest already exists in WP
+            $existing = $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$table} WHERE quest_id = %s AND variant = 'student'",
+                $quest_id
+            ) );
+
+            // Fetch full content from Railway editor endpoint
+            $detail_url = $endpoint . '/api/v1/quest/editor/' . rawurlencode( $quest_id );
+            $detail_response = wp_remote_get( $detail_url, [
+                'timeout' => 20,
+                'headers' => [ 'X-AEP-Server-Key' => $server_key ],
+            ] );
+
+            if ( is_wp_error( $detail_response ) || wp_remote_retrieve_response_code( $detail_response ) !== 200 ) {
+                $failed++;
+                continue;
+            }
+
+            $detail = json_decode( wp_remote_retrieve_body( $detail_response ), true );
+            if ( empty( $detail ) ) { $failed++; continue; }
+
+            $row = [
+                'quest_id'         => $quest_id,
+                'curriculum'       => $detail['curriculum']    ?? 'tt_primary',
+                'level'            => $detail['level']         ?? '',
+                'period'           => $detail['period']        ?? null,
+                'subject'          => $detail['subject']       ?? '',
+                'topic'            => $detail['topic']         ?? null,
+                'module_number'    => $detail['module_number'] ?? null,
+                'module_title'     => $detail['module_title']  ?? null,
+                'objectives'       => wp_json_encode( $detail['objectives'] ?? [] ),
+                'variant'          => 'student',
+                'content'          => wp_json_encode( $detail['content']  ?? [] ),
+                'status'           => $detail['status']        ?? 'pending_review',
+                'railway_quest_id' => $quest_id,
+                'generated_at'     => $detail['generated_at'] ?? $now,
+                'created_at'       => $now,
+                'updated_at'       => $now,
+            ];
+
+            $result = $wpdb->replace( $table, $row );
+            if ( $result === false ) {
+                $failed++;
+            } elseif ( $existing > 0 ) {
+                $updated++;
+            } else {
+                $synced++;
+            }
+        }
+
+        Knowly_Debug::log( 'admin.pool', 'Quest sync complete', [
+            'synced'  => $synced,
+            'updated' => $updated,
+            'failed'  => $failed,
+        ], null, 'info' );
+
+        wp_send_json_success( [
+            'synced'  => $synced,
+            'updated' => $updated,
+            'pruned'  => 0,
+            'failed'  => $failed,
+            'message' => "{$synced} new, {$updated} updated.",
+        ] );
+    }
+
+    // ── AJAX: Quest Board — curriculum-driven slot map ────────────────────────
+    // Fetches all curriculum modules from Railway, merges with WP quest state,
+    // returns a slot map grouped by subject.
+
+    public static function ajax_quest_board(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
+        $level      = sanitize_text_field( $_POST['level']  ?? 'std_4' );
+        $period     = sanitize_text_field( $_POST['period'] ?? '' );
+
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] );
+        }
+
+        // Fetch all active curriculum topics for this level/period (all subjects at once)
+        $params = [
+            'curriculum' => $curriculum,
+            'level'      => $level,
+            'per_page'   => 500,
+            'status'     => 'active',
+        ];
+        // API uses 'null' string to mean IS NULL (capstone); empty period = capstone
+        $params['period'] = ( $period !== '' ) ? $period : 'null';
+
+        $url      = $endpoint . '/api/v1/curriculum-topics?' . http_build_query( $params );
+        $response = wp_remote_get( $url, [
+            'timeout' => 20,
+            'headers' => [ 'X-AEP-Server-Key' => $server_key ],
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            wp_send_json_error( [ 'message' => 'Railway error: ' . $response->get_error_message() ] );
+        }
+
+        $code  = wp_remote_retrieve_response_code( $response );
+        $body  = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( $code !== 200 ) {
+            wp_send_json_error( [ 'message' => 'Railway returned HTTP ' . $code . ': ' . ( $body['error'] ?? 'Unknown' ) ] );
+        }
+
+        $topics = $body['items'] ?? [];
+
+        // Build distinct subjects list and per-subject module maps
+        $subjects_set    = [];
+        $modules_by_subj = [];
+
+        foreach ( $topics as $t ) {
+            $subj = $t['subject'] ?? '';
+            // Fall back to module_number 1 if null — groups all un-numbered topics under module 1
+            $mn   = isset( $t['module_number'] ) && $t['module_number'] !== null
+                ? (int) $t['module_number']
+                : 1;
+            if ( ! $subj ) continue;
+
+            if ( ! in_array( $subj, $subjects_set, true ) ) {
+                $subjects_set[]          = $subj;
+                $modules_by_subj[ $subj ] = [];
+            }
+            if ( ! isset( $modules_by_subj[ $subj ][ $mn ] ) ) {
+                $modules_by_subj[ $subj ][ $mn ] = [
+                    'module_number' => $mn,
+                    'module_title'  => $t['module_title'] ?? 'Module ' . $mn,
+                    'sort_order'    => (int) ( $t['sort_order'] ?? ( $mn * 100 ) ),
+                ];
+            }
+        }
+
+        sort( $subjects_set );
+
+        // Fetch all matching quests from WP local store for this level/period
+        global $wpdb;
+        $table         = $wpdb->prefix . 'knowly_quests';
+        $period_clause = ( $period !== '' )
+            ? $wpdb->prepare( 'AND period = %s', $period )
+            : 'AND period IS NULL';
+
+        $wp_quests = $wpdb->get_results( $wpdb->prepare(
+            "SELECT quest_id, subject, module_number, status, module_title, generated_at, approved_at, audio_url, audio_generated_at, content
+             FROM {$table}
+             WHERE curriculum = %s AND level = %s {$period_clause} AND variant = 'student'
+             ORDER BY subject ASC, module_number ASC",
+            $curriculum, $level
+        ), ARRAY_A );
+
+        // Fetch quest question counts from Railway for each approved quest
+        $quest_q_counts = [];
+        if ( ! empty( $wp_quests ) && $endpoint && $server_key ) {
+            foreach ( $wp_quests as $q ) {
+                if ( $q['status'] !== 'approved' ) continue;
+                $qid  = $q['quest_id'];
+                $resp = wp_remote_get( $endpoint . '/api/v1/quest/' . rawurlencode( $qid ) . '/questions', [
+                    'timeout' => 5,
+                    'headers' => [ 'X-AEP-Server-Key' => $server_key ],
+                ] );
+                if ( ! is_wp_error( $resp ) && wp_remote_retrieve_response_code( $resp ) === 200 ) {
+                    $parsed = json_decode( wp_remote_retrieve_body( $resp ), true );
+                    $quest_q_counts[ $qid ] = (int) ( $parsed['count'] ?? 0 );
+                }
+            }
+        }
+
+        // Index by subject → module_number for O(1) lookup
+        $quest_map = [];
+        foreach ( $wp_quests as $q ) {
+            $quest_map[ $q['subject'] ][ (int) $q['module_number'] ] = $q;
+        }
+
+        // Fetch training coverage: which module_titles have WP training rows for this level/period
+        // Training subtopic column stores the module_title from the CSV import
+        $tm_table  = $wpdb->prefix . 'knowly_training_material';
+        $tm_rows   = $wpdb->get_results( $wpdb->prepare(
+            "SELECT subject, subtopic
+             FROM {$tm_table}
+             WHERE curriculum = %s AND level = %s {$period_clause} AND status = 'active' AND subtopic IS NOT NULL",
+            $curriculum, $level
+        ), ARRAY_A );
+
+        // Build coverage map: subject → normalised module_title → true
+        $training_map = [];
+        foreach ( $tm_rows as $tm ) {
+            $training_map[ $tm['subject'] ][ strtolower( trim( $tm['subtopic'] ) ) ] = true;
+        }
+
+        // Build slots_by_subject merging curriculum modules with WP quest state
+        $slots_by_subject = [];
+        foreach ( $subjects_set as $subj ) {
+            $modules = array_values( $modules_by_subj[ $subj ] ?? [] );
+            usort( $modules, fn( $a, $b ) => $a['sort_order'] <=> $b['sort_order'] );
+
+            $slots = [];
+            foreach ( $modules as $m ) {
+                $quest = $quest_map[ $subj ][ $m['module_number'] ] ?? null;
+
+                if ( ! $quest ) {
+                    $display_status = 'empty';
+                } elseif ( $quest['status'] === 'approved' ) {
+                    $display_status = 'fulfilled';
+                } else {
+                    $display_status = $quest['status']; // pending_review | rejected | archived
+                }
+
+                $title_key    = strtolower( trim( $m['module_title'] ) );
+                $has_training = isset( $training_map[ $subj ][ $title_key ] );
+
+                $qid = $quest['quest_id'] ?? null;
+
+                $char_count = 0;
+                if ( $quest && $display_status === 'fulfilled' && ! empty( $quest['content'] ) ) {
+                    $decoded = json_decode( $quest['content'], true );
+                    if ( $decoded ) {
+                        $char_count = Knowly_Polly_Service::training_char_count( $decoded );
+                    }
+                }
+
+                $slots[] = [
+                    'module_number'      => $m['module_number'],
+                    'module_title'       => $m['module_title'],
+                    'sort_order'         => $m['sort_order'],
+                    'quest_id'           => $qid,
+                    'status'             => $display_status,
+                    'generated_at'       => $quest['generated_at']       ?? null,
+                    'approved_at'        => $quest['approved_at']         ?? null,
+                    'has_training'       => $has_training,
+                    'q_count'            => $qid ? ( $quest_q_counts[ $qid ] ?? 0 ) : 0,
+                    'char_count'         => $char_count,
+                    'has_audio'          => ! empty( $quest['audio_url'] ),
+                    'audio_url'          => $quest['audio_url']          ?? null,
+                    'audio_generated_at' => $quest['audio_generated_at'] ?? null,
+                ];
+            }
+            $slots_by_subject[ $subj ] = $slots;
+        }
+
+        wp_send_json_success( [
+            'subjects'         => $subjects_set,
+            'slots_by_subject' => $slots_by_subject,
+            'level'            => $level,
+            'period'           => $period ?: null,
+        ] );
+    }
+
     // ── AJAX: Quest Catalogue — full catalog from curriculum config ───────────
 
     public static function ajax_quest_catalogue(): void {
@@ -707,8 +1097,8 @@ class Knowly_Admin_Pool {
         $all_cfg    = get_option( 'knowly_curriculum_subjects', [] );
         $cfg        = $all_cfg[ $curriculum ] ?? null;
 
-        $levels  = $cfg['levels']  ?? [ 'std_4', 'std_5' ];
-        $periods = $cfg['periods'] ?? [ 'term_1', 'term_2', 'term_3' ];
+        $levels   = array_column( $cfg['levels']  ?? [], 'value' ) ?: [ 'std_4', 'std_5' ];
+        $periods  = array_column( $cfg['periods'] ?? [], 'value' ) ?: [ 'term_1', 'term_2', 'term_3' ];
         $subjects = array_column( $cfg['subjects'] ?? [], 'value' );
 
         // Build expected level × (period + capstone) × subject slots
@@ -831,6 +1221,7 @@ class Knowly_Admin_Pool {
     public static function ajax_generate_trial(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+        set_time_limit( 180 );
 
         $level      = sanitize_text_field( $_POST['level']      ?? '' );
         $period     = sanitize_text_field( $_POST['period']     ?? '' );
@@ -865,14 +1256,13 @@ class Knowly_Admin_Pool {
         ] );
     }
 
-    // ── AJAX: Generate Quest ──────────────────────────────────────────────────
+    // ── AJAX: Generate Quest (fire-and-forget) ───────────────────────────────
+    // Fires the Railway generation request non-blocking so WP returns immediately.
+    // Railway stores the quest in Supabase; use ajax_sync_quests() to pull it into WP.
 
     public static function ajax_generate_quest(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
-
-        global $wpdb;
-        $table = $wpdb->prefix . 'knowly_quests';
 
         $level        = sanitize_text_field( $_POST['level']        ?? '' );
         $period       = sanitize_text_field( $_POST['period']       ?? '' );
@@ -883,69 +1273,94 @@ class Knowly_Admin_Pool {
             wp_send_json_error( [ 'message' => 'level and subject are required.' ] );
         }
 
-        // ── Call Railway to generate ──────────────────────────────────────────
-        $railway_data = self::railway_post( '/api/v1/quest/generate', [
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] );
+        }
+
+        // Fire non-blocking — WP does not wait for the response.
+        // Railway generates the quest and stores it in Supabase directly.
+        wp_remote_post( $endpoint . '/api/v1/quest/generate', [
+            'timeout'  => 1,
+            'blocking' => false,
+            'headers'  => [
+                'X-AEP-Server-Key' => $server_key,
+                'Content-Type'     => 'application/json',
+            ],
+            'body' => wp_json_encode( [
+                'curriculum'   => 'tt_primary',
+                'level'        => $level,
+                'period'       => $period ?: null,
+                'subject'      => $subject,
+                'module_index' => $module_index,
+                'status'       => 'pending_review',
+            ] ),
+        ] );
+
+        Knowly_Debug::log( 'admin.pool', 'Quest generation fired (non-blocking)', [
+            'level'   => $level,
+            'period'  => $period ?: null,
+            'subject' => $subject,
+        ], null, 'info' );
+
+        wp_send_json_success( [
+            'status'  => 'generating',
+            'message' => 'Quest generation started. Click ↻ Re-check Quests in ~2 minutes.',
+        ] );
+    }
+
+    // ── AJAX: Generate Quest Questions ────────────────────────────────────────
+
+    public static function ajax_gen_questions(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $quest_id    = sanitize_text_field( $_POST['quest_id']     ?? '' );
+        $level       = sanitize_text_field( $_POST['level']        ?? '' );
+        $period      = sanitize_text_field( $_POST['period']       ?? '' );
+        $subject     = sanitize_text_field( $_POST['subject']      ?? '' );
+        $module_title = sanitize_text_field( $_POST['module_title'] ?? '' );
+
+        if ( ! $quest_id || ! $level || ! $subject || ! $module_title ) {
+            wp_send_json_error( [ 'message' => 'quest_id, level, subject, and module_title are required.' ] );
+            return;
+        }
+
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+        if ( ! $endpoint ) { wp_send_json_error( [ 'message' => 'Railway endpoint not configured.' ] ); return; }
+
+        $body = [
             'curriculum'   => 'tt_primary',
             'level'        => $level,
             'period'       => $period ?: null,
             'subject'      => $subject,
-            'module_index' => $module_index,
-        ] );
-
-        if ( is_wp_error( $railway_data ) ) {
-            wp_send_json_error( [ 'message' => $railway_data->get_error_message() ] );
-        }
-
-        $quest_id       = $railway_data['quest_id']       ?? null;
-        $student_content = $railway_data['student_content'] ?? $railway_data['content'] ?? null;
-        $teacher_content = $railway_data['teacher_content'] ?? null;
-
-        if ( ! $quest_id ) {
-            wp_send_json_error( [ 'message' => 'Railway did not return a quest_id.' ] );
-        }
-
-        // ── Store both variants in wp_knowly_quests ───────────────────────────
-        $now      = current_time( 'mysql' );
-        $base_row = [
-            'quest_id'         => $quest_id,
-            'curriculum'       => $railway_data['curriculum']    ?? 'tt_primary',
-            'level'            => $railway_data['level']         ?? $level,
-            'period'           => $railway_data['period']        ?? ( $period ?: null ),
-            'subject'          => $railway_data['subject']       ?? $subject,
-            'topic'            => $railway_data['topic']         ?? null,
-            'module_number'    => $railway_data['module_number'] ?? null,
-            'module_title'     => $railway_data['module_title']  ?? null,
-            'objectives'       => wp_json_encode( $railway_data['objectives'] ?? [] ),
-            'status'           => 'pending_review',
-            'railway_quest_id' => $quest_id,
-            'generated_at'     => $railway_data['generated_at'] ?? $now,
-            'created_at'       => $now,
-            'updated_at'       => $now,
+            'quest_id'     => $quest_id,
+            'module_title' => $module_title,
+            'topics'       => [],
         ];
 
-        // Student variant (always present)
-        $wpdb->replace( $table, array_merge( $base_row, [
-            'variant' => 'student',
-            'content' => wp_json_encode( $student_content ),
-        ] ) );
+        $resp = wp_remote_post( $endpoint . '/api/v1/quest/generate-questions', [
+            'timeout' => 60,
+            'headers' => [ 'X-AEP-Server-Key' => $server_key, 'Content-Type' => 'application/json' ],
+            'body'    => wp_json_encode( $body ),
+        ] );
 
-        // Teacher variant (if Railway returned it)
-        if ( $teacher_content !== null ) {
-            $wpdb->replace( $table, array_merge( $base_row, [
-                'variant' => 'teacher',
-                'content' => wp_json_encode( $teacher_content ),
-            ] ) );
+        if ( is_wp_error( $resp ) ) { wp_send_json_error( [ 'message' => $resp->get_error_message() ] ); return; }
+
+        $code   = wp_remote_retrieve_response_code( $resp );
+        $parsed = json_decode( wp_remote_retrieve_body( $resp ), true );
+
+        if ( $code >= 400 ) {
+            wp_send_json_error( [ 'message' => $parsed['error'] ?? "HTTP {$code}" ] );
+            return;
         }
 
-        Knowly_Debug::log( 'admin.pool', 'Quest generated and stored in WP', [
-            'quest_id'        => $quest_id,
-            'has_teacher'     => $teacher_content !== null,
-        ], null, 'info' );
-
         wp_send_json_success( [
-            'quest_id'    => $quest_id,
-            'status'      => 'pending_review',
-            'has_teacher' => $teacher_content !== null,
+            'quest_id'       => $quest_id,
+            'question_count' => $parsed['question_count'] ?? 3,
         ] );
     }
 
@@ -1022,6 +1437,31 @@ class Knowly_Admin_Pool {
             wp_send_json_error( [ 'message' => 'DB error: ' . $wpdb->last_error ] );
         }
 
+        // Sync status to Supabase via Railway (approved and rejected only — no 'archived' on Railway).
+        if ( in_array( $new_status, [ 'approved', 'rejected' ], true ) ) {
+            $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+            $server_key = get_option( 'knowly_railway_server_key', '' );
+
+            if ( $endpoint ) {
+                $railway_response = wp_remote_request( $endpoint . '/api/v1/quest/status', [
+                    'method'  => 'PATCH',
+                    'timeout' => 15,
+                    'headers' => [
+                        'X-AEP-Server-Key' => $server_key,
+                        'Content-Type'     => 'application/json',
+                    ],
+                    'body' => wp_json_encode( [ 'quest_id' => $quest_id, 'status' => $new_status ] ),
+                ] );
+
+                if ( is_wp_error( $railway_response ) ) {
+                    Knowly_Debug::log( 'admin.pool', 'Railway status sync failed', [
+                        'quest_id' => $quest_id,
+                        'error'    => $railway_response->get_error_message(),
+                    ], null, 'error' );
+                }
+            }
+        }
+
         Knowly_Debug::log( 'admin.pool', 'Quest status updated', [
             'quest_id'   => $quest_id,
             'new_status' => $new_status,
@@ -1089,7 +1529,7 @@ class Knowly_Admin_Pool {
         }
 
         $response = wp_remote_post( $endpoint . $path, [
-            'timeout' => 30,
+            'timeout' => 120,
             'headers' => [
                 'X-AEP-Server-Key' => $server_key,
                 'Content-Type'     => 'application/json',
@@ -1109,7 +1549,7 @@ class Knowly_Admin_Pool {
         }
 
         $response = wp_remote_post( $endpoint . $path, [
-            'timeout' => 30,
+            'timeout' => 120,
             'headers' => [
                 'Authorization'    => "Bearer {$token}",
                 'X-AEP-Server-Key' => $server_key,

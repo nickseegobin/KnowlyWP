@@ -32,6 +32,14 @@ class Knowly_Admin_Settings {
         $email_verification  = get_option( 'knowly_email_verification', false );
         $red_gem_stipend     = get_option( 'knowly_red_gem_stipend', 20 );
         $um_migration_status = get_option( 'knowly_um_migration_status', 'pending' );
+        // AWS / Polly
+        $aws_access_key      = get_option( 'knowly_aws_access_key', '' );
+        $aws_secret_key      = get_option( 'knowly_aws_secret_key', '' );
+        $aws_region          = get_option( 'knowly_aws_region', 'us-east-1' );
+        $aws_s3_bucket       = get_option( 'knowly_aws_s3_bucket', '' );
+        $aws_s3_prefix       = get_option( 'knowly_aws_s3_prefix', 'knowly/audio' );
+        $aws_cdn_url         = get_option( 'knowly_aws_cdn_url', '' );
+        $polly_voice_id      = get_option( 'knowly_polly_voice_id', 'Joanna' );
         ?>
         <div class="wrap knowly-wrap">
             <h1>KnowlyAPI — Settings</h1>
@@ -169,6 +177,84 @@ class Knowly_Admin_Settings {
                     </table>
                 </div>
 
+                <!-- AWS / Polly TTS -->
+                <div class="knowly-settings-section">
+                    <h2>AWS / Polly Text-to-Speech</h2>
+                    <p class="description" style="margin-bottom:12px;">
+                        Used to generate audio narration for Quests and Lessons via AWS Polly.
+                        The IAM user needs <code>polly:StartSpeechSynthesisTask</code>, <code>polly:GetSpeechSynthesisTask</code>,
+                        and <code>s3:PutObject</code> on the target bucket.
+                        The S3 bucket (or CloudFront distribution) must allow public read on the audio prefix.
+                    </p>
+                    <table class="form-table">
+                        <tr>
+                            <th><label for="knowly_aws_access_key">AWS Access Key ID</label></th>
+                            <td>
+                                <input type="text" id="knowly_aws_access_key" name="knowly_aws_access_key"
+                                       value="<?= esc_attr( $aws_access_key ) ?>" class="regular-text" autocomplete="off" />
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="knowly_aws_secret_key">AWS Secret Access Key</label></th>
+                            <td>
+                                <input type="password" id="knowly_aws_secret_key" name="knowly_aws_secret_key"
+                                       value="<?= esc_attr( $aws_secret_key ) ?>" class="regular-text" autocomplete="new-password" />
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="knowly_aws_region">AWS Region</label></th>
+                            <td>
+                                <input type="text" id="knowly_aws_region" name="knowly_aws_region"
+                                       value="<?= esc_attr( $aws_region ) ?>" class="regular-text" placeholder="us-east-1" />
+                                <p class="description">Polly and S3 region — must match your S3 bucket region.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="knowly_aws_s3_bucket">S3 Bucket Name</label></th>
+                            <td>
+                                <input type="text" id="knowly_aws_s3_bucket" name="knowly_aws_s3_bucket"
+                                       value="<?= esc_attr( $aws_s3_bucket ) ?>" class="regular-text" placeholder="my-knowly-media" />
+                                <p class="description">Destination bucket where Polly writes the MP3 files.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="knowly_aws_s3_prefix">S3 Key Prefix</label></th>
+                            <td>
+                                <input type="text" id="knowly_aws_s3_prefix" name="knowly_aws_s3_prefix"
+                                       value="<?= esc_attr( $aws_s3_prefix ) ?>" class="regular-text" placeholder="knowly/audio" />
+                                <p class="description">Path prefix inside the bucket (no leading or trailing slash).</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="knowly_aws_cdn_url">CDN Base URL (optional)</label></th>
+                            <td>
+                                <input type="url" id="knowly_aws_cdn_url" name="knowly_aws_cdn_url"
+                                       value="<?= esc_attr( $aws_cdn_url ) ?>" class="regular-text" placeholder="https://cdn.example.com" />
+                                <p class="description">CloudFront or other CDN URL. When set, audio URLs use this instead of the direct S3 URL. No trailing slash.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="knowly_polly_voice_id">Polly Voice</label></th>
+                            <td>
+                                <select id="knowly_polly_voice_id" name="knowly_polly_voice_id">
+                                    <?php
+                                    $voices = [ 'Joanna', 'Matthew', 'Amy', 'Brian', 'Emma', 'Olivia', 'Aria', 'Ayanda' ];
+                                    foreach ( $voices as $v ) {
+                                        printf(
+                                            '<option value="%s"%s>%s</option>',
+                                            esc_attr( $v ),
+                                            selected( $polly_voice_id, $v, false ),
+                                            esc_html( $v )
+                                        );
+                                    }
+                                    ?>
+                                </select>
+                                <p class="description">Neural voices only. Joanna and Matthew are US English; Amy, Brian, Emma are UK English.</p>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
                 <?php submit_button( 'Save Settings' ); ?>
             </form>
 
@@ -199,5 +285,13 @@ class Knowly_Admin_Settings {
         update_option( 'knowly_max_children',        max( 1, min( 10, (int) ( $_POST['knowly_max_children'] ?? 3 ) ) ) );
         update_option( 'knowly_email_verification',  ! empty( $_POST['knowly_email_verification'] ) );
         update_option( 'knowly_red_gem_stipend',     max( 0, (int) ( $_POST['knowly_red_gem_stipend'] ?? 20 ) ) );
+        // AWS / Polly
+        update_option( 'knowly_aws_access_key', sanitize_text_field( $_POST['knowly_aws_access_key'] ?? '' ) );
+        update_option( 'knowly_aws_secret_key', sanitize_text_field( $_POST['knowly_aws_secret_key'] ?? '' ) );
+        update_option( 'knowly_aws_region',     sanitize_text_field( $_POST['knowly_aws_region']     ?? 'us-east-1' ) );
+        update_option( 'knowly_aws_s3_bucket',  sanitize_text_field( $_POST['knowly_aws_s3_bucket']  ?? '' ) );
+        update_option( 'knowly_aws_s3_prefix',  sanitize_text_field( $_POST['knowly_aws_s3_prefix']  ?? 'knowly/audio' ) );
+        update_option( 'knowly_aws_cdn_url',    esc_url_raw(          $_POST['knowly_aws_cdn_url']   ?? '' ) );
+        update_option( 'knowly_polly_voice_id', sanitize_text_field( $_POST['knowly_polly_voice_id'] ?? 'Joanna' ) );
     }
 }

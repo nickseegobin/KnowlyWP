@@ -138,6 +138,19 @@ class Knowly_Activator {
                 AFTER source" );
         }
 
+        // v2.1.0 — add task_id to knowly_lesson_sessions for analytics segmentation
+        $col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'task_id'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_lesson_sessions'
+        ) );
+        if ( empty( $col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_lesson_sessions
+                ADD COLUMN task_id BIGINT UNSIGNED NULL DEFAULT NULL
+                AFTER source" );
+        }
+
         // v2.0.0 — add sort_order to knowly_quests for single-topic quest ordering
         $col = $wpdb->get_results( $wpdb->prepare(
             "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
@@ -162,6 +175,82 @@ class Knowly_Activator {
             $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_tasks
                 ADD COLUMN type ENUM('quest','trial') NOT NULL DEFAULT 'trial'
                 AFTER teacher_user_id" );
+        }
+
+        // v2.1.0 — add scope + module_numbers to knowly_tasks for teacher trial flavour selection
+        $scope_col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'scope'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_tasks'
+        ) );
+        if ( empty( $scope_col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_tasks
+                ADD COLUMN scope VARCHAR(20) NULL DEFAULT NULL
+                AFTER difficulty" );
+        }
+
+        $mn_col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'module_numbers'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_tasks'
+        ) );
+        if ( empty( $mn_col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_tasks
+                ADD COLUMN module_numbers TEXT NULL DEFAULT NULL
+                AFTER scope" );
+        }
+
+        // v2.4.0 — expand knowly_tasks.type ENUM to include 'lesson'
+        $type_enum = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'type'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_tasks'
+        ) );
+        if ( $type_enum && strpos( $type_enum, 'lesson' ) === false ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_tasks
+                MODIFY COLUMN type ENUM('quest','trial','lesson') NOT NULL DEFAULT 'trial'" );
+            // Fix tasks that were silently stored as '' because 'lesson' was not in the ENUM.
+            // These tasks have a reference_id (lessons always reference content) and empty type.
+            $wpdb->query( "UPDATE {$wpdb->prefix}knowly_tasks
+                SET type = 'lesson'
+                WHERE type = '' AND reference_id IS NOT NULL" );
+        }
+
+        // v2.5.0 — add lesson_section_index for section-specific lesson assignments
+        $lsi_col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'lesson_section_index'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_tasks'
+        ) );
+        if ( empty( $lsi_col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_tasks
+                ADD COLUMN lesson_section_index INT NULL DEFAULT NULL
+                AFTER module_numbers" );
+        }
+
+        // v3.0.0 — badge system replaced. Old knowly_badge CPT and knowly_earned_badges
+        // user meta are preserved but no longer read. New relational tables
+        // (knowly_badge_definitions + knowly_badge_awards) are created via create_tables().
+        // Note: we do not attempt to migrate CPT-based badge data — the old badge_id values
+        // are CPT post IDs with no mapping to new definitions.
+
+        // v2.5.1 — add audio_url + audio_generated_at to knowly_quests for Polly TTS
+        $audio_col = $wpdb->get_results( $wpdb->prepare(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'audio_url'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_quests'
+        ) );
+        if ( empty( $audio_col ) ) {
+            $wpdb->query( "ALTER TABLE {$wpdb->prefix}knowly_quests
+                ADD COLUMN audio_url VARCHAR(500) DEFAULT NULL
+                AFTER content,
+                ADD COLUMN audio_generated_at DATETIME DEFAULT NULL
+                AFTER audio_url" );
         }
 
         // v1.9.3 — levels and periods now stored as {value,label} objects so the
@@ -437,7 +526,7 @@ class Knowly_Activator {
             id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             class_id        BIGINT UNSIGNED NOT NULL,
             teacher_user_id BIGINT UNSIGNED NOT NULL,
-            type            ENUM('quest','trial') NOT NULL DEFAULT 'trial',
+            type            ENUM('quest','trial','lesson') NOT NULL DEFAULT 'trial',
             reference_id    VARCHAR(100)             DEFAULT NULL,
             title           VARCHAR(200)    NOT NULL DEFAULT '',
             description     TEXT                     DEFAULT NULL,
@@ -490,6 +579,8 @@ class Knowly_Activator {
             sort_order       INT                 DEFAULT NULL,
             objectives       LONGTEXT            DEFAULT NULL,
             content          LONGTEXT            DEFAULT NULL,
+            audio_url        VARCHAR(500)        DEFAULT NULL,
+            audio_generated_at DATETIME          DEFAULT NULL,
             status           VARCHAR(20)         NOT NULL DEFAULT 'pending_review',
             railway_quest_id VARCHAR(200)        DEFAULT NULL,
             generated_at     DATETIME            DEFAULT NULL,
@@ -544,7 +635,101 @@ class Knowly_Activator {
             KEY              idx_state (state)
         ) {$charset};" );
 
-        // ── 21. Debug Log ─────────────────────────────────────────────────────────
+        // ── 21. Quest Question Results ────────────────────────────────────────────
+        // Stores child answers to quest testing questions (separate from trial scores).
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_quest_question_results (
+            id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            session_id      VARCHAR(64)     NOT NULL,
+            quest_id        VARCHAR(200)    NOT NULL,
+            child_id        BIGINT UNSIGNED NOT NULL,
+            question_id     VARCHAR(64)     NOT NULL,
+            selected_answer CHAR(1)                  DEFAULT NULL,
+            is_correct      TINYINT(1)      NOT NULL DEFAULT 0,
+            answered_at     DATETIME        NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_session  (session_id),
+            KEY idx_child    (child_id),
+            KEY idx_quest    (quest_id)
+        ) {$charset};" );
+
+        // ── 22. Lesson Sessions ───────────────────────────────────────────────────
+        // Tracks lesson sessions (WP-local, no gem cost, no badge).
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_lesson_sessions (
+            id                 BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            lesson_session_id  VARCHAR(64)     NOT NULL,
+            child_id           BIGINT UNSIGNED NOT NULL,
+            quest_id           VARCHAR(200)    NOT NULL,
+            source             VARCHAR(20)     NOT NULL DEFAULT 'direct',
+            state              VARCHAR(20)     NOT NULL DEFAULT 'active',
+            started_at         DATETIME        NOT NULL,
+            completed_at       DATETIME                 DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_lesson_session (lesson_session_id),
+            KEY idx_child (child_id),
+            KEY idx_quest (quest_id),
+            KEY idx_state (state)
+        ) {$charset};" );
+
+        // ── 23. Lesson Question Results ───────────────────────────────────────────
+        // Stores child answers to lesson comprehension questions. Scored silently —
+        // results never returned to the student.
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_lesson_question_results (
+            id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            session_id      VARCHAR(64)     NOT NULL,
+            quest_id        VARCHAR(200)    NOT NULL,
+            child_id        BIGINT UNSIGNED NOT NULL,
+            question_id     VARCHAR(64)     NOT NULL,
+            selected_answer CHAR(1)                  DEFAULT NULL,
+            is_correct      TINYINT(1)      NOT NULL DEFAULT 0,
+            answered_at     DATETIME        NOT NULL,
+            PRIMARY KEY (id),
+            KEY idx_session (session_id),
+            KEY idx_child   (child_id),
+            KEY idx_quest   (quest_id)
+        ) {$charset};" );
+
+        // ── 25. Badge Definitions ─────────────────────────────────────────────────
+        // Replaces the knowly_badge CPT. Three trigger types are supported:
+        //   quest_module_completion — fires when all sub-topics in a module are done
+        //   trial_count            — fires when a child reaches a trial threshold
+        //   lesson_count           — fires when a child reaches a lesson threshold
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_badge_definitions (
+            id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            name          VARCHAR(100)    NOT NULL DEFAULT 'New Badge',
+            description   TEXT                     DEFAULT NULL,
+            trigger_type  ENUM('quest_module_completion','trial_count','lesson_count') NOT NULL,
+            trigger_key   VARCHAR(200)    NOT NULL,
+            threshold     INT UNSIGNED             DEFAULT NULL,
+            curriculum    VARCHAR(50)     NOT NULL DEFAULT 'tt_primary',
+            level         VARCHAR(20)     NOT NULL DEFAULT '',
+            period        VARCHAR(20)              DEFAULT NULL,
+            subject       VARCHAR(50)     NOT NULL DEFAULT '',
+            module_number INT UNSIGNED             DEFAULT NULL,
+            ai_generated  TINYINT(1)      NOT NULL DEFAULT 0,
+            created_at    DATETIME        NOT NULL,
+            updated_at    DATETIME        NOT NULL,
+            PRIMARY KEY   (id),
+            UNIQUE KEY    uq_trigger (trigger_type, trigger_key),
+            KEY           idx_type (trigger_type),
+            KEY           idx_subject (subject, level)
+        ) {$charset};" );
+
+        // ── 26. Badge Awards ──────────────────────────────────────────────────────
+        // One row per child per definition. share_token powers the public /badge/{token} page.
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_badge_awards (
+            id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            definition_id BIGINT UNSIGNED NOT NULL,
+            child_id      BIGINT UNSIGNED NOT NULL,
+            share_token   VARCHAR(32)     NOT NULL,
+            awarded_at    DATETIME        NOT NULL,
+            PRIMARY KEY   (id),
+            UNIQUE KEY    uq_child_definition (child_id, definition_id),
+            UNIQUE KEY    uq_share (share_token),
+            KEY           idx_child (child_id),
+            KEY           idx_definition (definition_id)
+        ) {$charset};" );
+
+        // ── 24. Debug Log ─────────────────────────────────────────────────────────
         dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_debug_log (
             log_id     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             level      ENUM('debug','info','warning','error') NOT NULL DEFAULT 'info',

@@ -15,11 +15,12 @@ defined( 'ABSPATH' ) || exit;
 class Knowly_Admin_Training {
 
     public static function boot(): void {
-        add_action( 'wp_ajax_knowly_training_save',   [ __CLASS__, 'ajax_save' ] );
-        add_action( 'wp_ajax_knowly_training_delete',  [ __CLASS__, 'ajax_delete' ] );
-        add_action( 'wp_ajax_knowly_training_archive', [ __CLASS__, 'ajax_archive' ] );
-        add_action( 'wp_ajax_knowly_training_get',     [ __CLASS__, 'ajax_get' ] );
-        add_action( 'wp_ajax_knowly_training_sync',    [ __CLASS__, 'ajax_sync_to_pinecone' ] );
+        add_action( 'wp_ajax_knowly_training_save',       [ __CLASS__, 'ajax_save' ] );
+        add_action( 'wp_ajax_knowly_training_delete',      [ __CLASS__, 'ajax_delete' ] );
+        add_action( 'wp_ajax_knowly_training_archive',     [ __CLASS__, 'ajax_archive' ] );
+        add_action( 'wp_ajax_knowly_training_get',         [ __CLASS__, 'ajax_get' ] );
+        add_action( 'wp_ajax_knowly_training_sync',        [ __CLASS__, 'ajax_sync_to_pinecone' ] );
+        add_action( 'wp_ajax_knowly_training_import_csv',  [ __CLASS__, 'ajax_import_csv' ] );
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -61,7 +62,35 @@ class Knowly_Admin_Training {
         <div class="wrap knowly-wrap">
             <h1>Training Material
                 <button class="button button-primary" onclick="knowlyTM.openAdd()">+ Add Entry</button>
+                <button class="button" onclick="knowlyTM.toggleImport()">&#8593; Import CSV</button>
             </h1>
+
+            <!-- ── CSV Import Panel ──────────────────────────────────────── -->
+            <div id="knowly-tm-import-panel" style="display:none;background:#fff;border:1px solid #c3c4c7;border-radius:4px;padding:20px;margin-bottom:20px;max-width:900px;">
+                <h2 style="margin-top:0;">Import from Google Sheets CSV</h2>
+                <p style="color:#666;margin-top:0;">Export your Google Sheet as CSV and upload it here. Required columns: <code>curriculum, level, subject, topic, content</code>. Optional: <code>period, module_title</code>.</p>
+
+                <p>
+                    <button class="button" onclick="knowlyTM.downloadTemplate()">&#8595; Download CSV Template</button>
+                </p>
+
+                <div style="margin-top:12px;">
+                    <label><strong>Select CSV file:</strong></label><br>
+                    <input type="file" id="knowly-tm-csv-file" accept=".csv" style="margin-top:6px;" onchange="knowlyTM.onCSVFileChange(event)">
+                </div>
+
+                <div id="knowly-tm-csv-preview" style="display:none;margin-top:16px;"></div>
+
+                <div id="knowly-tm-import-actions" style="display:none;margin-top:12px;">
+                    <button id="knowly-tm-import-btn" class="button button-primary" onclick="knowlyTM.importCSV()">
+                        Import <span id="knowly-tm-row-count">0</span> rows to Pinecone
+                    </button>
+                    <span style="margin-left:10px;font-size:12px;color:#888;">This will embed each row with Voyage AI and upsert into Pinecone. May take several minutes for large files.</span>
+                </div>
+
+                <div id="knowly-tm-import-result" style="display:none;margin-top:12px;"></div>
+            </div>
+            <!-- ── /CSV Import Panel ─────────────────────────────────────── -->
 
             <div class="knowly-stat-grid" style="grid-template-columns:repeat(3,1fr);max-width:500px;margin-bottom:20px;">
                 <div class="knowly-stat-card">
@@ -219,6 +248,142 @@ class Knowly_Admin_Training {
 
         <script>
         const knowlyTM = {
+
+            // ── CSV Import ────────────────────────────────────────────────
+
+            toggleImport() {
+                const panel = document.getElementById('knowly-tm-import-panel');
+                panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            },
+
+            downloadTemplate() {
+                const header  = 'curriculum,level,period,subject,module_title,topic,content';
+                const example = 'tt_primary,std_4,term_1,math,Place Value,"Place value up to 1,000,000","Students will understand and work with numbers up to one million. They will read, write, and order these numbers and understand the value of each digit."';
+                const blob = new Blob([header + '\n' + example], { type: 'text/csv' });
+                const a = Object.assign(document.createElement('a'), {
+                    href: URL.createObjectURL(blob), download: 'knowly-training-template.csv'
+                });
+                a.click();
+            },
+
+            _parsedRows: [],
+
+            _parseCSVLine(line) {
+                const result = [];
+                let cur = '', inQ = false;
+                for (let i = 0; i < line.length; i++) {
+                    const ch = line[i];
+                    if (ch === '"') {
+                        if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+                        else inQ = !inQ;
+                    } else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
+                    else cur += ch;
+                }
+                result.push(cur);
+                return result;
+            },
+
+            _parseCSV(text) {
+                const lines = text.trim().split(/\r?\n/);
+                const headers = this._parseCSVLine(lines[0]).map(h => h.trim());
+                return lines.slice(1)
+                    .filter(l => l.trim())
+                    .map(l => {
+                        const vals = this._parseCSVLine(l);
+                        const row = {};
+                        headers.forEach((h, i) => row[h] = (vals[i] || '').trim());
+                        return row;
+                    })
+                    .filter(r => r.topic && r.content);
+            },
+
+            onCSVFileChange(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    this._parsedRows = this._parseCSV(ev.target.result);
+                    this._showCSVPreview(this._parsedRows);
+                };
+                reader.readAsText(file);
+            },
+
+            _showCSVPreview(rows) {
+                const preview = document.getElementById('knowly-tm-csv-preview');
+                const actions = document.getElementById('knowly-tm-import-actions');
+                document.getElementById('knowly-tm-row-count').textContent = rows.length;
+
+                if (!rows.length) {
+                    preview.innerHTML = '<p style="color:#d63638;">No valid rows found. Check that your CSV has <code>topic</code> and <code>content</code> columns.</p>';
+                    preview.style.display = 'block';
+                    actions.style.display = 'none';
+                    return;
+                }
+
+                const cols = ['curriculum','level','period','subject','module_title','topic','content'];
+                const sample = rows.slice(0, 5);
+                let html = `<p>Found <strong>${rows.length} rows</strong>. Preview (first ${Math.min(5,rows.length)}):</p>`;
+                html += '<div style="overflow-x:auto;"><table class="widefat striped" style="font-size:12px;"><thead><tr>';
+                cols.forEach(c => html += `<th>${c}</th>`);
+                html += '</tr></thead><tbody>';
+                sample.forEach(row => {
+                    html += '<tr>';
+                    cols.forEach(c => {
+                        const v = row[c] || '';
+                        html += `<td>${v.length > 50 ? v.slice(0,50)+'…' : v}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody></table></div>';
+
+                preview.innerHTML = html;
+                preview.style.display = 'block';
+                actions.style.display = 'block';
+            },
+
+            async importCSV() {
+                const btn = document.getElementById('knowly-tm-import-btn');
+                const result = document.getElementById('knowly-tm-import-result');
+                btn.disabled = true;
+                btn.textContent = 'Importing… (this may take several minutes)';
+                result.style.display = 'none';
+
+                try {
+                    const resp = await jQuery.post(ajaxurl, {
+                        action: 'knowly_training_import_csv',
+                        nonce:  KnowlyAdmin.nonce,
+                        rows:   JSON.stringify(this._parsedRows),
+                    });
+
+                    if (!resp.success) {
+                        result.innerHTML = `<div class="notice notice-error inline"><p>Import failed: ${resp.data?.message || 'Unknown error'}</p></div>`;
+                    } else {
+                        const d = resp.data;
+                        const pc = d.pinecone || {};
+                        const cls = (pc.failed > 0) ? 'notice-warning' : 'notice-success';
+                        let html = `<div class="notice ${cls} inline"><p>`;
+                        html += `DB: ${d.db_inserted} inserted, ${d.db_updated} updated. `;
+                        html += `Pinecone: ${pc.synced ?? '?'} synced, ${pc.failed ?? '?'} failed of ${pc.total ?? '?'}.`;
+                        html += `</p></div>`;
+                        if (pc.errors?.length) {
+                            html += '<ul style="margin-top:8px;font-size:12px;">';
+                            pc.errors.forEach(e => html += `<li style="color:#d63638;">${e.topic}: ${e.error}</li>`);
+                            html += '</ul>';
+                        }
+                        result.innerHTML = html;
+                        setTimeout(() => location.reload(), 2000);
+                    }
+                } catch (err) {
+                    result.innerHTML = `<div class="notice notice-error inline"><p>Error: ${err.statusText || err.message || 'Request failed'}</p></div>`;
+                }
+
+                result.style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = `Import ${this._parsedRows.length} rows to Pinecone`;
+            },
+
+            // ── Manual entry ─────────────────────────────────────────────
+
             openAdd() {
                 document.getElementById('tm-id').value = '';
                 document.getElementById('tm-vector-id').value = '';
@@ -466,6 +631,112 @@ class Knowly_Admin_Training {
         ] );
 
         wp_send_json_success( $result );
+    }
+
+    // ── AJAX: CSV Bulk Import ─────────────────────────────────────────────────
+
+    public static function ajax_import_csv(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( [ 'message' => 'Forbidden' ], 403 );
+
+        set_time_limit( 600 );
+
+        $rows = json_decode( stripslashes( $_POST['rows'] ?? '[]' ), true );
+        if ( ! is_array( $rows ) || empty( $rows ) ) {
+            wp_send_json_error( [ 'message' => 'No rows provided' ] );
+        }
+
+        global $wpdb;
+        $table       = $wpdb->prefix . 'knowly_training_material';
+        $now         = current_time( 'mysql' );
+        $db_inserted = 0;
+        $db_updated  = 0;
+
+        // Normalise and upsert each row into the WP mirror table
+        $clean_rows = [];
+        foreach ( $rows as $row ) {
+            $curriculum   = sanitize_key( $row['curriculum']   ?? 'tt_primary' );
+            $level        = sanitize_key( $row['level']        ?? '' );
+            $period       = sanitize_key( $row['period']       ?? '' ) ?: null;
+            $subject      = sanitize_key( $row['subject']      ?? '' );
+            $module_title = sanitize_text_field( $row['module_title'] ?? '' ) ?: null;
+            $topic        = sanitize_text_field( $row['topic']   ?? '' );
+            $content      = sanitize_textarea_field( $row['content'] ?? '' );
+
+            if ( ! $level || ! $subject || ! $topic || ! $content ) continue;
+
+            $slug      = trim( preg_replace( '/[^a-z0-9]+/', '_', strtolower( $topic ) ), '_' );
+            $vector_id = "tm-{$curriculum}-{$level}-{$subject}-{$slug}";
+
+            $existing_id = $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$table} WHERE vector_id = %s",
+                $vector_id
+            ) );
+
+            if ( $existing_id ) {
+                $wpdb->update(
+                    $table,
+                    [ 'curriculum' => $curriculum, 'level' => $level, 'period' => $period,
+                      'subject' => $subject, 'topic' => $topic, 'subtopic' => $module_title,
+                      'content_text' => $content, 'updated_at' => $now ],
+                    [ 'vector_id' => $vector_id ]
+                );
+                $db_updated++;
+            } else {
+                $wpdb->insert( $table, [
+                    'vector_id'    => $vector_id,
+                    'curriculum'   => $curriculum,
+                    'level'        => $level,
+                    'period'       => $period,
+                    'subject'      => $subject,
+                    'topic'        => $topic,
+                    'subtopic'     => $module_title,
+                    'content_text' => $content,
+                    'status'       => 'active',
+                    'created_at'   => $now,
+                    'updated_at'   => $now,
+                ] );
+                $db_inserted++;
+            }
+
+            // Pass normalised row with generated vector_id to Railway
+            $clean_rows[] = compact( 'curriculum', 'level', 'period', 'subject', 'module_title', 'topic', 'content' );
+        }
+
+        // Sync all rows to Pinecone via Railway
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint || ! $server_key ) {
+            wp_send_json_success( [
+                'db_inserted' => $db_inserted,
+                'db_updated'  => $db_updated,
+                'pinecone'    => [ 'skipped' => true, 'reason' => 'Railway not configured' ],
+            ] );
+        }
+
+        $response = wp_remote_post( "{$endpoint}/api/v1/training/import", [
+            'timeout' => 300,
+            'headers' => [
+                'Content-Type'     => 'application/json',
+                'X-AEP-Server-Key' => $server_key,
+            ],
+            'body' => wp_json_encode( [ 'rows' => $clean_rows ] ),
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            wp_send_json_success( [
+                'db_inserted' => $db_inserted,
+                'db_updated'  => $db_updated,
+                'pinecone'    => [ 'error' => $response->get_error_message() ],
+            ] );
+        }
+
+        $code    = wp_remote_retrieve_response_code( $response );
+        $body    = json_decode( wp_remote_retrieve_body( $response ), true );
+        $pinecone = array_merge( [ 'http_status' => $code ], $body ?? [] );
+
+        wp_send_json_success( compact( 'db_inserted', 'db_updated', 'pinecone' ) );
     }
 
     // ── Railway Helpers ───────────────────────────────────────────────────────

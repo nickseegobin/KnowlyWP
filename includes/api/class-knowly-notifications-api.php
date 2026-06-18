@@ -8,7 +8,8 @@
  *   POST /knowly/v1/notifications                Admin Create a notification
  *   POST /knowly/v1/notifications/{id}/read      JWT  Mark one notification as read
  *   POST /knowly/v1/notifications/read-all       JWT  Mark all notifications as read
- *   POST /knowly/v1/notifications/{id}/respond   JWT  Accept or decline a confirmation notification
+ *   POST   /knowly/v1/notifications/{id}/respond   JWT  Accept or decline a confirmation notification
+ *   DELETE /knowly/v1/notifications/{id}          JWT  Delete a notification (recipient only)
  *
  * @package KnowlyAPI
  */
@@ -73,6 +74,15 @@ class Knowly_Notifications_API extends Knowly_API_Base {
             'args'                => [
                 'id'       => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
                 'response' => [ 'required' => true, 'type' => 'string',  'enum' => [ 'accepted', 'declined' ] ],
+            ],
+        ] );
+
+        register_rest_route( $ns, '/notifications/(?P<id>\d+)', [
+            'methods'             => 'DELETE',
+            'callback'            => [ $this, 'destroy' ],
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'id' => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
             ],
         ] );
     }
@@ -146,6 +156,16 @@ class Knowly_Notifications_API extends Knowly_API_Base {
         $count = Knowly_Notification_Service::mark_all_read( $user_id );
 
         return $this->success( [ 'marked_read' => $count ] );
+    }
+
+    public function destroy( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $user_id = $this->authenticate( $request );
+        if ( is_wp_error( $user_id ) ) return $user_id;
+
+        $result = Knowly_Notification_Service::delete( (int) $request['id'], $user_id );
+        if ( is_wp_error( $result ) ) return $result;
+
+        return $this->success( [ 'deleted' => true ] );
     }
 
     public function respond( WP_REST_Request $request ): WP_REST_Response|WP_Error {

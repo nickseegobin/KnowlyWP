@@ -52,6 +52,7 @@ class Knowly_Admin_Testing {
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">User ID (for admin token tests)<input type="number" id="td-user-id" class="regular-text" placeholder="WP user ID" /></label>
                     <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">PIN (4 digits)<input type="text" id="td-pin" class="regular-text" placeholder="e.g. 1234" maxlength="4" /></label>
                 </div>
+                <?php self::render_user_selectors(); ?>
                 <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                     <button type="button" id="knowly-gen-admin-token" class="button">⚡ Generate Admin Token</button>
                     <button type="button" id="knowly-gen-user-token" class="button">🔑 Generate Token for User ID</button>
@@ -90,6 +91,70 @@ class Knowly_Admin_Testing {
         <?php
     }
 
+    // ── User Selector Widget ──────────────────────────────────────────────────
+
+    private static function render_user_selectors(): void {
+        ?>
+        <div style="border-top:1px solid #f0f0f0;margin-top:12px;padding-top:12px;">
+            <p style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px;">Test Users (for Notification tests — search or enter ID directly)</p>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;position:relative;">
+
+                <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;position:relative;">
+                    <label for="td-parent-search" style="font-weight:600;color:#2271b1;">Test Parent</label>
+                    <input type="text" id="td-parent-search" placeholder="Search by name or email…" autocomplete="off" style="width:100%;" />
+                    <input type="number" id="td-parent-id" placeholder="Parent User ID" style="width:100%;margin-top:2px;" />
+                    <span id="td-parent-label" style="font-size:11px;color:#888;min-height:14px;"></span>
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;position:relative;">
+                    <label for="td-teacher-search" style="font-weight:600;color:#2271b1;">Test Teacher</label>
+                    <input type="text" id="td-teacher-search" placeholder="Search by name or email…" autocomplete="off" style="width:100%;" />
+                    <input type="number" id="td-teacher-id" placeholder="Teacher User ID" style="width:100%;margin-top:2px;" />
+                    <span id="td-teacher-label" style="font-size:11px;color:#888;min-height:14px;"></span>
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;position:relative;">
+                    <label for="td-child-search" style="font-weight:600;color:#2271b1;">Test Child (Student)</label>
+                    <input type="text" id="td-child-search" placeholder="Search by name or email…" autocomplete="off" style="width:100%;" />
+                    <span id="td-child-label" style="font-size:11px;color:#888;min-height:14px;">ID field shared with Child ID above</span>
+                    <p style="font-size:10px;color:#aaa;margin:0;">Selecting here fills Child ID above</p>
+                </div>
+
+            </div>
+        </div>
+        <?php
+    }
+
+    // ── Test User Helper ──────────────────────────────────────────────────────
+
+    /**
+     * Get a test user by role. Checks $data first (from the test data panel user selectors),
+     * then falls back to hard-coded test account emails.
+     */
+    private static function get_test_user( string $role, array $data ): ?WP_User {
+        $id_key = match ( $role ) {
+            'parent'  => 'parent_id',
+            'teacher' => 'teacher_id',
+            'child'   => 'child_id',
+            default   => null,
+        };
+
+        if ( $id_key && ! empty( $data[ $id_key ] ) ) {
+            $user = get_user_by( 'id', (int) $data[ $id_key ] );
+            if ( $user ) return $user;
+        }
+
+        // Fallback to hardcoded test emails (backward-compatible)
+        $fallback_email = match ( $role ) {
+            'parent'  => 'test.parent@knowly.test',
+            'teacher' => 'test.teacher@knowly.test',
+            'child'   => 'test.child@knowly.test',
+            default   => null,
+        };
+
+        return $fallback_email ? get_user_by( 'email', $fallback_email ) : null;
+    }
+
     // ── Per-module group renderer ─────────────────────────────────────────────
     // Call from a module page's Unit Tests tab to embed the relevant test groups.
     // Requires the knowly-admin JS to be enqueued on the page (it is for all knowly-* pages).
@@ -108,6 +173,7 @@ class Knowly_Admin_Testing {
                 <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">User ID (admin token)<input type="number" id="td-user-id" class="regular-text" placeholder="WP user ID" /></label>
                 <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;">PIN (4 digits)<input type="text" id="td-pin" class="regular-text" placeholder="e.g. 1234" maxlength="4" /></label>
             </div>
+            <?php self::render_user_selectors(); ?>
             <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                 <button type="button" id="knowly-gen-admin-token" class="button">⚡ Generate Admin Token</button>
                 <button type="button" id="knowly-gen-user-token" class="button">🔑 Generate Token for User ID</button>
@@ -178,11 +244,21 @@ class Knowly_Admin_Testing {
                 // Insights
                 'insights_weekly_build' => self::test_insights_weekly_build( $data ),
                 // Block 4 — Notifications
-                'notif_create'             => self::test_notif_create(),
+                'notif_create'             => self::test_notif_create( $data ),
                 'notif_list'               => self::test_notif_list( $data ),
                 'notif_count'              => self::test_notif_count( $data ),
                 'notif_respond'            => self::test_notif_respond( $data ),
                 'notif_read_all'           => self::test_notif_read_all( $data ),
+                // Notifications V2 — Delete + Combined Notify
+                'notif_v2_delete_setup'      => self::test_notif_v2_delete_setup( $data ),
+                'notif_v2_delete_own'        => self::test_notif_v2_delete_own( $data ),
+                'notif_v2_delete_gone'       => self::test_notif_v2_delete_gone( $data ),
+                'notif_v2_delete_other_user' => self::test_notif_v2_delete_other_user( $data ),
+                'notif_v2_notify_student'    => self::test_notif_v2_notify_student( $data ),
+                'notif_v2_notify_parent'     => self::test_notif_v2_notify_parent( $data ),
+                'notif_v2_notify_both'       => self::test_notif_v2_notify_both( $data ),
+                'notif_v2_verify_student'    => self::test_notif_v2_verify_student( $data ),
+                'notif_v2_verify_parent'     => self::test_notif_v2_verify_parent( $data ),
                 // Block 2 — Teacher
                 'teacher_register'         => self::test_teacher_register(),
                 'teacher_login_pending'    => self::test_teacher_login_pending(),
@@ -482,9 +558,9 @@ class Knowly_Admin_Testing {
 
     // ── Block 4 Test Methods ──────────────────────────────────────────────────
 
-    private static function test_notif_create(): array {
-        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
-        if ( ! $parent_user ) return self::warn( 'Test parent not found. Run Block 2 account setup first.' );
+    private static function test_notif_create( array $data = [] ): array {
+        $parent_user = self::get_test_user( 'parent', $data );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found. Select a Parent user in the Test Users panel above.' );
 
         $admin_token = self::get_admin_token();
         if ( ! $admin_token ) return self::warn( 'Could not generate admin token.' );
@@ -509,8 +585,8 @@ class Knowly_Admin_Testing {
     }
 
     private static function test_notif_list( array $data ): array {
-        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
-        if ( ! $parent_user ) return self::warn( 'Test parent not found.' );
+        $parent_user = self::get_test_user( 'parent', $data );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found. Select a Parent user in the Test Users panel.' );
 
         $token = Knowly_JWT::encode( $parent_user->ID );
 
@@ -528,8 +604,8 @@ class Knowly_Admin_Testing {
     }
 
     private static function test_notif_count( array $data ): array {
-        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
-        if ( ! $parent_user ) return self::warn( 'Test parent not found.' );
+        $parent_user = self::get_test_user( 'parent', $data );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found. Select a Parent user in the Test Users panel.' );
 
         $token = Knowly_JWT::encode( $parent_user->ID );
         $res   = self::api_get( '/notifications/count', $token );
@@ -544,8 +620,8 @@ class Knowly_Admin_Testing {
     }
 
     private static function test_notif_respond( array $data ): array {
-        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
-        if ( ! $parent_user ) return self::warn( 'Test parent not found.' );
+        $parent_user = self::get_test_user( 'parent', $data );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found. Select a Parent user in the Test Users panel.' );
 
         // Find the most recent unread confirmation from the test subject
         global $wpdb;
@@ -569,8 +645,8 @@ class Knowly_Admin_Testing {
     }
 
     private static function test_notif_read_all( array $data ): array {
-        $parent_user = get_user_by( 'email', 'test.parent@knowly.test' );
-        if ( ! $parent_user ) return self::warn( 'Test parent not found.' );
+        $parent_user = self::get_test_user( 'parent', $data );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found. Select a Parent user in the Test Users panel.' );
 
         $token = Knowly_JWT::encode( $parent_user->ID );
 
@@ -595,6 +671,269 @@ class Knowly_Admin_Testing {
         return $unread === 0
             ? self::pass( 'All notifications marked read. Unread count is 0.', [ 'marked_read' => $res['body']['data']['marked_read'] ?? null ] )
             : self::fail( "read-all ran but unread count is still {$unread}.", $res );
+    }
+
+    // ── Notifications V2 — Delete + Combined Notify ───────────────────────────
+
+    private static function test_notif_v2_delete_setup( array $data = [] ): array {
+        $parent_user = self::get_test_user( 'parent', $data );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found. Select a Parent user in the Test Users panel.' );
+
+        // Create a fresh simple notification as the "target to delete"
+        $notif_id = Knowly_Notification_Service::create( [
+            'recipient_user_id' => $parent_user->ID,
+            'type'              => 'simple',
+            'subject'           => 'notif_v2_delete_test',
+            'message'           => 'V2 delete test — will be deleted by the next test.',
+        ] );
+
+        if ( is_wp_error( $notif_id ) ) {
+            return self::fail( 'Could not create test notification.', [ 'error' => $notif_id->get_error_message() ] );
+        }
+
+        set_transient( 'knowly_test_notif_v2_delete_id', $notif_id, HOUR_IN_SECONDS );
+        set_transient( 'knowly_test_notif_v2_parent_id', $parent_user->ID, HOUR_IN_SECONDS );
+
+        return self::pass( "Test notification #{$notif_id} created for parent #{$parent_user->ID}.", [
+            'notification_id' => $notif_id,
+            'recipient_id'    => $parent_user->ID,
+        ] );
+    }
+
+    private static function test_notif_v2_delete_own( array $data ): array {
+        $parent_user = self::get_test_user( 'parent', $data );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found. Select a Parent user in the Test Users panel.' );
+
+        $notif_id = get_transient( 'knowly_test_notif_v2_delete_id' );
+        if ( ! $notif_id ) return self::warn( 'No delete-test notification ID found. Run notif_v2_delete_setup first.' );
+
+        $token = Knowly_JWT::encode( $parent_user->ID );
+        $res   = self::api_delete( "/notifications/{$notif_id}", $token );
+
+        if ( $res['status'] === 200 && ! empty( $res['body']['data']['deleted'] ) ) {
+            return self::pass( "DELETE /notifications/{$notif_id} returned 200 with deleted=true.", $res['body']['data'] );
+        }
+
+        return self::fail( "DELETE /notifications/{$notif_id} failed.", $res );
+    }
+
+    private static function test_notif_v2_delete_gone( array $data ): array {
+        $parent_user = self::get_test_user( 'parent', $data );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found. Select a Parent user in the Test Users panel.' );
+
+        $notif_id = get_transient( 'knowly_test_notif_v2_delete_id' );
+        if ( ! $notif_id ) return self::warn( 'No delete-test notification ID found. Run notif_v2_delete_setup first.' );
+
+        // Verify it no longer appears in the parent's notification list
+        $token = Knowly_JWT::encode( $parent_user->ID );
+        $res   = self::api_get( '/notifications?unread_only=false&limit=100', $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'Could not list notifications to verify deletion.', $res );
+        }
+
+        $notifications = $res['body']['data']['notifications'] ?? [];
+        $still_exists  = array_filter( $notifications, fn( $n ) => (int) $n['id'] === (int) $notif_id );
+
+        if ( empty( $still_exists ) ) {
+            return self::pass( "Notification #{$notif_id} is no longer in the parent's list — correctly deleted.", [
+                'remaining_count' => count( $notifications ),
+            ] );
+        }
+
+        return self::fail( "Notification #{$notif_id} still appears in list after DELETE — deletion did not persist.", [
+            'notification_id' => $notif_id,
+        ] );
+    }
+
+    private static function test_notif_v2_delete_other_user( array $data ): array {
+        $parent_user  = self::get_test_user( 'parent', $data );
+        $teacher_user = self::get_test_user( 'teacher', $data );
+        if ( ! $parent_user || ! $teacher_user ) return self::warn( 'Test parent or teacher not found. Select both users in the Test Users panel.' );
+
+        // Create a notification for the teacher
+        $notif_id = Knowly_Notification_Service::create( [
+            'recipient_user_id' => $teacher_user->ID,
+            'type'              => 'simple',
+            'subject'           => 'notif_v2_access_test',
+            'message'           => 'Access control test — parent must NOT be able to delete this.',
+        ] );
+
+        if ( is_wp_error( $notif_id ) ) {
+            return self::fail( 'Setup failed — could not create teacher notification.', [ 'error' => $notif_id->get_error_message() ] );
+        }
+
+        // Try to delete as the parent (should get 404 — not found for this recipient)
+        $parent_token = Knowly_JWT::encode( $parent_user->ID );
+        $res          = self::api_delete( "/notifications/{$notif_id}", $parent_token );
+
+        // Clean up regardless
+        Knowly_Notification_Service::admin_delete( $notif_id );
+
+        if ( $res['status'] === 404 ) {
+            return self::pass( "Parent correctly received 404 when attempting to delete teacher's notification #{$notif_id}.", [
+                'attempted_id' => $notif_id,
+                'status'       => $res['status'],
+            ] );
+        }
+
+        return self::fail( "Expected 404 but got HTTP {$res['status']} — access control may be broken.", $res );
+    }
+
+    private static function test_notif_v2_notify_student( array $data ): array {
+        $teacher_user = self::get_test_user( 'teacher', $data );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found. Select a Teacher user in the Test Users panel.' );
+
+        global $wpdb;
+        $class = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_classes WHERE teacher_user_id = %d AND name = 'Math 4A' ORDER BY id DESC LIMIT 1",
+            $teacher_user->ID
+        ) );
+        if ( ! $class ) return self::warn( 'Math 4A class not found. Run class5_create and class5_parent_accept first.' );
+
+        $child_user = self::get_test_user( 'child', $data );
+        if ( ! $child_user ) return self::warn( 'Test child not found. Select a Child user in the Test Users panel or fill Child ID.' );
+
+        $token = Knowly_JWT::encode( $teacher_user->ID );
+        $res   = self::api_post(
+            "/classes/{$class->id}/notify-student/{$child_user->ID}",
+            [ 'message' => 'V2 test: student-only message from teacher.' ],
+            $token
+        );
+
+        if ( $res['status'] === 200 && ! empty( $res['body']['data']['notification_id'] ) ) {
+            set_transient( 'knowly_test_notif_v2_student_notif_id', $res['body']['data']['notification_id'], HOUR_IN_SECONDS );
+            return self::pass( 'Notify-student sent.', [
+                'notification_id' => $res['body']['data']['notification_id'],
+                'class_id'        => $class->id,
+                'child_id'        => $child_user->ID,
+            ] );
+        }
+
+        return self::fail( 'notify-student failed.', $res );
+    }
+
+    private static function test_notif_v2_notify_parent( array $data ): array {
+        $teacher_user = self::get_test_user( 'teacher', $data );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found. Select a Teacher user in the Test Users panel.' );
+
+        global $wpdb;
+        $class = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_classes WHERE teacher_user_id = %d AND name = 'Math 4A' ORDER BY id DESC LIMIT 1",
+            $teacher_user->ID
+        ) );
+        if ( ! $class ) return self::warn( 'Math 4A class not found. Run class5_create first.' );
+
+        $child_user = self::get_test_user( 'child', $data );
+        if ( ! $child_user ) return self::warn( 'Test child not found. Select a Child user in the Test Users panel or fill Child ID.' );
+
+        $token = Knowly_JWT::encode( $teacher_user->ID );
+        $res   = self::api_post(
+            "/classes/{$class->id}/notify-parent/{$child_user->ID}",
+            [ 'message' => 'V2 test: parent-only message from teacher.' ],
+            $token
+        );
+
+        if ( $res['status'] === 200 && ! empty( $res['body']['data']['notification_id'] ) ) {
+            set_transient( 'knowly_test_notif_v2_parent_notif_id', $res['body']['data']['notification_id'], HOUR_IN_SECONDS );
+            return self::pass( 'Notify-parent sent.', [
+                'notification_id' => $res['body']['data']['notification_id'],
+                'class_id'        => $class->id,
+                'child_id'        => $child_user->ID,
+            ] );
+        }
+
+        return self::fail( 'notify-parent failed.', $res );
+    }
+
+    private static function test_notif_v2_notify_both( array $data ): array {
+        $teacher_user = self::get_test_user( 'teacher', $data );
+        if ( ! $teacher_user ) return self::warn( 'Test teacher not found. Select a Teacher user in the Test Users panel.' );
+
+        global $wpdb;
+        $class = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}knowly_classes WHERE teacher_user_id = %d AND name = 'Math 4A' ORDER BY id DESC LIMIT 1",
+            $teacher_user->ID
+        ) );
+        if ( ! $class ) return self::warn( 'Math 4A class not found. Run class5_create first (Block 5 — Classes).' );
+
+        $child_user = self::get_test_user( 'child', $data );
+        if ( ! $child_user ) return self::warn( 'Test child not found. Select a Child user in the Test Users panel or fill Child ID.' );
+
+        $token = Knowly_JWT::encode( $teacher_user->ID );
+        $res   = self::api_post(
+            "/classes/{$class->id}/notify-student-and-parent/{$child_user->ID}",
+            [ 'message' => 'V2 test: combined student+parent message from teacher.' ],
+            $token
+        );
+
+        $body = $res['body']['data'] ?? [];
+
+        if ( $res['status'] === 200 && ! empty( $body['student_notif_id'] ) ) {
+            return self::pass(
+                'Combined notify sent. Student notified' . ( $body['parent_notified'] ? ' and parent notified.' : ' — parent has no linked account (expected).' ),
+                [
+                    'student_notif_id' => $body['student_notif_id'],
+                    'parent_notif_id'  => $body['parent_notif_id'] ?? null,
+                    'parent_notified'  => $body['parent_notified'] ?? false,
+                    'class_id'         => $class->id,
+                ]
+            );
+        }
+
+        return self::fail( 'notify-student-and-parent failed.', $res );
+    }
+
+    private static function test_notif_v2_verify_student( array $data ): array {
+        $child_user = self::get_test_user( 'child', $data );
+        if ( ! $child_user ) return self::warn( 'Test child not found. Select a Child user in the Test Users panel or fill Child ID.' );
+
+        $token = Knowly_JWT::encode( $child_user->ID );
+        $res   = self::api_get( '/notifications?unread_only=false&limit=50', $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'Could not list child notifications.', $res );
+        }
+
+        $notifications = $res['body']['data']['notifications'] ?? [];
+        $teacher_msgs  = array_values( array_filter( $notifications, fn( $n ) => $n['subject'] === 'teacher_message' ) );
+
+        if ( ! empty( $teacher_msgs ) ) {
+            return self::pass( "Student has {$teacher_msgs[0]['id']} teacher_message notifications visible.", [
+                'count'   => count( $teacher_msgs ),
+                'latest'  => [ 'id' => $teacher_msgs[0]['id'], 'message' => substr( $teacher_msgs[0]['message'], 0, 60 ) ],
+            ] );
+        }
+
+        return self::fail( 'No teacher_message notifications found in child account.', [
+            'total_notifs' => count( $notifications ),
+        ] );
+    }
+
+    private static function test_notif_v2_verify_parent( array $data ): array {
+        $parent_user = self::get_test_user( 'parent', $data );
+        if ( ! $parent_user ) return self::warn( 'Test parent not found. Select a Parent user in the Test Users panel.' );
+
+        $token = Knowly_JWT::encode( $parent_user->ID );
+        $res   = self::api_get( '/notifications?unread_only=false&limit=50', $token );
+
+        if ( $res['status'] !== 200 ) {
+            return self::fail( 'Could not list parent notifications.', $res );
+        }
+
+        $notifications = $res['body']['data']['notifications'] ?? [];
+        $teacher_msgs  = array_values( array_filter( $notifications, fn( $n ) => $n['subject'] === 'teacher_message' ) );
+
+        if ( ! empty( $teacher_msgs ) ) {
+            return self::pass( "Parent has {$teacher_msgs[0]['id']} teacher_message notifications visible.", [
+                'count'  => count( $teacher_msgs ),
+                'latest' => [ 'id' => $teacher_msgs[0]['id'], 'message' => substr( $teacher_msgs[0]['message'], 0, 60 ) ],
+            ] );
+        }
+
+        return self::fail( 'No teacher_message notifications found in parent account.', [
+            'total_notifs' => count( $notifications ),
+        ] );
     }
 
     // ── Block 2 Test Methods ──────────────────────────────────────────────────
@@ -1611,6 +1950,20 @@ class Knowly_Admin_Testing {
                     'notif_read_all'  => [ 'label' => 'Mark all read → verify unread count is 0',               'method' => 'POST',  'route' => '/notifications/read-all' ],
                 ],
             ],
+            'notif_v2' => [
+                'label' => '🔔 Notifications V2 — Delete + Combined Notify',
+                'tests' => [
+                    'notif_v2_delete_setup'      => [ 'label' => 'Setup: create test notification for parent to delete',                            'method' => 'CHECK',  'route' => '' ],
+                    'notif_v2_delete_own'        => [ 'label' => 'Parent deletes own notification → 200 deleted=true',                              'method' => 'DELETE', 'route' => '/notifications/{id}' ],
+                    'notif_v2_delete_gone'       => [ 'label' => 'Verify deleted notification is absent from parent list',                          'method' => 'GET',    'route' => '/notifications' ],
+                    'notif_v2_delete_other_user' => [ 'label' => 'Parent tries to delete teacher\'s notification → 404 (access control)',           'method' => 'DELETE', 'route' => '/notifications/{id}' ],
+                    'notif_v2_notify_student'    => [ 'label' => 'Teacher notifies student only (notify-student)',                                  'method' => 'POST',   'route' => '/classes/{id}/notify-student/{child_id}' ],
+                    'notif_v2_notify_parent'     => [ 'label' => 'Teacher notifies parent only (notify-parent)',                                    'method' => 'POST',   'route' => '/classes/{id}/notify-parent/{child_id}' ],
+                    'notif_v2_notify_both'       => [ 'label' => 'Teacher notifies student + parent together (notify-student-and-parent)',          'method' => 'POST',   'route' => '/classes/{id}/notify-student-and-parent/{child_id}' ],
+                    'notif_v2_verify_student'    => [ 'label' => 'Child account lists teacher_message notifications → found',                       'method' => 'GET',    'route' => '/notifications' ],
+                    'notif_v2_verify_parent'     => [ 'label' => 'Parent account lists teacher_message notifications → found',                      'method' => 'GET',    'route' => '/notifications' ],
+                ],
+            ],
             'block2_setup' => [
                 'label' => '🧪 Block 2 — Test Account Setup',
                 'tests' => [
@@ -1701,6 +2054,10 @@ class Knowly_Admin_Testing {
 
     private static function api_post( string $route, array $body = [], string $token = '' ): array {
         return self::api_call( 'POST', $route, $body, $token );
+    }
+
+    private static function api_delete( string $route, string $token = '' ): array {
+        return self::api_call( 'DELETE', $route, [], $token );
     }
 
     private static function api_call( string $method, string $route, array $body, string $token ): array {

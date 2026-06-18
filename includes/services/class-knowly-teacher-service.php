@@ -92,6 +92,9 @@ class Knowly_Teacher_Service {
         update_user_meta( $user_id, 'knowly_red_gem_balance',    0 );
         update_user_meta( $user_id, 'knowly_red_gem_stipend',    (int) get_option( 'knowly_red_gem_stipend', 20 ) );
 
+        // Grant welcome blue gems
+        Knowly_Gem_Service::grant_on_registration_teacher( $user_id );
+
         // Notify admin
         self::notify_admin_new_application( $user_id, $first_name, $last_name, $email, $school_name );
 

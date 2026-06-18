@@ -2,7 +2,7 @@
 /**
  * Knowly_Admin_Notifications_Panel — Notifications module admin page.
  *
- * Tabs: Queue | Health Checks | Unit Tests | Simulations
+ * Tabs: Queue | Send | Health Checks | Unit Tests
  *
  * @package KnowlyAPI
  */
@@ -12,8 +12,11 @@ defined( 'ABSPATH' ) || exit;
 class Knowly_Admin_Notifications_Panel {
 
     public static function boot(): void {
-        add_action( 'wp_ajax_knowly_notif_panel_health', [ __CLASS__, 'ajax_health' ] );
+        add_action( 'wp_ajax_knowly_notif_panel_health',    [ __CLASS__, 'ajax_health' ] );
         add_action( 'wp_ajax_knowly_notif_panel_mark_read', [ __CLASS__, 'ajax_mark_read' ] );
+        add_action( 'wp_ajax_knowly_notif_panel_delete',    [ __CLASS__, 'ajax_delete' ] );
+        add_action( 'wp_ajax_knowly_notif_panel_send',      [ __CLASS__, 'ajax_send' ] );
+        add_action( 'wp_ajax_knowly_notif_user_search',     [ __CLASS__, 'ajax_user_search' ] );
     }
 
     public static function render(): void {
@@ -22,9 +25,9 @@ class Knowly_Admin_Notifications_Panel {
         $tab = sanitize_key( $_GET['tab'] ?? 'queue' );
         $tabs = [
             'queue'  => 'Queue',
+            'send'   => 'Send Notification',
             'health' => 'Health Checks',
             'tests'  => 'Unit Tests',
-            'sims'   => 'Simulations',
         ];
         ?>
         <div class="wrap knowly-wrap">
@@ -39,9 +42,9 @@ class Knowly_Admin_Notifications_Panel {
             <?php
             match ( $tab ) {
                 'queue'  => self::render_queue(),
+                'send'   => self::render_send(),
                 'health' => self::render_health(),
                 'tests'  => self::render_tests(),
-                'sims'   => self::render_simulations(),
                 default  => self::render_queue(),
             };
             ?>
@@ -60,11 +63,12 @@ class Knowly_Admin_Notifications_Panel {
         $total        = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
 
         $notifications = $wpdb->get_results(
-            "SELECT n.*, u.display_name AS recipient_name
+            "SELECT n.*, u.display_name AS recipient_name, s.display_name AS sender_name
              FROM {$table} n
              LEFT JOIN {$wpdb->users} u ON n.recipient_user_id = u.ID
+             LEFT JOIN {$wpdb->users} s ON n.sender_user_id = s.ID
              ORDER BY n.created_at DESC
-             LIMIT 100"
+             LIMIT 200"
         );
         $nonce = wp_create_nonce( 'knowly_admin_nonce' );
         ?>
@@ -79,7 +83,7 @@ class Knowly_Admin_Notifications_Panel {
             </div>
             <div class="knowly-stat-card">
                 <div class="knowly-stat-number"><?= count( $notifications ) ?></div>
-                <div class="knowly-stat-label">Showing (latest 100)</div>
+                <div class="knowly-stat-label">Showing (latest 200)</div>
             </div>
         </div>
 
@@ -88,22 +92,36 @@ class Knowly_Admin_Notifications_Panel {
         <?php else : ?>
         <table class="knowly-table widefat" style="font-size:12px;">
             <thead>
-                <tr><th>Recipient</th><th>Type</th><th>Subject</th><th>Message</th><th>Read</th><th>Response</th><th>Date</th><th>Actions</th></tr>
+                <tr>
+                    <th>ID</th>
+                    <th>Recipient</th>
+                    <th>Sender</th>
+                    <th>Type</th>
+                    <th>Subject</th>
+                    <th>Message</th>
+                    <th>Read</th>
+                    <th>Response</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                </tr>
             </thead>
             <tbody>
                 <?php foreach ( $notifications as $n ) : ?>
-                <tr>
+                <tr id="notif-row-<?= (int) $n->id ?>">
+                    <td style="color:#888;">#<?= (int) $n->id ?></td>
                     <td><?= esc_html( $n->recipient_name ?? 'User #' . $n->recipient_user_id ) ?></td>
+                    <td><?= esc_html( $n->sender_name ?? ( $n->sender_user_id ? 'User #' . $n->sender_user_id : '—' ) ) ?></td>
                     <td><span class="knowly-badge <?= $n->type === 'confirmation' ? 'warn' : '' ?>"><?= esc_html( $n->type ) ?></span></td>
                     <td><?= esc_html( $n->subject ) ?></td>
-                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= esc_html( $n->message ) ?></td>
+                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<?= esc_attr( $n->message ) ?>"><?= esc_html( $n->message ) ?></td>
                     <td><?= $n->is_read ? '<span style="color:#888;">read</span>' : '<strong style="color:#d63638;">unread</strong>' ?></td>
                     <td><?= $n->response ? esc_html( $n->response ) : '—' ?></td>
                     <td><?= esc_html( substr( $n->created_at, 0, 16 ) ) ?></td>
-                    <td>
+                    <td style="white-space:nowrap;">
                         <?php if ( ! $n->is_read ) : ?>
-                        <button class="button button-small" onclick="knowlyNotifPanel.markRead(<?= (int) $n->id ?>, this)">Mark Read</button>
+                        <button class="button button-small" style="margin-right:4px;" onclick="knowlyNotifPanel.markRead(<?= (int) $n->id ?>, this)">Mark Read</button>
                         <?php endif; ?>
+                        <button class="button button-small" style="color:#d63638;border-color:#d63638;" onclick="knowlyNotifPanel.deleteNotif(<?= (int) $n->id ?>, this)">Delete</button>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -114,13 +132,173 @@ class Knowly_Admin_Notifications_Panel {
             markRead(id, btn) {
                 jQuery(btn).prop('disabled', true);
                 jQuery.post(ajaxurl, { action: 'knowly_notif_panel_mark_read', nonce: '<?= esc_js( $nonce ) ?>', id }, r => {
-                    if (r.success) location.reload();
-                    else { alert(r.data?.message || 'Error'); jQuery(btn).prop('disabled', false); }
+                    if (r.success) {
+                        const row = document.getElementById('notif-row-' + id);
+                        if (row) {
+                            const readCell = row.cells[6];
+                            if (readCell) readCell.innerHTML = '<span style="color:#888;">read</span>';
+                            btn.remove();
+                        }
+                    } else {
+                        alert(r.data?.message || 'Error');
+                        jQuery(btn).prop('disabled', false);
+                    }
+                });
+            },
+            deleteNotif(id, btn) {
+                if (!confirm('Delete notification #' + id + '? This cannot be undone.')) return;
+                jQuery(btn).prop('disabled', true);
+                jQuery.post(ajaxurl, { action: 'knowly_notif_panel_delete', nonce: '<?= esc_js( $nonce ) ?>', id }, r => {
+                    if (r.success) {
+                        const row = document.getElementById('notif-row-' + id);
+                        if (row) row.remove();
+                    } else {
+                        alert(r.data?.message || 'Error');
+                        jQuery(btn).prop('disabled', false);
+                    }
                 });
             }
         };
         </script>
         <?php endif; ?>
+        <?php
+    }
+
+    // ── Send Tab ──────────────────────────────────────────────────────────────
+
+    private static function render_send(): void {
+        $nonce = wp_create_nonce( 'knowly_admin_nonce' );
+        ?>
+        <div style="max-width:600px;">
+            <p style="color:#666;margin-bottom:20px;">Send a notification directly to any user — teacher, parent, or student.</p>
+
+            <table class="form-table" style="max-width:600px;">
+                <tr>
+                    <th scope="row"><label>Target</label></th>
+                    <td>
+                        <select id="kn-send-target" style="width:100%;max-width:300px;" onchange="knowlySend.onTargetChange()">
+                            <option value="parent">Parent (by User ID)</option>
+                            <option value="student">Student (by User ID)</option>
+                            <option value="teacher">Teacher (by User ID)</option>
+                            <option value="student_and_parent">Student &amp; Parent (student User ID)</option>
+                        </select>
+                        <p class="description" id="kn-target-desc">Notification sent to the parent's account.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="kn-send-search">User Search</label></th>
+                    <td>
+                        <input type="text" id="kn-send-search" placeholder="Search by name or email…" style="width:100%;max-width:300px;" oninput="knowlySend.search(this.value)" autocomplete="off" />
+                        <div id="kn-search-results" style="border:1px solid #ddd;background:#fff;max-width:300px;display:none;position:relative;z-index:10;max-height:200px;overflow-y:auto;"></div>
+                        <p class="description">Or enter User ID directly below.</p>
+                        <input type="number" id="kn-send-user-id" placeholder="User ID" style="width:120px;margin-top:6px;" />
+                        <span id="kn-selected-user" style="margin-left:8px;color:#2271b1;font-weight:600;"></span>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="kn-send-subject">Subject</label></th>
+                    <td>
+                        <input type="text" id="kn-send-subject" value="admin_message" style="width:100%;max-width:300px;" />
+                        <p class="description">Internal subject key (e.g. admin_message, reminder, alert).</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="kn-send-msg">Message</label></th>
+                    <td>
+                        <textarea id="kn-send-msg" rows="4" style="width:100%;max-width:400px;" placeholder="Enter the notification message…"></textarea>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="kn-send-type">Type</label></th>
+                    <td>
+                        <select id="kn-send-type" style="width:200px;">
+                            <option value="simple">Simple (read-only)</option>
+                            <option value="confirmation">Confirmation (accept/decline)</option>
+                        </select>
+                    </td>
+                </tr>
+            </table>
+
+            <div style="margin-top:16px;">
+                <button id="kn-send-btn" class="button button-primary" onclick="knowlySend.send()">Send Notification</button>
+                <span id="kn-send-status" style="margin-left:12px;font-weight:600;"></span>
+            </div>
+
+            <div id="kn-send-log" style="margin-top:20px;font-size:12px;color:#666;"></div>
+        </div>
+
+        <script>
+        var knowlySend = {
+            searchTimer: null,
+            targetDescriptions: {
+                parent:             'Notification sent to the parent\'s account only.',
+                student:            'Notification sent to the student\'s account only.',
+                teacher:            'Notification sent to the teacher\'s account only.',
+                student_and_parent: 'Notification sent to both the student and their linked parent. Provide the student\'s User ID.',
+            },
+            onTargetChange() {
+                var t = document.getElementById('kn-send-target').value;
+                document.getElementById('kn-target-desc').textContent = this.targetDescriptions[t] || '';
+            },
+            search(q) {
+                clearTimeout(this.searchTimer);
+                var box = document.getElementById('kn-search-results');
+                if (q.length < 2) { box.style.display = 'none'; return; }
+                this.searchTimer = setTimeout(() => {
+                    jQuery.post(ajaxurl, { action: 'knowly_notif_user_search', nonce: '<?= esc_js( $nonce ) ?>', q }, r => {
+                        if (!r.success) return;
+                        var users = r.data.users || [];
+                        if (!users.length) { box.innerHTML = '<div style="padding:8px;color:#888;">No users found.</div>'; box.style.display = 'block'; return; }
+                        box.innerHTML = users.map(u =>
+                            '<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0;" onmousedown="knowlySend.selectUser(' + u.id + ', \'' + u.display_name.replace(/'/g, "\\'") + '\')">' +
+                            '<strong>' + u.display_name + '</strong> <span style="color:#888;font-size:11px;">' + u.user_email + ' · #' + u.id + ' · ' + u.role + '</span></div>'
+                        ).join('');
+                        box.style.display = 'block';
+                    });
+                }, 300);
+            },
+            selectUser(id, name) {
+                document.getElementById('kn-send-user-id').value = id;
+                document.getElementById('kn-selected-user').textContent = name + ' (#' + id + ')';
+                document.getElementById('kn-search-results').style.display = 'none';
+                document.getElementById('kn-send-search').value = name;
+            },
+            send() {
+                var userId  = parseInt(document.getElementById('kn-send-user-id').value);
+                var msg     = document.getElementById('kn-send-msg').value.trim();
+                var subject = document.getElementById('kn-send-subject').value.trim() || 'admin_message';
+                var type    = document.getElementById('kn-send-type').value;
+                var target  = document.getElementById('kn-send-target').value;
+                var status  = document.getElementById('kn-send-status');
+                var log     = document.getElementById('kn-send-log');
+
+                if (!userId || isNaN(userId)) { status.style.color = '#d63638'; status.textContent = 'Please enter or select a User ID.'; return; }
+                if (!msg) { status.style.color = '#d63638'; status.textContent = 'Message is required.'; return; }
+
+                status.style.color = '#888'; status.textContent = 'Sending…';
+                document.getElementById('kn-send-btn').disabled = true;
+
+                jQuery.post(ajaxurl, {
+                    action:  'knowly_notif_panel_send',
+                    nonce:   '<?= esc_js( $nonce ) ?>',
+                    user_id: userId,
+                    target:  target,
+                    subject: subject,
+                    message: msg,
+                    type:    type,
+                }, r => {
+                    document.getElementById('kn-send-btn').disabled = false;
+                    if (r.success) {
+                        status.style.color = '#2e7d32'; status.textContent = '✓ Sent! ID(s): ' + JSON.stringify(r.data.ids || r.data.notification_id);
+                        log.innerHTML = '<strong>Sent at ' + new Date().toLocaleTimeString() + ':</strong> ' +
+                            'Target=' + target + ' | UserID=' + userId + ' | Subject=' + subject + ' | Message=' + msg.substring(0, 80) + (msg.length > 80 ? '…' : '');
+                    } else {
+                        status.style.color = '#d63638'; status.textContent = '✗ ' + (r.data?.message || 'Error sending notification.');
+                    }
+                });
+            }
+        };
+        </script>
         <?php
     }
 
@@ -153,17 +331,8 @@ class Knowly_Admin_Notifications_Panel {
     // ── Unit Tests Tab ────────────────────────────────────────────────────────
 
     private static function render_tests(): void {
-        echo '<p style="color:#666;margin-bottom:16px;">Test notification create, list, count, respond, and mark-read.</p>';
-        Knowly_Admin_Testing::render_test_groups( [ 'block4_notifications', 'block2_notifications' ] );
-    }
-
-    // ── Simulations Tab ───────────────────────────────────────────────────────
-
-    private static function render_simulations(): void {
-        ?>
-        <p style="color:#666;">Simulate the full class invitation flow: teacher invites → parent receives notification → parent accepts → child added to class.</p>
-        <div class="knowly-notice info" style="margin-top:12px;">Simulations coming soon. Run unit tests to validate individual endpoints.</div>
-        <?php
+        echo '<p style="color:#666;margin-bottom:16px;">Test notification create, list, count, respond, mark-read, delete, and combined notify endpoints.</p>';
+        Knowly_Admin_Testing::render_test_groups( [ 'block4_notifications', 'notif_v2', 'block2_notifications' ] );
     }
 
     // ── AJAX: Mark notification read ──────────────────────────────────────────
@@ -183,6 +352,125 @@ class Knowly_Admin_Notifications_Panel {
         );
 
         wp_send_json_success( [ 'id' => $id ] );
+    }
+
+    // ── AJAX: Delete notification ─────────────────────────────────────────────
+
+    public static function ajax_delete(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $id = (int) ( $_POST['id'] ?? 0 );
+        if ( ! $id ) wp_send_json_error( [ 'message' => 'id required' ] );
+
+        $deleted = Knowly_Notification_Service::admin_delete( $id );
+
+        if ( $deleted ) {
+            wp_send_json_success( [ 'id' => $id ] );
+        } else {
+            wp_send_json_error( [ 'message' => 'Notification not found or already deleted.' ] );
+        }
+    }
+
+    // ── AJAX: Send notification ───────────────────────────────────────────────
+
+    public static function ajax_send(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $user_id = (int) ( $_POST['user_id'] ?? 0 );
+        $target  = sanitize_key( $_POST['target'] ?? 'student' );
+        $subject = sanitize_text_field( $_POST['subject'] ?? 'admin_message' );
+        $message = sanitize_textarea_field( $_POST['message'] ?? '' );
+        $type    = in_array( $_POST['type'] ?? '', [ 'simple', 'confirmation' ], true ) ? $_POST['type'] : 'simple';
+
+        if ( ! $user_id )  wp_send_json_error( [ 'message' => 'user_id is required.' ] );
+        if ( ! $message )  wp_send_json_error( [ 'message' => 'message is required.' ] );
+
+        $sender_id = get_current_user_id();
+        $ids       = [];
+
+        if ( $target === 'student_and_parent' ) {
+            // user_id is the child — send to child and their parent
+            $child_id = $user_id;
+
+            $child_notif = Knowly_Notification_Service::create( [
+                'recipient_user_id' => $child_id,
+                'sender_user_id'    => $sender_id,
+                'type'              => $type,
+                'subject'           => $subject,
+                'message'           => $message,
+            ] );
+            if ( is_wp_error( $child_notif ) ) wp_send_json_error( [ 'message' => $child_notif->get_error_message() ] );
+            $ids[] = $child_notif;
+
+            // Try to look up the linked parent via user meta
+            $parent_id = (int) get_user_meta( $child_id, 'knowly_parent_id', true );
+            if ( ! $parent_id ) {
+                // Fallback: search class memberships
+                global $wpdb;
+                $parent_id = (int) $wpdb->get_var( $wpdb->prepare(
+                    "SELECT parent_user_id FROM {$wpdb->prefix}knowly_class_members WHERE child_user_id = %d LIMIT 1",
+                    $child_id
+                ) );
+            }
+
+            if ( $parent_id ) {
+                $parent_notif = Knowly_Notification_Service::create( [
+                    'recipient_user_id' => $parent_id,
+                    'sender_user_id'    => $sender_id,
+                    'type'              => $type,
+                    'subject'           => $subject,
+                    'message'           => $message,
+                ] );
+                if ( ! is_wp_error( $parent_notif ) ) $ids[] = $parent_notif;
+            }
+
+            wp_send_json_success( [ 'ids' => $ids, 'parent_notified' => $parent_id > 0 ] );
+
+        } else {
+            // Single recipient: parent, student, or teacher — all use user_id directly
+            $notif_id = Knowly_Notification_Service::create( [
+                'recipient_user_id' => $user_id,
+                'sender_user_id'    => $sender_id,
+                'type'              => $type,
+                'subject'           => $subject,
+                'message'           => $message,
+            ] );
+
+            if ( is_wp_error( $notif_id ) ) wp_send_json_error( [ 'message' => $notif_id->get_error_message() ] );
+
+            wp_send_json_success( [ 'notification_id' => $notif_id, 'ids' => [ $notif_id ] ] );
+        }
+    }
+
+    // ── AJAX: User search ─────────────────────────────────────────────────────
+
+    public static function ajax_user_search(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $q = sanitize_text_field( $_POST['q'] ?? '' );
+        if ( strlen( $q ) < 2 ) wp_send_json_success( [ 'users' => [] ] );
+
+        $users = get_users( [
+            'search'         => '*' . $q . '*',
+            'search_columns' => [ 'user_login', 'user_email', 'display_name' ],
+            'number'         => 20,
+            'fields'         => [ 'ID', 'display_name', 'user_email' ],
+        ] );
+
+        $result = array_map( function( $u ) {
+            $roles = (array) get_userdata( $u->ID )->roles;
+            return [
+                'id'           => (int) $u->ID,
+                'display_name' => $u->display_name,
+                'user_email'   => $u->user_email,
+                'role'         => implode( ', ', $roles ),
+            ];
+        }, $users );
+
+        wp_send_json_success( [ 'users' => $result ] );
     }
 
     // ── AJAX: Health ──────────────────────────────────────────────────────────
@@ -220,6 +508,13 @@ class Knowly_Admin_Notifications_Panel {
             } else {
                 $checks[] = [ 'label' => 'Write verified', 'status' => 'fail', 'detail' => 'Insert failed: ' . $wpdb->last_error ];
             }
+
+            // 4. Delete endpoint sanity (service method exists)
+            $checks[] = [
+                'label'  => 'Delete method available',
+                'status' => method_exists( 'Knowly_Notification_Service', 'admin_delete' ) ? 'pass' : 'fail',
+                'detail' => 'Knowly_Notification_Service::admin_delete() exists.',
+            ];
         }
 
         wp_send_json_success( [ 'checks' => $checks ] );

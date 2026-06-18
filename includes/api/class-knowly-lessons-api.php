@@ -1,28 +1,31 @@
 <?php
 /**
- * Knowly_Quests_API — Quest delivery endpoints.
+ * Knowly_Lessons_API — Lesson delivery endpoints.
  *
  * Child / parent routes (JWT — active child context):
- *   GET    /knowly/v1/quests                          Quest catalogue for child's level + period
- *   GET    /knowly/v1/quests/{quest_id}               Fetch Quest content (wraps Railway)
- *   POST   /knowly/v1/quests/start                    Start Quest — deducts gems, creates session
- *   POST   /knowly/v1/quests/complete                 Complete Quest — badge awarded if first finish
- *   POST   /knowly/v1/quests/{session_id}/section-complete  Mark section done
+ *   GET    /knowly/v1/lessons                          Lesson catalogue (all approved quests for level/period)
+ *   GET    /knowly/v1/lessons/{quest_id}               Lesson content (same training data as Quests)
+ *   GET    /knowly/v1/lessons/{quest_id}/questions     Lesson questions (no correct_answer)
+ *   POST   /knowly/v1/lessons/start                    Start Lesson — deducts gems, creates WP session
+ *   POST   /knowly/v1/lessons/complete                 Complete Lesson — marks session done (no badge)
+ *   POST   /knowly/v1/lessons/submit-questions         Submit answers — scored and recorded silently
+ *
+ * Teacher route (JWT — teacher context):
+ *   GET    /knowly/v1/lessons/teacher/catalogue        Lesson catalogue for a given level/period/subject
  *
  * @package KnowlyAPI
  */
 
 defined( 'ABSPATH' ) || exit;
 
-class Knowly_Quests_API extends Knowly_API_Base {
+class Knowly_Lessons_API extends Knowly_API_Base {
 
     public function register_routes(): void {
         $ns = $this->namespace;
 
         // Static sub-routes must be registered before /{quest_id} to avoid collisions
 
-        // Teacher-only quest catalogue — no child context required
-        register_rest_route( $ns, '/quests/teacher/catalogue', [
+        register_rest_route( $ns, '/lessons/teacher/catalogue', [
             'methods'             => 'GET',
             'callback'            => [ $this, 'teacher_catalogue' ],
             'permission_callback' => '__return_true',
@@ -33,40 +36,28 @@ class Knowly_Quests_API extends Knowly_API_Base {
             ],
         ] );
 
-        register_rest_route( $ns, '/quests/start', [
+        register_rest_route( $ns, '/lessons/start', [
             'methods'             => 'POST',
             'callback'            => [ $this, 'start' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'quest_id' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
-                'source'   => [ 'required' => false, 'type' => 'string', 'default' => 'direct',
+                'quest_id' => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
+                'source'   => [ 'required' => false, 'type' => 'string',  'default' => 'direct',
                                 'enum' => [ 'direct', 'assignment' ] ],
                 'task_id'  => [ 'required' => false, 'type' => 'integer', 'default' => null ],
             ],
         ] );
 
-        register_rest_route( $ns, '/quests/complete', [
+        register_rest_route( $ns, '/lessons/complete', [
             'methods'             => 'POST',
             'callback'            => [ $this, 'complete' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'session_id' => [ 'required' => true,  'type' => 'string',  'sanitize_callback' => 'sanitize_text_field' ],
-                'topic'      => [ 'required' => false, 'type' => 'string',  'default' => '',    'sanitize_callback' => 'sanitize_text_field' ],
-                'subject'    => [ 'required' => false, 'type' => 'string',  'default' => '',    'sanitize_callback' => 'sanitize_text_field' ],
-                'score'      => [ 'required' => false, 'type' => 'integer', 'default' => 100 ],
+                'session_id' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
             ],
         ] );
 
-        register_rest_route( $ns, '/quests', [
-            'methods'             => 'GET',
-            'callback'            => [ $this, 'catalogue' ],
-            'permission_callback' => '__return_true',
-            'args'                => [
-                'subject' => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
-            ],
-        ] );
-
-        register_rest_route( $ns, '/quests/submit-questions', [
+        register_rest_route( $ns, '/lessons/submit-questions', [
             'methods'             => 'POST',
             'callback'            => [ $this, 'submit_questions' ],
             'permission_callback' => '__return_true',
@@ -77,25 +68,25 @@ class Knowly_Quests_API extends Knowly_API_Base {
             ],
         ] );
 
-        register_rest_route( $ns, '/quests/(?P<quest_id>[a-zA-Z0-9_\-]+)/questions', [
+        register_rest_route( $ns, '/lessons', [
+            'methods'             => 'GET',
+            'callback'            => [ $this, 'catalogue' ],
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'subject' => [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+            ],
+        ] );
+
+        register_rest_route( $ns, '/lessons/(?P<quest_id>[a-zA-Z0-9_\-]+)/questions', [
             'methods'             => 'GET',
             'callback'            => [ $this, 'questions' ],
             'permission_callback' => '__return_true',
         ] );
 
-        register_rest_route( $ns, '/quests/(?P<quest_id>[a-zA-Z0-9_\-]+)', [
+        register_rest_route( $ns, '/lessons/(?P<quest_id>[a-zA-Z0-9_\-]+)', [
             'methods'             => 'GET',
             'callback'            => [ $this, 'show' ],
             'permission_callback' => '__return_true',
-        ] );
-
-        register_rest_route( $ns, '/quests/(?P<session_id>[a-zA-Z0-9_\-]+)/section-complete', [
-            'methods'             => 'POST',
-            'callback'            => [ $this, 'section_complete' ],
-            'permission_callback' => '__return_true',
-            'args'                => [
-                'section_id' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
-            ],
         ] );
     }
 
@@ -107,8 +98,6 @@ class Knowly_Quests_API extends Knowly_API_Base {
 
         $child_id = $ctx['child_id'];
 
-        // Accept explicit level/period from the React layer (more reliable than meta look-up).
-        // Fall back to knowly_children DB row if not supplied.
         $level  = sanitize_text_field( $request->get_param( 'level' )  ?: '' );
         $period = sanitize_text_field( $request->get_param( 'period' ) ?: '' );
 
@@ -131,16 +120,12 @@ class Knowly_Quests_API extends Knowly_API_Base {
             return new WP_Error( 'knowly_missing_profile', 'Student profile is missing a level.', [ 'status' => 422 ] );
         }
 
-        $quests = Knowly_Quest_Service::get_catalogue( $level, $period, 'tt_primary', $subject );
-        if ( is_wp_error( $quests ) ) return $quests;
+        $lessons = Knowly_Lesson_Service::get_catalogue( $level, $period, 'tt_primary', $subject );
+        if ( is_wp_error( $lessons ) ) return $lessons;
 
-        return $this->success( [ 'quests' => $quests, 'count' => count( $quests ) ] );
+        return $this->success( [ 'lessons' => $lessons, 'count' => count( $lessons ) ] );
     }
 
-    /**
-     * GET /quests/teacher/catalogue?level=std_4&period=term_1&subject=math
-     * Teacher-only — returns approved student-variant quests for the given params.
-     */
     public function teacher_catalogue( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $teacher_id = $this->require_teacher( $request );
         if ( is_wp_error( $teacher_id ) ) return $teacher_id;
@@ -153,28 +138,27 @@ class Knowly_Quests_API extends Knowly_API_Base {
             return new WP_Error( 'knowly_missing_fields', 'level is required.', [ 'status' => 422 ] );
         }
 
-        $quests = Knowly_Quest_Service::get_catalogue( $level, $period, 'tt_primary', $subject );
-        if ( is_wp_error( $quests ) ) return $quests;
+        $lessons = Knowly_Lesson_Service::get_catalogue( $level, $period, 'tt_primary', $subject );
+        if ( is_wp_error( $lessons ) ) return $lessons;
 
-        return $this->success( [ 'quests' => $quests, 'count' => count( $quests ) ] );
+        return $this->success( [ 'lessons' => $lessons, 'count' => count( $lessons ) ] );
     }
 
     public function show( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $ctx = $this->require_child_context( $request );
-        // If child context resolution fails, fall back to unauthenticated view (no gem_cost personalisation)
         $child_id = is_wp_error( $ctx ) ? null : $ctx['child_id'];
 
-        $quest = Knowly_Quest_Service::get_quest( $request['quest_id'], $child_id );
-        if ( is_wp_error( $quest ) ) return $quest;
+        $lesson = Knowly_Lesson_Service::get_lesson( $request['quest_id'], $child_id );
+        if ( is_wp_error( $lesson ) ) return $lesson;
 
-        return $this->success( $quest );
+        return $this->success( $lesson );
     }
 
     public function start( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Knowly_Quest_Service::start(
+        $result = Knowly_Lesson_Service::start(
             $ctx['child_id'],
             $request->get_param( 'quest_id' ),
             $request->get_param( 'source' ),
@@ -184,50 +168,26 @@ class Knowly_Quests_API extends Knowly_API_Base {
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }
 
-    public function section_complete( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+    public function complete( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Knowly_Quest_Service::section_complete(
-            $request['session_id'],
-            $request->get_param( 'section_id' ),
+        $result = Knowly_Lesson_Service::complete(
+            $request->get_param( 'session_id' ),
             $ctx['child_id']
         );
 
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }
 
-    public function complete( WP_REST_Request $request ): WP_REST_Response|WP_Error {
-        $ctx = $this->require_child_context( $request );
-        if ( is_wp_error( $ctx ) ) return $ctx;
-
-        $result = Knowly_Quest_Service::complete(
-            $request->get_param( 'session_id' ),
-            $ctx['child_id'],
-            (string) ( $request->get_param( 'topic' )   ?? '' ),
-            (string) ( $request->get_param( 'subject' ) ?? '' ),
-            (int)    ( $request->get_param( 'score' )   ?? 100 )
-        );
-
-        return is_wp_error( $result ) ? $result : $this->success( $result );
-    }
-
-    /**
-     * GET /quests/{quest_id}/questions
-     * Returns 3 active quest questions without correct_answer (for student delivery).
-     */
     public function questions( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
 
-        $result = Knowly_Quest_Service::get_questions( $request['quest_id'] );
+        $result = Knowly_Lesson_Service::get_questions( $request['quest_id'] );
         return is_wp_error( $result ) ? $result : $this->success( $result );
     }
 
-    /**
-     * POST /quests/submit-questions
-     * Scores child answers against quest questions and writes results locally.
-     */
     public function submit_questions( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $ctx = $this->require_child_context( $request );
         if ( is_wp_error( $ctx ) ) return $ctx;
@@ -237,7 +197,7 @@ class Knowly_Quests_API extends Knowly_API_Base {
             return new WP_Error( 'knowly_invalid_answers', 'answers must be a non-empty object.', [ 'status' => 422 ] );
         }
 
-        $result = Knowly_Quest_Service::submit_questions(
+        $result = Knowly_Lesson_Service::submit_questions(
             $request->get_param( 'session_id' ),
             $request->get_param( 'quest_id' ),
             $ctx['child_id'],

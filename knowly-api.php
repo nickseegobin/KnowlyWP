@@ -3,7 +3,7 @@
  * Plugin Name:  KnowlyAPI
  * Plugin URI:   https://knowly.app
  * Description:  Unified REST API for the Knowly learning platform. React / Next.js interface only — no WP front-end output.
- * Version:      1.9.2
+ * Version:      2.5.0
  * Author:       Knowly
  * Requires PHP: 8.0
  * Requires at least: 6.3
@@ -14,8 +14,8 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ────────────────────────────────────────────────────────────────
-define( 'KNOWLY_VERSION',            '2.0.0' );
-define( 'KNOWLY_DB_VERSION',         '2.0.0' );
+define( 'KNOWLY_VERSION',            '3.0.0' );
+define( 'KNOWLY_DB_VERSION',         '3.0.0' );
 define( 'KNOWLY_PLUGIN_FILE',        __FILE__ );
 define( 'KNOWLY_PLUGIN_DIR',         plugin_dir_path( __FILE__ ) );
 define( 'KNOWLY_PLUGIN_URL',         plugin_dir_url( __FILE__ ) );
@@ -45,6 +45,7 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Debug'            => 'includes/debug/class-knowly-debug.php',
         // Auth
         'Knowly_JWT'              => 'includes/auth/class-knowly-jwt.php',
+        'Knowly_AWS_Signer'       => 'includes/auth/class-knowly-aws-signer.php',
         // API layer
         'Knowly_API_Base'         => 'includes/api/class-knowly-api-base.php',
         'Knowly_Auth_API'         => 'includes/api/class-knowly-auth-api.php',
@@ -91,11 +92,17 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Admin_Classes'          => 'includes/admin/class-knowly-admin-classes.php',
         // Block 6 — Quests and Badges
         'Knowly_Quest_Service'          => 'includes/services/class-knowly-quest-service.php',
+        'Knowly_Polly_Service'          => 'includes/services/class-knowly-polly-service.php',
         'Knowly_Badge_Service'          => 'includes/services/class-knowly-badge-service.php',
         'Knowly_Quests_API'             => 'includes/api/class-knowly-quests-api.php',
         'Knowly_Badges_API'             => 'includes/api/class-knowly-badges-api.php',
+        'Knowly_Admin_Badges'           => 'includes/admin/class-knowly-admin-badges.php',
+        'Knowly_Lesson_Service'         => 'includes/services/class-knowly-lesson-service.php',
+        'Knowly_Lessons_API'            => 'includes/api/class-knowly-lessons-api.php',
+        'Knowly_Admin_Lessons_Panel'    => 'includes/admin/class-knowly-admin-lessons-panel.php',
         // Block 7 — Analytics
         'Knowly_Analytics_Service'      => 'includes/services/class-knowly-analytics-service.php',
+        'Knowly_History_Service'        => 'includes/services/class-knowly-history-service.php',
         'Knowly_Analytics_API'          => 'includes/api/class-knowly-analytics-api.php',
         'Knowly_Admin_Analytics'        => 'includes/admin/class-knowly-admin-analytics.php',
         // Block 8 — Sign-off / Launch Gate
@@ -113,9 +120,15 @@ spl_autoload_register( static function ( string $class ): void {
         'Knowly_Admin_Editor'                 => 'includes/admin/class-knowly-admin-editor.php',
         // Phase 3 — Curriculum Management
         'Knowly_Curriculum_API'               => 'includes/api/class-knowly-curriculum-api.php',
+        // Phase C — Child Progression
+        'Knowly_Progression_API'              => 'includes/api/class-knowly-progression-api.php',
         'Knowly_Admin_Curriculum'             => 'includes/admin/class-knowly-admin-curriculum.php',
         'Knowly_Admin_Spec_Tests'             => 'includes/admin/class-knowly-admin-spec-tests.php',
         'Knowly_Admin_QB'                     => 'includes/admin/class-knowly-admin-qb.php',
+        'Knowly_Admin_Data_Management'        => 'includes/admin/class-knowly-admin-data-management.php',
+        // Sound Design
+        'Knowly_Sound_Design_API'            => 'includes/api/class-knowly-sound-design-api.php',
+        'Knowly_Admin_Sound_Design'          => 'includes/admin/class-knowly-admin-sound-design.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {

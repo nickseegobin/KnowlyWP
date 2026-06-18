@@ -135,6 +135,13 @@ class Knowly_Results_Service {
         // ── Update child summary meta ─────────────────────────────────────────
         self::update_child_summary( (int) $session['child_id'] );
 
+        // ── Trial milestone badges ────────────────────────────────────────────
+        $badges_earned = Knowly_Badge_Service::check_trial_milestones(
+            (int) $session['child_id'],
+            $session['subject'] ?? '',
+            $session['level']   ?? ''
+        );
+
         Knowly_Debug::log( 'results.save', 'Results saved successfully', [
             'session_id' => $session['session_id'],
             'score'      => "{$correct}/{$total}",
@@ -143,14 +150,15 @@ class Knowly_Results_Service {
         ], (int) $session['child_id'], 'info' );
 
         return [
-            'session_id'         => (int) $session['session_id'],
+            'session_id'          => (int) $session['session_id'],
             'external_session_id' => $session['external_session_id'],
-            'score'              => $correct,
-            'total'              => $total,
-            'percentage'         => $percentage,
-            'time_taken_seconds' => $time_taken,
-            'topic_breakdown'    => $breakdown,
-            'completed_at'       => current_time( 'mysql', true ),
+            'score'               => $correct,
+            'total'               => $total,
+            'percentage'          => $percentage,
+            'time_taken_seconds'  => $time_taken,
+            'topic_breakdown'     => $breakdown,
+            'badges_earned'       => $badges_earned,
+            'completed_at'        => current_time( 'mysql', true ),
         ];
     }
 

@@ -512,6 +512,7 @@ class Knowly_Gems_API extends Knowly_API_Base {
                 'first'  => Knowly_Gem_Service::get_quest_cost( $curriculum, false ),
                 'retake' => Knowly_Gem_Service::get_quest_cost( $curriculum, true ),
             ],
+            'lesson' => Knowly_Gem_Service::get_lesson_cost( $curriculum ),
         ] );
     }
 

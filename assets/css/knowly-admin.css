@@ -1,6 +1,73 @@
 /* ═══════════════════════════════════════════════════════════════
-   NoeyAPI Admin Styles
+   Knowly Admin Styles
    ═══════════════════════════════════════════════════════════════ */
+
+/* ── Sidebar section labels ───────────────────────────────────── */
+#adminmenu a[href$="page=knowly-sep-settings"],
+#adminmenu a[href$="page=knowly-sep-pipeline"],
+#adminmenu a[href$="page=knowly-sep-content"],
+#adminmenu a[href$="page=knowly-sep-classroom"],
+#adminmenu a[href$="page=knowly-sep-developer"] {
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.09em !important;
+    color: #a7aaad !important;
+    pointer-events: none !important;
+    cursor: default !important;
+    padding-top: 16px !important;
+    padding-bottom: 3px !important;
+    margin-top: 2px !important;
+    opacity: 1 !important;
+}
+#adminmenu li:has(> a[href$="page=knowly-sep-settings"]),
+#adminmenu li:has(> a[href$="page=knowly-sep-pipeline"]),
+#adminmenu li:has(> a[href$="page=knowly-sep-content"]),
+#adminmenu li:has(> a[href$="page=knowly-sep-classroom"]),
+#adminmenu li:has(> a[href$="page=knowly-sep-developer"]) {
+    border-top: 1px solid rgba(255,255,255,0.08);
+    margin-top: 4px !important;
+}
+
+/* ── Danger Zone ──────────────────────────────────────────────── */
+.knowly-danger-zone {
+    margin-top: 28px;
+    border: 2px solid #dc3545;
+    border-radius: 6px;
+    padding: 20px 24px;
+    background: #fff;
+    max-width: 900px;
+}
+.knowly-danger-zone h2 {
+    color: #dc3545;
+    margin-top: 0;
+    font-size: 16px;
+}
+.knowly-purge-table { width: 100%; border-collapse: collapse; }
+.knowly-purge-table thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #777;
+    padding: 0 12px 8px 12px;
+    border-bottom: 1px solid #e0e0e0;
+}
+.knowly-purge-table tbody tr { border-bottom: 1px solid #f0f0f0; }
+.knowly-purge-table tbody tr:last-child { border-bottom: none; }
+.knowly-purge-table tbody td { padding: 12px; vertical-align: middle; font-size: 13px; }
+
+/* ── Dashboard quick-link section headings ────────────────────── */
+.knowly-ql-heading {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: #999;
+    margin: 12px 0 6px;
+}
+.knowly-ql-heading:first-child { margin-top: 0; }
 
 /* ── Layout ───────────────────────────────────────────────────── */
 .knowly-wrap { max-width: 1400px; }

@@ -26,6 +26,11 @@ class Knowly_Admin_Spec_Tests {
     const TRANSIENT_QB_TRIAL    = 'knowly_spectest_qb_trial';
     const TRANSIENT_QBV2_MODULE = 'knowly_spectest_qbv2_module';
     const TRANSIENT_QBV2_TRIAL  = 'knowly_spectest_qbv2_trial';
+    const TRANSIENT_BADGE_DEF_ID = 'knowly_spectest_badge_def_id';
+    const TRANSIENT_BADGE_TOKEN  = 'knowly_spectest_badge_token';
+
+    const TEST_BADGE_CHILD_ID    = 99999997;
+    const TEST_BADGE_SESSION_KEY = 'SPECTEST_BADGE_SESSION_99999997';
 
     const TEST_TOPIC_ACTIVE   = '_SPECTEST_TOPIC_';
     const TEST_TOPIC_UPDATED  = '_SPECTEST_TOPIC_UPDATED_';
@@ -33,7 +38,8 @@ class Knowly_Admin_Spec_Tests {
     // ── Boot ──────────────────────────────────────────────────────────────────
 
     public static function boot(): void {
-        add_action( 'wp_ajax_knowly_spectest', [ __CLASS__, 'handle_ajax' ] );
+        add_action( 'wp_ajax_knowly_spectest',             [ __CLASS__, 'handle_ajax' ] );
+        add_action( 'wp_ajax_knowly_spectest_clear_cache', [ __CLASS__, 'handle_clear_cache' ] );
     }
 
     public static function handle_ajax(): void {
@@ -45,6 +51,27 @@ class Knowly_Admin_Spec_Tests {
         $test_id = sanitize_key( $_POST['test_id'] ?? '' );
         $data    = json_decode( stripslashes( $_POST['data'] ?? '{}' ), true ) ?: [];
         wp_send_json( self::run_test( $test_id, $data ) );
+    }
+
+    public static function handle_clear_cache(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => 'Forbidden' ], 403 );
+        }
+        $transients = [
+            self::TRANSIENT_TOPIC_ID,
+            self::TRANSIENT_TOPIC_STR,
+            self::TRANSIENT_QUEST_DATA,
+            self::TRANSIENT_QB_TRIAL,
+            self::TRANSIENT_QBV2_MODULE,
+            self::TRANSIENT_QBV2_TRIAL,
+            self::TRANSIENT_BADGE_DEF_ID,
+            self::TRANSIENT_BADGE_TOKEN,
+        ];
+        foreach ( $transients as $t ) {
+            delete_transient( $t );
+        }
+        wp_send_json_success( [ 'cleared' => count( $transients ), 'message' => 'All test caches cleared.' ] );
     }
 
     // ── Test Dispatch ─────────────────────────────────────────────────────────
@@ -183,6 +210,78 @@ class Knowly_Admin_Spec_Tests {
                 'p4_schema_branch_column'     => self::test_p4_schema_branch_column(),
                 'p4_schema_sequence_column'   => self::test_p4_schema_sequence_column(),
                 'p4_wp_ajax_reset_registered' => self::test_p4_wp_ajax_reset_registered(),
+                // Group 17 — Lessons
+                'ln_gen_auth_guard'          => self::test_ln_gen_auth_guard(),
+                'ln_questions_auth_guard'    => self::test_ln_questions_auth_guard(),
+                'ln_gen_missing_fields'      => self::test_ln_gen_missing_fields(),
+                'ln_wp_ajax_gen_registered'  => self::test_ln_wp_ajax_gen_registered(),
+                'ln_wp_ajax_board_registered'=> self::test_ln_wp_ajax_board_registered(),
+                'ln_wp_rest_catalogue'       => self::test_ln_wp_rest_catalogue(),
+                'ln_wp_rest_show'            => self::test_ln_wp_rest_show(),
+                'ln_wp_rest_questions'       => self::test_ln_wp_rest_questions(),
+                'ln_wp_rest_start'           => self::test_ln_wp_rest_start(),
+                'ln_wp_rest_complete'        => self::test_ln_wp_rest_complete(),
+                'ln_wp_rest_submit'          => self::test_ln_wp_rest_submit(),
+                'ln_wp_db_sessions'          => self::test_ln_wp_db_sessions(),
+                'ln_wp_db_results'           => self::test_ln_wp_db_results(),
+                'ln_db_version'              => self::test_ln_db_version(),
+                // Group 16 — Quest Questions
+                'qq_gen_auth_guard'          => self::test_qq_gen_auth_guard(),
+                'qq_by_scope_auth_guard'     => self::test_qq_by_scope_auth_guard(),
+                'qq_gen_missing_fields'      => self::test_qq_gen_missing_fields(),
+                'qq_by_scope_missing_fields' => self::test_qq_by_scope_missing_fields(),
+                'qq_get_auth_guard'          => self::test_qq_get_auth_guard(),
+                'qq_wp_ajax_gen_registered'  => self::test_qq_wp_ajax_gen_registered(),
+                'qq_wp_ajax_remove_subject'  => self::test_qq_wp_ajax_remove_subject(),
+                'qq_wp_rest_get_questions'   => self::test_qq_wp_rest_get_questions(),
+                'qq_wp_rest_submit_answers'  => self::test_qq_wp_rest_submit_answers(),
+                'qq_wp_db_table_exists'      => self::test_qq_wp_db_table_exists(),
+                'qq_db_version'              => self::test_qq_db_version(),
+                // Group 18 — Polly TTS
+                'polly_classes_exist'        => self::test_polly_classes_exist(),
+                'polly_ajax_registered'      => self::test_polly_ajax_registered(),
+                'polly_db_columns_exist'     => self::test_polly_db_columns_exist(),
+                'polly_db_version'           => self::test_polly_db_version(),
+                'polly_config_guard'         => self::test_polly_config_guard(),
+                'polly_signer_format'        => self::test_polly_signer_format(),
+                'polly_text_extraction'      => self::test_polly_text_extraction(),
+                'polly_quest_api_audio_url'  => self::test_polly_quest_api_audio_url_field(),
+                'polly_pool_has_audio_field' => self::test_polly_pool_has_audio_field(),
+                'polly_live_generate'        => self::test_polly_live_generate(),
+                // Group 19 — Sound Design
+                'sd_classes_exist'           => self::test_sd_classes_exist(),
+                'sd_rest_registered'         => self::test_sd_rest_registered(),
+                'sd_option_shape'            => self::test_sd_option_shape(),
+                'sd_rest_get_ok'             => self::test_sd_rest_get_ok(),
+                // Group 20 — Badges: Schema & Wiring
+                'badge_tables_exist'         => self::test_badge_tables_exist(),
+                'badge_def_columns'          => self::test_badge_def_columns(),
+                'badge_award_columns'        => self::test_badge_award_columns(),
+                'badge_db_version'           => self::test_badge_db_version(),
+                'badge_service_class'        => self::test_badge_service_class(),
+                'badge_admin_class'          => self::test_badge_admin_class(),
+                'badge_rest_defs_get'        => self::test_badge_rest_defs_get(),
+                'badge_rest_defs_post'       => self::test_badge_rest_defs_post(),
+                'badge_rest_awards'          => self::test_badge_rest_awards(),
+                'badge_rest_public'          => self::test_badge_rest_public(),
+                'badge_ajax_list'            => self::test_badge_ajax_list(),
+                'badge_ajax_save'            => self::test_badge_ajax_save(),
+                'badge_ajax_delete'          => self::test_badge_ajax_delete(),
+                'badge_ajax_quest_modules'   => self::test_badge_ajax_quest_modules(),
+                'badge_ajax_for_quests'      => self::test_badge_ajax_for_quests(),
+                'badge_quest_modules_shape'  => self::test_badge_quest_modules_shape(),
+                // Group 21 — Badges: CRUD & Award Logic
+                'badge_crud_create'          => self::test_badge_crud_create(),
+                'badge_crud_verify'          => self::test_badge_crud_verify(),
+                'badge_crud_update'          => self::test_badge_crud_update(),
+                'badge_award_milestone'      => self::test_badge_award_milestone(),
+                'badge_award_idempotent'     => self::test_badge_award_idempotent(),
+                'badge_award_public_token'   => self::test_badge_award_public_token(),
+                'badge_award_get_awards'     => self::test_badge_award_get_awards(),
+                'badge_module_miss'          => self::test_badge_module_miss(),
+                'badge_crud_cleanup'         => self::test_badge_crud_cleanup(),
+                // Group 22 — Badges: Railway AI Generation (slow)
+                'badge_railway_generate'     => self::test_badge_railway_generate(),
                 default                              => [ 'pass' => false, 'message' => "Unknown test: {$test_id}" ],
             };
         } catch ( Throwable $e ) {
@@ -2755,6 +2854,419 @@ class Knowly_Admin_Spec_Tests {
         ];
     }
 
+    // =========================================================================
+    // Group 18 — Polly TTS Audio Generation
+    // =========================================================================
+
+    private static function test_polly_classes_exist(): array {
+        $errors = [];
+        if ( ! class_exists( 'Knowly_Polly_Service' ) ) $errors[] = 'Knowly_Polly_Service not loaded';
+        if ( ! class_exists( 'Knowly_AWS_Signer' ) )    $errors[] = 'Knowly_AWS_Signer not loaded';
+        if ( $errors ) {
+            return self::fail( implode( '; ', $errors ), [
+                'hint' => 'Check knowly-api.php autoloader map for Knowly_AWS_Signer and Knowly_Polly_Service entries.',
+            ] );
+        }
+        return self::pass( 'Knowly_Polly_Service and Knowly_AWS_Signer both loaded.' );
+    }
+
+    private static function test_polly_ajax_registered(): array {
+        $priority = has_action( 'wp_ajax_knowly_quests_gen_audio' );
+        if ( ! $priority ) {
+            return self::fail( 'wp_ajax_knowly_quests_gen_audio is NOT registered.', [
+                'hint' => 'Knowly_Admin_Quests_Panel::boot() must call add_action(\'wp_ajax_knowly_quests_gen_audio\', …)',
+            ] );
+        }
+        return self::pass( "wp_ajax_knowly_quests_gen_audio registered (priority {$priority})." );
+    }
+
+    private static function test_polly_db_columns_exist(): array {
+        global $wpdb;
+        $table   = $wpdb->prefix . 'knowly_quests';
+        $columns = $wpdb->get_col( "SHOW COLUMNS FROM `{$table}`" );
+
+        $missing = [];
+        if ( ! in_array( 'audio_url',          $columns, true ) ) $missing[] = 'audio_url';
+        if ( ! in_array( 'audio_generated_at', $columns, true ) ) $missing[] = 'audio_generated_at';
+
+        if ( $missing ) {
+            return self::fail( 'Missing column(s) in wp_knowly_quests: ' . implode( ', ', $missing ), [
+                'existing_columns' => $columns,
+                'hint'             => 'DB version may not have bumped to 2.5.1 yet. Visit any WP admin page to trigger maybe_upgrade().',
+            ] );
+        }
+        return self::pass( 'audio_url and audio_generated_at columns present in wp_knowly_quests.', [
+            'audio_url_position'  => array_search( 'audio_url',          $columns, true ),
+            'audio_gen_position'  => array_search( 'audio_generated_at', $columns, true ),
+        ] );
+    }
+
+    private static function test_polly_db_version(): array {
+        $version  = get_option( 'knowly_db_version', '(not set)' );
+        $expected = '2.5.1';
+        if ( $version !== $expected ) {
+            return self::fail( "knowly_db_version is '{$version}' — expected '{$expected}'.", [
+                'current'  => $version,
+                'expected' => $expected,
+                'hint'     => 'Visit any WP admin page; Knowly_Core::boot() calls maybe_upgrade() which bumps the version when KNOWLY_DB_VERSION constant changes.',
+            ] );
+        }
+        return self::pass( "DB version is {$version} — Polly audio migration ran." );
+    }
+
+    private static function test_polly_config_guard(): array {
+        $access_key = get_option( 'knowly_aws_access_key', '' );
+        $secret_key = get_option( 'knowly_aws_secret_key', '' );
+        $bucket     = get_option( 'knowly_aws_s3_bucket',  '' );
+
+        if ( $access_key && $secret_key && $bucket ) {
+            return self::warn( 'AWS credentials are configured — cannot test missing-credential guard path.', [
+                'region' => get_option( 'knowly_aws_region', '' ),
+                'bucket' => $bucket,
+                'hint'   => 'Clear Settings → AWS / Polly credentials to test this guard.',
+            ] );
+        }
+
+        global $wpdb;
+        $quest_id = $wpdb->get_var(
+            "SELECT quest_id FROM {$wpdb->prefix}knowly_quests WHERE variant='student' AND status='approved' LIMIT 1"
+        ) ?: 'test_bogus_quest_id';
+
+        $result = Knowly_Polly_Service::generate( $quest_id );
+
+        if ( ! is_wp_error( $result ) ) {
+            return self::fail( 'Expected WP_Error from generate() when credentials are empty, but got success.', [
+                'result' => $result,
+            ] );
+        }
+
+        $code = $result->get_error_code();
+        if ( $code !== 'knowly_aws_not_configured' ) {
+            return self::fail( "Expected error code 'knowly_aws_not_configured', got '{$code}'.", [
+                'code'    => $code,
+                'message' => $result->get_error_message(),
+            ] );
+        }
+
+        return self::pass( "Polly service correctly blocks unconfigured credentials (code: {$code}).", [
+            'error_message' => $result->get_error_message(),
+        ] );
+    }
+
+    private static function test_polly_signer_format(): array {
+        // Use the AWS test vector access key so the format is predictable without real creds
+        $signer  = new Knowly_AWS_Signer(
+            'AKIAIOSFODNN7EXAMPLE',
+            'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+            'us-east-1',
+            'polly'
+        );
+        $headers = $signer->get_signed_headers(
+            'POST',
+            'https://polly.us-east-1.amazonaws.com/v1/synthesisTasks',
+            [ 'Content-Type' => 'application/json' ],
+            '{"Text":"hello","OutputFormat":"mp3"}'
+        );
+
+        $problems = [];
+
+        if ( ! isset( $headers['Authorization'] ) ) {
+            return self::fail( 'Signer did not return Authorization header.', [
+                'returned_keys' => array_keys( $headers ),
+            ] );
+        }
+
+        $auth = $headers['Authorization'];
+        if ( ! str_starts_with( $auth, 'AWS4-HMAC-SHA256 ' ) )               $problems[] = 'Does not start with AWS4-HMAC-SHA256';
+        if ( strpos( $auth, 'Credential=AKIAIOSFODNN7EXAMPLE/' ) === false )   $problems[] = 'Missing Credential with correct access key';
+        if ( strpos( $auth, 'us-east-1/polly/aws4_request' ) === false )       $problems[] = 'Missing region/service scope in Credential';
+        if ( strpos( $auth, 'SignedHeaders=' ) === false )                      $problems[] = 'Missing SignedHeaders';
+        if ( strpos( $auth, 'Signature=' ) === false )                          $problems[] = 'Missing Signature';
+        if ( ! isset( $headers['x-amz-date'] ) )                               $problems[] = 'Missing x-amz-date';
+        if ( ! isset( $headers['x-amz-content-sha256'] ) )                     $problems[] = 'Missing x-amz-content-sha256';
+        if ( isset( $headers['Host'] ) )                                        $problems[] = 'Host header should NOT be returned (wp adds it)';
+
+        // x-amz-date must be ISO8601 format: 20251231T235959Z
+        if ( isset( $headers['x-amz-date'] ) && ! preg_match( '/^\d{8}T\d{6}Z$/', $headers['x-amz-date'] ) ) {
+            $problems[] = 'x-amz-date format wrong: ' . $headers['x-amz-date'];
+        }
+
+        // x-amz-content-sha256 must be a 64-char hex string
+        if ( isset( $headers['x-amz-content-sha256'] ) && ! preg_match( '/^[a-f0-9]{64}$/', $headers['x-amz-content-sha256'] ) ) {
+            $problems[] = 'x-amz-content-sha256 is not a 64-char hex string';
+        }
+
+        if ( $problems ) {
+            return self::fail( 'SigV4 header problems: ' . implode( '; ', $problems ), [
+                'authorization_prefix' => substr( $auth, 0, 150 ) . '…',
+                'x_amz_date'           => $headers['x-amz-date'] ?? null,
+                'content_sha256'       => $headers['x-amz-content-sha256'] ?? null,
+            ] );
+        }
+
+        preg_match( '/SignedHeaders=([^,]+)/', $auth, $m );
+        return self::pass( 'SigV4 Authorization header is correctly structured.', [
+            'algorithm'            => 'AWS4-HMAC-SHA256',
+            'signed_headers'       => $m[1] ?? '?',
+            'x_amz_date'           => $headers['x-amz-date'],
+            'authorization_prefix' => substr( $auth, 0, 100 ) . '…',
+        ] );
+    }
+
+    private static function test_polly_text_extraction(): array {
+        global $wpdb;
+
+        $row = $wpdb->get_row(
+            "SELECT quest_id, content FROM {$wpdb->prefix}knowly_quests
+             WHERE variant='student' AND status='approved' AND content IS NOT NULL
+             LIMIT 1",
+            ARRAY_A
+        );
+
+        if ( ! $row ) {
+            return self::warn( 'No approved quests with content in wp_knowly_quests.', [
+                'hint' => 'Sync quests from the Quests admin panel.',
+            ] );
+        }
+
+        $content = json_decode( $row['content'], true );
+        if ( ! is_array( $content ) ) {
+            return self::fail( 'Quest content is not valid JSON.', [
+                'quest_id' => $row['quest_id'],
+                'raw_len'  => strlen( $row['content'] ),
+            ] );
+        }
+
+        // Mirror the walk logic from Knowly_Polly_Service::walk()
+        $parts      = [];
+        $stack      = [ $content ];
+        $text_keys  = [ 'title', 'heading', 'body', 'text', 'content', 'description', 'question', 'answer', 'label' ];
+        $iterations = 0;
+
+        while ( ! empty( $stack ) && $iterations < 500 ) {
+            $iterations++;
+            $node = array_shift( $stack );
+
+            if ( is_string( $node ) ) {
+                $clean = trim( strip_tags( $node ) );
+                if ( strlen( $clean ) > 2 ) $parts[] = $clean;
+            } elseif ( is_array( $node ) ) {
+                foreach ( $text_keys as $key ) {
+                    if ( isset( $node[ $key ] ) && is_string( $node[ $key ] ) ) {
+                        $clean = trim( strip_tags( $node[ $key ] ) );
+                        if ( strlen( $clean ) > 2 ) $parts[] = $clean;
+                    }
+                }
+                foreach ( $node as $key => $val ) {
+                    if ( ! in_array( $key, $text_keys, true ) ) {
+                        $stack[] = $val;
+                    }
+                }
+            }
+        }
+
+        $text     = implode( ' ', $parts );
+        $char_len = strlen( $text );
+
+        if ( $char_len < 50 ) {
+            return self::fail( "Extracted only {$char_len} chars — content structure may not match known text keys.", [
+                'quest_id'      => $row['quest_id'],
+                'top_level_keys'=> array_keys( $content ),
+                'parts_found'   => count( $parts ),
+                'preview'       => substr( $text, 0, 200 ),
+                'hint'          => 'Check that quest content uses keys like title/body/text/heading — walk() only reads those.',
+            ] );
+        }
+
+        return self::pass( "Extracted {$char_len} chars from quest '{$row['quest_id']}' ✓", [
+            'quest_id'      => $row['quest_id'],
+            'char_count'    => $char_len,
+            'within_limit'  => $char_len <= 100000,
+            'polly_limit'   => 100000,
+            'parts_found'   => count( $parts ),
+            'top_level_keys'=> array_keys( $content ),
+            'text_preview'  => substr( $text, 0, 400 ) . ( $char_len > 400 ? '…' : '' ),
+        ] );
+    }
+
+    private static function test_polly_quest_api_audio_url_field(): array {
+        global $wpdb;
+
+        $quest_id = $wpdb->get_var(
+            "SELECT quest_id FROM {$wpdb->prefix}knowly_quests
+             WHERE variant='student' AND status='approved'
+             LIMIT 1"
+        );
+
+        if ( ! $quest_id ) {
+            return self::warn( 'No approved quests in wp_knowly_quests — cannot test API response shape.', [
+                'hint' => 'Sync quests from the Quests panel.',
+            ] );
+        }
+
+        $result = Knowly_Quest_Service::get_quest( $quest_id, null );
+
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'get_quest() returned WP_Error: ' . $result->get_error_message(), [
+                'quest_id'   => $quest_id,
+                'error_code' => $result->get_error_code(),
+            ] );
+        }
+
+        if ( ! array_key_exists( 'audio_url', $result ) ) {
+            return self::fail( 'get_quest() response is missing audio_url key.', [
+                'quest_id'      => $quest_id,
+                'returned_keys' => array_keys( $result ),
+                'hint'          => 'Knowly_Quest_Service::get_quest() must normalise $row["audio_url"] — check the audio_url line was added.',
+            ] );
+        }
+
+        $audio_url = $result['audio_url'];
+        return self::pass(
+            "get_quest() includes audio_url (" . ( $audio_url ? "value: {$audio_url}" : 'null — not yet generated' ) . ").",
+            [
+                'quest_id'      => $quest_id,
+                'audio_url'     => $audio_url,
+                'returned_keys' => array_keys( $result ),
+            ]
+        );
+    }
+
+    private static function test_polly_pool_has_audio_field(): array {
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_quests';
+
+        // Verify the pool board SELECT can read audio columns (mirrors ajax_quest_board query)
+        $row = $wpdb->get_row(
+            "SELECT quest_id, audio_url, audio_generated_at
+             FROM `{$table}`
+             WHERE variant='student' AND status='approved'
+             LIMIT 1",
+            ARRAY_A
+        );
+
+        if ( $row === null && $wpdb->last_error ) {
+            return self::fail( 'DB error querying audio columns: ' . $wpdb->last_error, [
+                'hint' => 'Run polly_db_columns_exist test first.',
+            ] );
+        }
+
+        if ( $row === null ) {
+            return self::warn( 'No approved quests to test pool slot shape.', [
+                'hint' => 'Sync quests from the Quests panel.',
+            ] );
+        }
+
+        $problems = [];
+        if ( ! array_key_exists( 'audio_url',          $row ) ) $problems[] = 'audio_url missing from SELECT';
+        if ( ! array_key_exists( 'audio_generated_at', $row ) ) $problems[] = 'audio_generated_at missing from SELECT';
+
+        if ( $problems ) {
+            return self::fail( 'Pool SELECT missing audio fields: ' . implode( ', ', $problems ), [
+                'returned_keys' => array_keys( $row ),
+                'hint'          => 'Check class-knowly-admin-pool.php ajax_quest_board() SELECT statement.',
+            ] );
+        }
+
+        $has_audio = ! empty( $row['audio_url'] );
+        return self::pass(
+            'Pool row includes audio_url and audio_generated_at. has_audio = ' . ( $has_audio ? 'true' : 'false (not yet generated)' ) . '.',
+            [
+                'quest_id'           => $row['quest_id'],
+                'has_audio'          => $has_audio,
+                'audio_url'          => $row['audio_url']          ?: null,
+                'audio_generated_at' => $row['audio_generated_at'] ?: null,
+            ]
+        );
+    }
+
+    private static function test_polly_live_generate(): array {
+        $access_key = get_option( 'knowly_aws_access_key', '' );
+        $secret_key = get_option( 'knowly_aws_secret_key', '' );
+        $bucket     = get_option( 'knowly_aws_s3_bucket',  '' );
+        $region     = get_option( 'knowly_aws_region',     '' );
+
+        if ( ! $access_key || ! $secret_key || ! $bucket ) {
+            return self::fail( 'AWS credentials not configured — live Polly test cannot run.', [
+                'access_key_set' => ! empty( $access_key ),
+                'secret_key_set' => ! empty( $secret_key ),
+                'bucket_set'     => ! empty( $bucket ),
+                'region'         => $region ?: '(not set)',
+                'hint'           => 'Configure Settings → AWS / Polly in the WP admin, then re-run this test.',
+            ] );
+        }
+
+        global $wpdb;
+        $row = $wpdb->get_row(
+            "SELECT quest_id, content FROM {$wpdb->prefix}knowly_quests
+             WHERE variant='student' AND status='approved' AND content IS NOT NULL
+             LIMIT 1",
+            ARRAY_A
+        );
+
+        if ( ! $row ) {
+            return self::fail( 'No approved quests with content found — cannot test Polly generation.', [
+                'hint' => 'Sync quests from the Quests panel.',
+            ] );
+        }
+
+        $quest_id = $row['quest_id'];
+
+        if ( function_exists( 'set_time_limit' ) ) {
+            set_time_limit( 120 );
+        }
+
+        $result = Knowly_Polly_Service::generate( $quest_id );
+
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'Polly generation failed: ' . $result->get_error_message(), [
+                'quest_id'   => $quest_id,
+                'error_code' => $result->get_error_code(),
+                'region'     => $region,
+                'bucket'     => $bucket,
+                'hint'       => 'Required IAM permissions: polly:StartSpeechSynthesisTask, polly:GetSpeechSynthesisTask, s3:PutObject. Bucket must allow public read on the audio prefix.',
+            ] );
+        }
+
+        $audio_url = $result['audio_url'] ?? '';
+
+        if ( ! filter_var( $audio_url, FILTER_VALIDATE_URL ) || ! str_starts_with( $audio_url, 'https://' ) ) {
+            return self::fail( "Generated audio_url is not a valid HTTPS URL: '{$audio_url}'", [
+                'quest_id'  => $quest_id,
+                'audio_url' => $audio_url,
+            ] );
+        }
+
+        // Verify the URL is reachable
+        $head           = wp_remote_head( $audio_url, [ 'timeout' => 10 ] );
+        $http_code      = is_wp_error( $head ) ? 0 : (int) wp_remote_retrieve_response_code( $head );
+        $url_accessible = $http_code === 200;
+
+        // Verify DB was updated
+        $db_url = $wpdb->get_var( $wpdb->prepare(
+            "SELECT audio_url FROM {$wpdb->prefix}knowly_quests WHERE quest_id = %s AND variant = 'student'",
+            $quest_id
+        ) );
+
+        if ( $db_url !== $audio_url ) {
+            return self::fail( 'audio_url in DB does not match the returned URL.', [
+                'quest_id'     => $quest_id,
+                'returned_url' => $audio_url,
+                'db_url'       => $db_url,
+            ] );
+        }
+
+        return self::pass( "Polly audio generated and saved for quest '{$quest_id}' ✓", [
+            'quest_id'       => $quest_id,
+            'audio_url'      => $audio_url,
+            'url_http_code'  => $http_code,
+            'url_accessible' => $url_accessible,
+            'saved_to_db'    => true,
+        ] );
+    }
+
+    // ── HTTP helpers ──────────────────────────────────────────────────────────
+
     private static function railway_get( string $path, array $params = [] ): array {
         $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
         $server_key = get_option( 'knowly_railway_server_key', '' );
@@ -3504,8 +4016,961 @@ class Knowly_Admin_Spec_Tests {
         return self::pass( "WP action '{$action}' is registered." );
     }
 
+    // =========================================================================
+    // Group 17 — Lessons
+    // =========================================================================
+
+    private static function test_ln_gen_auth_guard(): array {
+        return self::p4_auth_guard( 'POST', '/api/v1/lesson/generate-questions' );
+    }
+
+    private static function test_ln_questions_auth_guard(): array {
+        $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        if ( ! $endpoint ) return self::fail( 'Railway endpoint not configured.' );
+
+        $resp = wp_remote_get( $endpoint . '/api/v1/lesson/__bogus_ln_test__/questions', [
+            'timeout' => 15,
+            'headers' => [ 'Content-Type' => 'application/json' ],
+        ] );
+
+        if ( is_wp_error( $resp ) ) return self::fail( 'Request failed: ' . $resp->get_error_message() );
+        $code = wp_remote_retrieve_response_code( $resp );
+        if ( $code !== 401 ) return self::fail( "Expected 401 without auth, got {$code}." );
+        return self::pass( 'GET /lesson/:id/questions → 401 without auth header (auth guard active).' );
+    }
+
+    private static function test_ln_gen_missing_fields(): array {
+        $data = self::railway_post( '/api/v1/lesson/generate-questions', [] );
+        $code = (int) ( $data['code'] ?? 0 );
+        if ( $code === 400 || str_contains( $data['error'] ?? '', 'required' ) || str_contains( $data['error'] ?? '', 'missing' ) ) {
+            return self::pass( 'POST /lesson/generate-questions with empty body → 400 missing fields as expected.' );
+        }
+        return self::fail( 'Expected 400 for missing required fields.', $data );
+    }
+
+    private static function test_ln_wp_ajax_gen_registered(): array {
+        $action = 'wp_ajax_knowly_lessons_gen_questions';
+        if ( ! has_action( $action ) ) {
+            return self::fail( "WP action '{$action}' is not registered — check Knowly_Admin_Lessons_Panel::boot()." );
+        }
+        return self::pass( "WP action '{$action}' is registered." );
+    }
+
+    private static function test_ln_wp_ajax_board_registered(): array {
+        $action = 'wp_ajax_knowly_lessons_load_board';
+        if ( ! has_action( $action ) ) {
+            return self::fail( "WP action '{$action}' is not registered — check Knowly_Admin_Lessons_Panel::boot()." );
+        }
+        return self::pass( "WP action '{$action}' is registered." );
+    }
+
+    private static function test_ln_wp_rest_catalogue(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/lessons';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route GET {$pattern} not registered — check Knowly_Lessons_API::register_routes()." );
+        }
+        return self::pass( 'WP REST GET /knowly/v1/lessons is registered.' );
+    }
+
+    private static function test_ln_wp_rest_show(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/lessons/(?P<quest_id>[a-zA-Z0-9_\-]+)';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route GET {$pattern} not registered." );
+        }
+        return self::pass( 'WP REST GET /knowly/v1/lessons/{quest_id} is registered.' );
+    }
+
+    private static function test_ln_wp_rest_questions(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/lessons/(?P<quest_id>[a-zA-Z0-9_\-]+)/questions';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route GET {$pattern} not registered." );
+        }
+        return self::pass( 'WP REST GET /knowly/v1/lessons/{quest_id}/questions is registered.' );
+    }
+
+    private static function test_ln_wp_rest_start(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/lessons/start';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route POST {$pattern} not registered." );
+        }
+        return self::pass( 'WP REST POST /knowly/v1/lessons/start is registered.' );
+    }
+
+    private static function test_ln_wp_rest_complete(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/lessons/complete';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route POST {$pattern} not registered." );
+        }
+        return self::pass( 'WP REST POST /knowly/v1/lessons/complete is registered.' );
+    }
+
+    private static function test_ln_wp_rest_submit(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/lessons/submit-questions';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route POST {$pattern} not registered." );
+        }
+        return self::pass( 'WP REST POST /knowly/v1/lessons/submit-questions is registered.' );
+    }
+
+    private static function test_ln_wp_db_sessions(): array {
+        global $wpdb;
+        $table  = $wpdb->prefix . 'knowly_lesson_sessions';
+        $exists = $wpdb->get_var( "SHOW TABLES LIKE '{$table}'" );
+        if ( $exists !== $table ) {
+            return self::fail( "Table {$table} does not exist — re-activate or bump KNOWLY_DB_VERSION." );
+        }
+        $cols     = $wpdb->get_col( "DESCRIBE {$table}" );
+        $required = [ 'id', 'lesson_session_id', 'child_id', 'quest_id', 'source', 'state', 'started_at', 'completed_at' ];
+        $missing  = array_diff( $required, $cols );
+        if ( ! empty( $missing ) ) {
+            return self::fail( "Table exists but missing columns: " . implode( ', ', $missing ), [ 'found' => $cols ] );
+        }
+        return self::pass( "Table {$table} exists with all required columns." );
+    }
+
+    private static function test_ln_wp_db_results(): array {
+        global $wpdb;
+        $table  = $wpdb->prefix . 'knowly_lesson_question_results';
+        $exists = $wpdb->get_var( "SHOW TABLES LIKE '{$table}'" );
+        if ( $exists !== $table ) {
+            return self::fail( "Table {$table} does not exist — re-activate or bump KNOWLY_DB_VERSION." );
+        }
+        $cols     = $wpdb->get_col( "DESCRIBE {$table}" );
+        $required = [ 'id', 'session_id', 'quest_id', 'child_id', 'question_id', 'selected_answer', 'is_correct', 'answered_at' ];
+        $missing  = array_diff( $required, $cols );
+        if ( ! empty( $missing ) ) {
+            return self::fail( "Table exists but missing columns: " . implode( ', ', $missing ), [ 'found' => $cols ] );
+        }
+        return self::pass( "Table {$table} exists with all required columns." );
+    }
+
+    private static function test_ln_db_version(): array {
+        $version = get_option( 'knowly_db_version', '0.0.0' );
+        if ( version_compare( $version, '2.2.0', '>=' ) ) {
+            return self::pass( "knowly_db_version is {$version} (≥ 2.2.0 — lesson tables migration ran)." );
+        }
+        return self::fail( "knowly_db_version is {$version} — expected ≥ 2.2.0. Deactivate and reactivate the plugin." );
+    }
+
+    // =========================================================================
+    // Group 16 — Quest Questions
+    // =========================================================================
+
+    private static function test_qq_gen_auth_guard(): array {
+        return self::p4_auth_guard( 'POST', '/api/v1/quest/generate-questions' );
+    }
+
+    private static function test_qq_by_scope_auth_guard(): array {
+        $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        if ( ! $endpoint ) return self::fail( 'Railway endpoint not configured.' );
+
+        $resp = wp_remote_request( $endpoint . '/api/v1/curriculum-topics/by-scope?level=std_4&subject=math', [
+            'method'  => 'DELETE',
+            'timeout' => 15,
+            'headers' => [ 'Content-Type' => 'application/json' ],
+        ] );
+
+        if ( is_wp_error( $resp ) ) return self::fail( 'Request failed: ' . $resp->get_error_message() );
+        $code = wp_remote_retrieve_response_code( $resp );
+        if ( $code !== 401 ) return self::fail( "Expected 401 without auth, got {$code}." );
+        return self::pass( 'DELETE /curriculum-topics/by-scope → 401 (auth guard active).' );
+    }
+
+    private static function test_qq_gen_missing_fields(): array {
+        $data = self::railway_post( '/api/v1/quest/generate-questions', [] );
+        $code = (int) ( $data['code'] ?? 0 );
+        if ( $code === 400 || str_contains( $data['error'] ?? '', 'required' ) || str_contains( $data['error'] ?? '', 'missing' ) ) {
+            return self::pass( 'POST /quest/generate-questions with empty body → 400 missing fields as expected.' );
+        }
+        return self::fail( 'Expected 400 for missing required fields, got unexpected response.', $data );
+    }
+
+    private static function test_qq_by_scope_missing_fields(): array {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+        if ( ! $endpoint ) return self::fail( 'Railway endpoint not configured.' );
+
+        $resp = wp_remote_request( $endpoint . '/api/v1/curriculum-topics/by-scope', [
+            'method'  => 'DELETE',
+            'timeout' => 15,
+            'headers' => [ 'X-AEP-Server-Key' => $server_key, 'Content-Type' => 'application/json' ],
+        ] );
+
+        if ( is_wp_error( $resp ) ) return self::fail( 'Request failed: ' . $resp->get_error_message() );
+        $code   = wp_remote_retrieve_response_code( $resp );
+        $parsed = json_decode( wp_remote_retrieve_body( $resp ), true );
+        if ( $code === 400 || str_contains( $parsed['error'] ?? '', 'required' ) || str_contains( $parsed['code'] ?? '', 'missing' ) ) {
+            return self::pass( 'DELETE /curriculum-topics/by-scope without level/subject → 400 as expected.' );
+        }
+        return self::fail( "Expected 400 for missing level/subject, got HTTP {$code}.", $parsed ?? [] );
+    }
+
+    private static function test_qq_get_auth_guard(): array {
+        $endpoint = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        if ( ! $endpoint ) return self::fail( 'Railway endpoint not configured.' );
+
+        $resp = wp_remote_get( $endpoint . '/api/v1/quest/__bogus_qq_test__/questions', [
+            'timeout' => 15,
+            'headers' => [ 'Content-Type' => 'application/json' ],
+        ] );
+
+        if ( is_wp_error( $resp ) ) return self::fail( 'Request failed: ' . $resp->get_error_message() );
+        $code = wp_remote_retrieve_response_code( $resp );
+        if ( $code !== 401 ) return self::fail( "Expected 401 without auth, got {$code}." );
+        return self::pass( 'GET /quest/:id/questions → 401 without auth header (auth guard active).' );
+    }
+
+    private static function test_qq_wp_ajax_gen_registered(): array {
+        $action = 'wp_ajax_knowly_quests_gen_questions';
+        if ( ! has_action( $action ) ) {
+            return self::fail( "WP action '{$action}' is not registered — check Knowly_Admin_Pool::boot()." );
+        }
+        return self::pass( "WP action '{$action}' is registered." );
+    }
+
+    private static function test_qq_wp_ajax_remove_subject(): array {
+        $action = 'wp_ajax_knowly_curriculum_remove_subject';
+        if ( ! has_action( $action ) ) {
+            return self::fail( "WP action '{$action}' is not registered — check Knowly_Admin_Curriculum::boot()." );
+        }
+        return self::pass( "WP action '{$action}' is registered." );
+    }
+
+    private static function test_qq_wp_rest_get_questions(): array {
+        $routes = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/quests/(?P<quest_id>[a-zA-Z0-9_\-]+)/questions';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route GET {$pattern} not registered — check Knowly_Quests_API::register_routes()." );
+        }
+        $methods = array_keys( array_filter( $routes[ $pattern ][0]['methods'] ?? [] ) );
+        if ( ! in_array( 'GET', $methods, true ) ) {
+            return self::fail( "Route {$pattern} exists but GET method not registered.", [ 'methods' => $methods ] );
+        }
+        return self::pass( "WP REST GET /knowly/v1/quests/{quest_id}/questions is registered." );
+    }
+
+    private static function test_qq_wp_rest_submit_answers(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/quests/submit-questions';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route POST {$pattern} not registered — check Knowly_Quests_API::register_routes()." );
+        }
+        $methods = array_keys( array_filter( $routes[ $pattern ][0]['methods'] ?? [] ) );
+        if ( ! in_array( 'POST', $methods, true ) ) {
+            return self::fail( "Route {$pattern} exists but POST method not registered.", [ 'methods' => $methods ] );
+        }
+        return self::pass( "WP REST POST /knowly/v1/quests/submit-questions is registered." );
+    }
+
+    private static function test_qq_wp_db_table_exists(): array {
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_quest_question_results';
+        $exists = $wpdb->get_var( "SHOW TABLES LIKE '{$table}'" );
+        if ( $exists !== $table ) {
+            return self::fail( "Table {$table} does not exist — re-run plugin activation or bump DB version." );
+        }
+        $cols = $wpdb->get_col( "DESCRIBE {$table}" );
+        $required = [ 'id', 'session_id', 'quest_id', 'child_id', 'question_id', 'selected_answer', 'is_correct', 'answered_at' ];
+        $missing  = array_diff( $required, $cols );
+        if ( ! empty( $missing ) ) {
+            return self::fail( "Table exists but missing columns: " . implode( ', ', $missing ), [ 'found' => $cols ] );
+        }
+        return self::pass( "Table {$table} exists with all required columns." );
+    }
+
+    private static function test_qq_db_version(): array {
+        $version = get_option( 'knowly_db_version', '0.0.0' );
+        if ( version_compare( $version, '2.1.0', '>=' ) ) {
+            return self::pass( "knowly_db_version is {$version} (≥ 2.1.0 — quest_question_results migration ran)." );
+        }
+        return self::fail( "knowly_db_version is {$version} — expected ≥ 2.1.0. Re-activate or deactivate/reactivate the plugin." );
+    }
+
+    // =========================================================================
+    // Group 19 — Sound Design (server-side)
+    // =========================================================================
+
+    private static function test_sd_classes_exist(): array {
+        if ( ! class_exists( 'Knowly_Sound_Design_API' ) ) {
+            return self::fail( 'Knowly_Sound_Design_API not found — check autoloader entry in knowly-api.php.' );
+        }
+        if ( ! class_exists( 'Knowly_Admin_Sound_Design' ) ) {
+            return self::fail( 'Knowly_Admin_Sound_Design not found — check autoloader entry.' );
+        }
+        return self::pass( 'Both Knowly_Sound_Design_API and Knowly_Admin_Sound_Design loaded.' );
+    }
+
+    private static function test_sd_rest_registered(): array {
+        $routes = rest_get_server()->get_routes();
+        $path   = '/' . KNOWLY_REST_NAMESPACE . '/sound-design';
+        if ( ! isset( $routes[ $path ] ) ) {
+            return self::fail( "REST route {$path} not found — ensure register_routes() is called in Knowly_Core." );
+        }
+        $methods = array_keys( $routes[ $path ][0]['methods'] ?? [] );
+        return self::pass( "{$path} registered. Methods: " . implode( ', ', $methods ) );
+    }
+
+    private static function test_sd_option_shape(): array {
+        if ( ! class_exists( 'Knowly_Sound_Design_API' ) ) {
+            return self::fail( 'Knowly_Sound_Design_API not loaded — cannot read settings.' );
+        }
+        $settings = Knowly_Sound_Design_API::current_settings();
+        $required = [
+            'enabled', 'harmonicity', 'modulationIndex', 'oscillatorType', 'modulationType',
+            'envelope', 'modulationEnvelope', 'volume', 'reverbDecay', 'reverbWet', 'noteDuration',
+        ];
+        $missing = array_diff( $required, array_keys( $settings ) );
+        if ( ! empty( $missing ) ) {
+            return self::fail( 'Settings missing keys: ' . implode( ', ', $missing ), [ 'settings' => $settings ] );
+        }
+        $env_keys = [ 'attack', 'decay', 'sustain', 'release' ];
+        foreach ( [ 'envelope', 'modulationEnvelope' ] as $sub ) {
+            $sub_missing = array_diff( $env_keys, array_keys( $settings[ $sub ] ?? [] ) );
+            if ( ! empty( $sub_missing ) ) {
+                return self::fail( "{$sub} missing keys: " . implode( ', ', $sub_missing ) );
+            }
+        }
+        $stored = get_option( 'knowly_sound_design', null );
+        $source = $stored === null ? 'defaults (never saved)' : 'wp_options';
+        return self::pass( "All 11 top-level keys present. Source: {$source}.", [ 'settings' => $settings ] );
+    }
+
+    private static function test_sd_rest_get_ok(): array {
+        $url      = rest_url( KNOWLY_REST_NAMESPACE . '/sound-design' );
+        $response = wp_remote_get( $url, [ 'timeout' => 5, 'sslverify' => false ] );
+        if ( is_wp_error( $response ) ) {
+            return self::fail( 'Local HTTP request failed: ' . $response->get_error_message(), [ 'url' => $url ] );
+        }
+        $code = wp_remote_retrieve_response_code( $response );
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( $code !== 200 ) {
+            return self::fail( "Expected 200, got {$code}.", [ 'body' => $body ] );
+        }
+        if ( ! isset( $body['enabled'] ) ) {
+            return self::fail( "Response missing 'enabled' key.", [ 'body' => $body ] );
+        }
+        return self::pass(
+            "GET /sound-design → 200. enabled=" . ( $body['enabled'] ? 'true' : 'false' )
+            . " harmonicity=" . ( $body['harmonicity'] ?? '?' ),
+            [ 'body' => $body ]
+        );
+    }
+
     // Test Group Definition
     // =========================================================================
+
+    // =========================================================================
+    // Group 20 — Badges: Schema & Wiring
+    // =========================================================================
+
+    private static function test_badge_tables_exist(): array {
+        global $wpdb;
+        $missing = [];
+        foreach ( [ 'knowly_badge_definitions', 'knowly_badge_awards' ] as $table ) {
+            $exists = $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+                $wpdb->prefix . $table
+            ) );
+            if ( ! $exists ) $missing[] = $wpdb->prefix . $table;
+        }
+        if ( $missing ) {
+            return self::fail( 'Missing tables: ' . implode( ', ', $missing ), [ 'missing' => $missing ] );
+        }
+        return self::pass( 'wp_knowly_badge_definitions and wp_knowly_badge_awards both exist.' );
+    }
+
+    private static function test_badge_def_columns(): array {
+        global $wpdb;
+        $table   = $wpdb->prefix . 'knowly_badge_definitions';
+        $columns = $wpdb->get_col( "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$table}'" );
+        $required = [ 'id', 'name', 'description', 'trigger_type', 'trigger_key', 'threshold', 'curriculum', 'level', 'period', 'subject', 'module_number', 'ai_generated', 'created_at', 'updated_at' ];
+        $missing  = array_diff( $required, $columns );
+        if ( $missing ) {
+            return self::fail( 'badge_definitions missing columns: ' . implode( ', ', $missing ), [ 'missing' => $missing ] );
+        }
+        return self::pass( 'badge_definitions has all ' . count( $required ) . ' required columns.', [ 'columns' => $required ] );
+    }
+
+    private static function test_badge_award_columns(): array {
+        global $wpdb;
+        $table   = $wpdb->prefix . 'knowly_badge_awards';
+        $columns = $wpdb->get_col( "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$table}'" );
+        $required = [ 'id', 'definition_id', 'child_id', 'share_token', 'awarded_at' ];
+        $missing  = array_diff( $required, $columns );
+        if ( $missing ) {
+            return self::fail( 'badge_awards missing columns: ' . implode( ', ', $missing ), [ 'missing' => $missing ] );
+        }
+        // Check UNIQUE KEY uq_child_definition exists
+        $indexes = $wpdb->get_results( "SHOW INDEX FROM `{$table}` WHERE Key_name = 'uq_child_definition'", ARRAY_A );
+        if ( empty( $indexes ) ) {
+            return self::warn( 'badge_awards columns present but UNIQUE KEY uq_child_definition not found — idempotency not enforced at DB level.' );
+        }
+        return self::pass( 'badge_awards has all required columns + UNIQUE KEY uq_child_definition.' );
+    }
+
+    private static function test_badge_db_version(): array {
+        $version = defined( 'KNOWLY_DB_VERSION' ) ? KNOWLY_DB_VERSION : get_option( 'knowly_db_version', '' );
+        if ( version_compare( $version, '3.0.0', '>=' ) ) {
+            return self::pass( "DB version is {$version} (≥ 3.0.0 — badge tables migration applied).", [ 'version' => $version ] );
+        }
+        return self::fail( "DB version is {$version} — expected ≥ 3.0.0 for badge tables.", [ 'version' => $version ] );
+    }
+
+    private static function test_badge_service_class(): array {
+        if ( ! class_exists( 'Knowly_Badge_Service' ) ) {
+            return self::fail( 'Knowly_Badge_Service class not found — check includes/services/class-knowly-badge-service.php.' );
+        }
+        $methods = [ 'check_quest_module_completion', 'check_trial_milestones', 'check_lesson_milestones',
+                     'get_awards', 'get_award_by_token', 'get_definitions', 'save_definition',
+                     'delete_definition', 'count_awards_for_definition', 'get_subject_svg', 'save_subject_svg' ];
+        $missing = [];
+        foreach ( $methods as $m ) {
+            if ( ! method_exists( 'Knowly_Badge_Service', $m ) ) $missing[] = $m;
+        }
+        if ( $missing ) {
+            return self::fail( 'Knowly_Badge_Service missing methods: ' . implode( ', ', $missing ), [ 'missing' => $missing ] );
+        }
+        return self::pass( 'Knowly_Badge_Service loaded with all ' . count( $methods ) . ' required public methods.' );
+    }
+
+    private static function test_badge_admin_class(): array {
+        if ( ! class_exists( 'Knowly_Admin_Badges' ) ) {
+            return self::fail( 'Knowly_Admin_Badges class not found — check includes/admin/class-knowly-admin-badges.php.' );
+        }
+        $methods = [ 'boot', 'render', 'ajax_list', 'ajax_save', 'ajax_delete', 'ajax_generate' ];
+        $missing = [];
+        foreach ( $methods as $m ) {
+            if ( ! method_exists( 'Knowly_Admin_Badges', $m ) ) $missing[] = $m;
+        }
+        if ( $missing ) {
+            return self::fail( 'Knowly_Admin_Badges missing methods: ' . implode( ', ', $missing ), [ 'missing' => $missing ] );
+        }
+        return self::pass( 'Knowly_Admin_Badges loaded with all ' . count( $methods ) . ' required methods.' );
+    }
+
+    private static function test_badge_rest_defs_get(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/badges/definitions';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route GET {$pattern} not registered — check Knowly_Badges_API::register_routes()." );
+        }
+        $methods = array_column( $routes[ $pattern ], 'methods' );
+        $has_get = false;
+        foreach ( $methods as $m ) {
+            if ( isset( $m['GET'] ) ) { $has_get = true; break; }
+        }
+        if ( ! $has_get ) return self::fail( 'Route registered but GET method not present.' );
+        return self::pass( 'WP REST GET /knowly/v1/badges/definitions is registered.' );
+    }
+
+    private static function test_badge_rest_defs_post(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/badges/definitions';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route POST {$pattern} not registered." );
+        }
+        $methods = array_column( $routes[ $pattern ], 'methods' );
+        $has_post = false;
+        foreach ( $methods as $m ) {
+            if ( isset( $m['POST'] ) ) { $has_post = true; break; }
+        }
+        if ( ! $has_post ) return self::fail( 'Route registered but POST method not present.' );
+        return self::pass( 'WP REST POST /knowly/v1/badges/definitions is registered.' );
+    }
+
+    private static function test_badge_rest_awards(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/badges/awards';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route GET {$pattern} not registered." );
+        }
+        return self::pass( 'WP REST GET /knowly/v1/badges/awards is registered.' );
+    }
+
+    private static function test_badge_rest_public(): array {
+        $routes  = rest_get_server()->get_routes( KNOWLY_REST_NAMESPACE );
+        $pattern = '/' . KNOWLY_REST_NAMESPACE . '/badges/public/(?P<share_token>[a-f0-9]{32})';
+        if ( ! isset( $routes[ $pattern ] ) ) {
+            return self::fail( "WP REST route GET {$pattern} not registered." );
+        }
+        return self::pass( 'WP REST GET /knowly/v1/badges/public/{share_token} is registered.' );
+    }
+
+    private static function test_badge_ajax_list(): array {
+        $action = 'wp_ajax_knowly_badges_list';
+        if ( ! has_action( $action ) ) {
+            return self::fail( "WP action '{$action}' not registered — check Knowly_Admin_Badges::boot()." );
+        }
+        return self::pass( "WP action '{$action}' is registered." );
+    }
+
+    private static function test_badge_ajax_save(): array {
+        $action = 'wp_ajax_knowly_badges_save';
+        if ( ! has_action( $action ) ) {
+            return self::fail( "WP action '{$action}' not registered — check Knowly_Admin_Badges::boot()." );
+        }
+        return self::pass( "WP action '{$action}' is registered." );
+    }
+
+    private static function test_badge_ajax_delete(): array {
+        $action = 'wp_ajax_knowly_badges_delete';
+        if ( ! has_action( $action ) ) {
+            return self::fail( "WP action '{$action}' not registered — check Knowly_Admin_Badges::boot()." );
+        }
+        return self::pass( "WP action '{$action}' is registered." );
+    }
+
+    private static function test_badge_ajax_quest_modules(): array {
+        $action = 'wp_ajax_knowly_badges_quest_modules';
+        if ( ! has_action( $action ) ) {
+            return self::fail( "WP action '{$action}' not registered — check Knowly_Admin_Badges::boot()." );
+        }
+        return self::pass( "WP action '{$action}' is registered." );
+    }
+
+    private static function test_badge_ajax_for_quests(): array {
+        $action = 'wp_ajax_knowly_badges_for_quests';
+        if ( ! has_action( $action ) ) {
+            return self::fail( "WP action '{$action}' not registered — check Knowly_Admin_Badges::boot()." );
+        }
+        return self::pass( "WP action '{$action}' is registered." );
+    }
+
+    private static function test_badge_quest_modules_shape(): array {
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_quests';
+
+        // Check the table exists (needed before querying it).
+        $exists = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = %s",
+            $table
+        ) );
+        if ( ! $exists ) {
+            return self::fail( "Table {$table} does not exist — cannot test quest modules shape." );
+        }
+
+        $required_keys = [ 'curriculum', 'level', 'period', 'subject', 'module_number', 'module_title' ];
+
+        // Check columns exist.
+        $cols = $wpdb->get_col( "DESCRIBE {$table}", 0 );
+        $missing = array_diff( $required_keys, $cols );
+        if ( $missing ) {
+            return self::fail( "wp_knowly_quests missing columns for badge quest module query: " . implode( ', ', $missing ) );
+        }
+
+        // Confirm the query itself runs without error.
+        $rows = $wpdb->get_results(
+            "SELECT DISTINCT curriculum, level, period, subject, module_number, module_title
+             FROM {$table}
+             WHERE variant = 'student' AND status = 'approved'
+             ORDER BY level, period, subject, module_number
+             LIMIT 5",
+            ARRAY_A
+        );
+        if ( $wpdb->last_error ) {
+            return self::fail( "ajax_quest_modules() query error: " . $wpdb->last_error );
+        }
+
+        if ( empty( $rows ) ) {
+            return self::warn( "ajax_quest_modules() query succeeded but returned 0 rows — no approved student quests in wp_knowly_quests yet. Shape cannot be fully validated.", [ 'row_count' => 0 ] );
+        }
+
+        $first   = $rows[0];
+        $has_all = ! array_diff( $required_keys, array_keys( $first ) );
+        if ( ! $has_all ) {
+            return self::fail( "ajax_quest_modules() row missing expected keys.", [ 'got' => array_keys( $first ), 'want' => $required_keys ] );
+        }
+
+        return self::pass(
+            "ajax_quest_modules() returns rows with all 6 required keys — " . count( $rows ) . " approved module(s) sampled.",
+            [ 'sample' => $first ]
+        );
+    }
+
+    // =========================================================================
+    // Group 21 — Badges: CRUD & Award Logic (run in order)
+    // =========================================================================
+
+    private static function test_badge_crud_create(): array {
+        delete_transient( self::TRANSIENT_BADGE_DEF_ID );
+        delete_transient( self::TRANSIENT_BADGE_TOKEN );
+
+        $result = Knowly_Badge_Service::save_definition( [
+            'name'         => '_SPECTEST_BADGE_',
+            'description'  => 'Spec test badge — safe to delete.',
+            'trigger_type' => 'trial_count',
+            'curriculum'   => 'tt_primary',
+            'level'        => 'std_4',
+            'subject'      => 'math',
+            'threshold'    => 1,
+        ] );
+
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'save_definition() returned WP_Error: ' . $result->get_error_message() );
+        }
+        if ( empty( $result['id'] ) ) {
+            return self::fail( 'save_definition() did not return an id.', $result );
+        }
+
+        set_transient( self::TRANSIENT_BADGE_DEF_ID, (int) $result['id'], HOUR_IN_SECONDS );
+
+        return self::pass( "Definition created — id={$result['id']}, trigger_key={$result['trigger_key']}.", [
+            'id'          => $result['id'],
+            'trigger_key' => $result['trigger_key'],
+        ] );
+    }
+
+    private static function test_badge_crud_verify(): array {
+        $def_id = (int) get_transient( self::TRANSIENT_BADGE_DEF_ID );
+        if ( ! $def_id ) {
+            return self::fail( 'No definition id in transient — run badge_crud_create first.' );
+        }
+
+        $defs = Knowly_Badge_Service::get_definitions( [ 'subject' => 'math', 'level' => 'std_4' ] );
+        $found = null;
+        foreach ( $defs as $d ) {
+            if ( (int) $d['id'] === $def_id ) { $found = $d; break; }
+        }
+
+        if ( ! $found ) {
+            return self::fail( "Definition id={$def_id} not returned by get_definitions()." );
+        }
+
+        $required = [ 'id', 'name', 'trigger_type', 'trigger_key', 'threshold', 'curriculum', 'level', 'subject', 'created_at', 'updated_at' ];
+        $missing  = array_filter( $required, fn( $k ) => ! isset( $found[ $k ] ) );
+        if ( $missing ) {
+            return self::fail( 'Definition missing fields: ' . implode( ', ', $missing ), [ 'found_keys' => array_keys( $found ) ] );
+        }
+
+        if ( $found['trigger_key'] !== 'tt_primary:std_4:math:1' ) {
+            return self::fail( "Unexpected trigger_key: '{$found['trigger_key']}' — expected 'tt_primary:std_4:math:1'." );
+        }
+
+        return self::pass( "Definition id={$def_id} in list with correct trigger_key '{$found['trigger_key']}'.", [
+            'trigger_key' => $found['trigger_key'],
+            'threshold'   => $found['threshold'],
+        ] );
+    }
+
+    private static function test_badge_crud_update(): array {
+        $def_id = (int) get_transient( self::TRANSIENT_BADGE_DEF_ID );
+        if ( ! $def_id ) {
+            return self::fail( 'No definition id in transient — run badge_crud_create first.' );
+        }
+
+        $result = Knowly_Badge_Service::save_definition( [
+            'id'           => $def_id,
+            'name'         => '_SPECTEST_BADGE_UPDATED_',
+            'trigger_type' => 'trial_count',
+            'curriculum'   => 'tt_primary',
+            'level'        => 'std_4',
+            'subject'      => 'math',
+            'threshold'    => 1,
+        ] );
+
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'save_definition() update returned WP_Error: ' . $result->get_error_message() );
+        }
+        if ( ( $result['name'] ?? '' ) !== '_SPECTEST_BADGE_UPDATED_' ) {
+            return self::fail( "Name not updated — got '{$result['name']}'." );
+        }
+        if ( (int) ( $result['id'] ?? 0 ) !== $def_id ) {
+            return self::fail( "Updated id mismatch — expected {$def_id}, got {$result['id']}." );
+        }
+
+        return self::pass( "Definition id={$def_id} name updated to '_SPECTEST_BADGE_UPDATED_' successfully." );
+    }
+
+    private static function test_badge_award_milestone(): array {
+        global $wpdb;
+
+        $def_id = (int) get_transient( self::TRANSIENT_BADGE_DEF_ID );
+        if ( ! $def_id ) {
+            return self::fail( 'No definition id in transient — run badge_crud_create first.' );
+        }
+
+        $child_id  = self::TEST_BADGE_CHILD_ID;
+        $table_ses = $wpdb->prefix . 'knowly_exam_sessions';
+
+        // Clean up any leftover session from a previous run
+        $wpdb->delete( $table_ses, [ 'external_session_id' => self::TEST_BADGE_SESSION_KEY ], [ '%s' ] );
+        // Clean up any leftover award
+        $wpdb->delete( $wpdb->prefix . 'knowly_badge_awards', [ 'child_id' => $child_id, 'definition_id' => $def_id ], [ '%d', '%d' ] );
+
+        // Insert a synthetic completed trial session for the test child
+        $inserted = $wpdb->insert( $table_ses, [
+            'external_session_id' => self::TEST_BADGE_SESSION_KEY,
+            'child_id'            => $child_id,
+            'parent_id'           => 0,
+            'subject'             => 'math',
+            'level'               => 'std_4',
+            'period'              => 'term_1',
+            'state'               => 'completed',
+            'started_at'          => current_time( 'mysql', true ),
+        ], [ '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s' ] );
+
+        if ( ! $inserted ) {
+            return self::fail( 'Could not insert test exam_session: ' . $wpdb->last_error );
+        }
+
+        $awards = Knowly_Badge_Service::check_trial_milestones( $child_id, 'math', 'std_4', 'tt_primary' );
+
+        // Clean up session immediately regardless of outcome
+        $wpdb->delete( $table_ses, [ 'external_session_id' => self::TEST_BADGE_SESSION_KEY ], [ '%s' ] );
+
+        $award = null;
+        foreach ( $awards as $a ) {
+            if ( (int) ( $a['definition_id'] ?? 0 ) === $def_id ) { $award = $a; break; }
+        }
+
+        if ( ! $award ) {
+            return self::fail( "check_trial_milestones() did not award badge for definition_id={$def_id}.", [
+                'awards_count' => count( $awards ),
+                'def_id'       => $def_id,
+            ] );
+        }
+        if ( empty( $award['share_token'] ) || strlen( $award['share_token'] ) !== 32 ) {
+            return self::fail( "Award created but share_token is invalid: '{$award['share_token']}'." );
+        }
+
+        set_transient( self::TRANSIENT_BADGE_TOKEN, $award['share_token'], HOUR_IN_SECONDS );
+
+        return self::pass( "Badge awarded — share_token={$award['share_token']}, awarded_at={$award['awarded_at']}.", [
+            'share_token' => $award['share_token'],
+            'award_id'    => $award['id'],
+        ] );
+    }
+
+    private static function test_badge_award_idempotent(): array {
+        global $wpdb;
+
+        $def_id    = (int) get_transient( self::TRANSIENT_BADGE_DEF_ID );
+        $child_id  = self::TEST_BADGE_CHILD_ID;
+        $table_ses = $wpdb->prefix . 'knowly_exam_sessions';
+
+        if ( ! $def_id ) {
+            return self::fail( 'No definition id in transient — run earlier badge tests first.' );
+        }
+
+        // Insert another completed session so the threshold is still met
+        $wpdb->insert( $table_ses, [
+            'external_session_id' => self::TEST_BADGE_SESSION_KEY . '_2',
+            'child_id'            => $child_id,
+            'parent_id'           => 0,
+            'subject'             => 'math',
+            'level'               => 'std_4',
+            'period'              => 'term_1',
+            'state'               => 'completed',
+            'started_at'          => current_time( 'mysql', true ),
+        ], [ '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%s' ] );
+
+        $awards = Knowly_Badge_Service::check_trial_milestones( $child_id, 'math', 'std_4', 'tt_primary' );
+
+        // Clean up
+        $wpdb->delete( $table_ses, [ 'external_session_id' => self::TEST_BADGE_SESSION_KEY . '_2' ], [ '%s' ] );
+
+        // The badge was already awarded — check_trial_milestones should return [] (already awarded exclusion via LEFT JOIN)
+        $duplicate = null;
+        foreach ( $awards as $a ) {
+            if ( (int) ( $a['definition_id'] ?? 0 ) === $def_id ) { $duplicate = $a; break; }
+        }
+
+        if ( $duplicate ) {
+            return self::fail( "Badge was awarded AGAIN for def_id={$def_id} — UNIQUE KEY or LEFT JOIN exclusion not working.", [
+                'duplicate_award_id' => $duplicate['id'],
+            ] );
+        }
+
+        // Verify only one award row exists for this child + definition
+        $count = (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_badge_awards WHERE child_id = %d AND definition_id = %d",
+            $child_id, $def_id
+        ) );
+
+        if ( $count !== 1 ) {
+            return self::fail( "Expected 1 award row in DB, found {$count}." );
+        }
+
+        return self::pass( "Idempotency confirmed — second milestone check did not duplicate the award (1 row in DB)." );
+    }
+
+    private static function test_badge_award_public_token(): array {
+        $token = get_transient( self::TRANSIENT_BADGE_TOKEN );
+        if ( ! $token ) {
+            return self::fail( 'No share_token in transient — run badge_award_milestone first.' );
+        }
+
+        $award = Knowly_Badge_Service::get_award_by_token( $token );
+        if ( ! $award ) {
+            return self::fail( "get_award_by_token('{$token}') returned null — award not found in DB." );
+        }
+
+        // Privacy check: child_id must NOT be exposed
+        if ( isset( $award['child_id'] ) ) {
+            return self::fail( 'PRIVACY VIOLATION: child_id is present in public token response — must be stripped.', [ 'keys' => array_keys( $award ) ] );
+        }
+
+        // Required public fields
+        $required = [ 'id', 'definition_id', 'name', 'share_token', 'awarded_at', 'svg_markup' ];
+        $missing  = array_filter( $required, fn( $k ) => ! array_key_exists( $k, $award ) );
+        if ( $missing ) {
+            return self::fail( 'Public award missing fields: ' . implode( ', ', $missing ), [ 'present_keys' => array_keys( $award ) ] );
+        }
+
+        // nickname key must exist (may be null if test user has no nickname — that's fine)
+        if ( ! array_key_exists( 'nickname', $award ) ) {
+            return self::fail( 'Public award missing nickname key — get_award_by_token() must always include it.' );
+        }
+
+        return self::pass( "get_award_by_token() returns correct shape — child_id stripped, nickname key present.", [
+            'share_token' => $token,
+            'nickname'    => $award['nickname'],
+            'has_svg'     => $award['svg_markup'] !== null,
+        ] );
+    }
+
+    private static function test_badge_award_get_awards(): array {
+        $def_id   = (int) get_transient( self::TRANSIENT_BADGE_DEF_ID );
+        $child_id = self::TEST_BADGE_CHILD_ID;
+
+        if ( ! $def_id ) {
+            return self::fail( 'No definition id in transient — run badge_crud_create first.' );
+        }
+
+        $awards = Knowly_Badge_Service::get_awards( $child_id );
+
+        $found = null;
+        foreach ( $awards as $a ) {
+            if ( (int) ( $a['definition_id'] ?? 0 ) === $def_id ) { $found = $a; break; }
+        }
+
+        if ( ! $found ) {
+            return self::fail( "get_awards(child_id={$child_id}) did not return award for def_id={$def_id}." );
+        }
+
+        // Verify required keys in format_award output
+        $required = [ 'id', 'definition_id', 'name', 'description', 'trigger_type', 'subject', 'level',
+                      'period', 'curriculum', 'share_token', 'awarded_at', 'svg_markup' ];
+        $missing  = array_filter( $required, fn( $k ) => ! array_key_exists( $k, $found ) );
+        if ( $missing ) {
+            return self::fail( 'Award from get_awards() missing keys: ' . implode( ', ', $missing ), [ 'present' => array_keys( $found ) ] );
+        }
+
+        // child_id should be absent in format_award (it's only in get_award_by_token)
+        // Actually format_award does NOT include child_id — double-check
+        if ( isset( $found['child_id'] ) ) {
+            return self::warn( 'get_awards() includes child_id in output — verify this is intentional (only safe for authenticated child endpoint).' );
+        }
+
+        return self::pass( "get_awards(child_id={$child_id}) returns award for def_id={$def_id} with all required keys.", [
+            'award_count' => count( $awards ),
+            'keys'        => array_keys( $found ),
+        ] );
+    }
+
+    private static function test_badge_module_miss(): array {
+        $result = Knowly_Badge_Service::check_quest_module_completion( self::TEST_BADGE_CHILD_ID, '__bogus_spectest_quest__' );
+        if ( $result !== null ) {
+            return self::fail( "check_quest_module_completion() with bogus quest_id should return null, got: " . wp_json_encode( $result ) );
+        }
+        return self::pass( 'check_quest_module_completion() with non-existent quest_id returns null (no exception, no award).' );
+    }
+
+    private static function test_badge_crud_cleanup(): array {
+        global $wpdb;
+
+        $def_id   = (int) get_transient( self::TRANSIENT_BADGE_DEF_ID );
+        $child_id = self::TEST_BADGE_CHILD_ID;
+        $errors   = [];
+
+        // Delete the award row directly (delete_definition preserves awards)
+        if ( $def_id ) {
+            $deleted_award = $wpdb->delete(
+                $wpdb->prefix . 'knowly_badge_awards',
+                [ 'child_id' => $child_id, 'definition_id' => $def_id ],
+                [ '%d', '%d' ]
+            );
+        }
+
+        // Delete the definition
+        if ( $def_id ) {
+            $deleted_def = Knowly_Badge_Service::delete_definition( $def_id );
+            if ( ! $deleted_def ) $errors[] = "delete_definition(id={$def_id}) returned false.";
+        } else {
+            $errors[] = 'No definition id transient — nothing to clean up.';
+        }
+
+        // Also clean up any stray exam sessions that might have been left
+        $wpdb->delete( $wpdb->prefix . 'knowly_exam_sessions', [ 'external_session_id' => self::TEST_BADGE_SESSION_KEY ], [ '%s' ] );
+        $wpdb->delete( $wpdb->prefix . 'knowly_exam_sessions', [ 'external_session_id' => self::TEST_BADGE_SESSION_KEY . '_2' ], [ '%s' ] );
+
+        // Verify gone
+        if ( $def_id ) {
+            $still_there = $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}knowly_badge_definitions WHERE id = %d",
+                $def_id
+            ) );
+            if ( $still_there ) $errors[] = "Definition id={$def_id} still present in DB after deletion.";
+
+            $award_count = (int) $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_badge_awards WHERE child_id = %d AND definition_id = %d",
+                $child_id, $def_id
+            ) );
+            if ( $award_count > 0 ) $errors[] = "Award row for child_id={$child_id}, def_id={$def_id} still present after cleanup.";
+        }
+
+        delete_transient( self::TRANSIENT_BADGE_DEF_ID );
+        delete_transient( self::TRANSIENT_BADGE_TOKEN );
+
+        if ( $errors ) {
+            return self::fail( implode( ' | ', $errors ) );
+        }
+        return self::pass( "Test definition id={$def_id} and award row deleted. Transients cleared." );
+    }
+
+    // =========================================================================
+    // Group 22 — Badges: Railway AI Generation (slow)
+    // =========================================================================
+
+    private static function test_badge_railway_generate(): array {
+        $data = self::railway_post( '/api/v1/badge/generate', [
+            'trigger_type'  => 'trial_count',
+            'curriculum'    => 'tt_primary',
+            'level'         => 'std_4',
+            'period'        => null,
+            'subject'       => 'math',
+            'module_number' => null,
+            'threshold'     => 10,
+        ] );
+
+        if ( isset( $data['error'] ) ) {
+            return self::fail( 'Railway POST /badge/generate failed: ' . $data['error'], $data );
+        }
+
+        $name        = $data['name']        ?? null;
+        $description = $data['description'] ?? null;
+
+        if ( empty( $name ) ) {
+            return self::fail( 'AI generation returned empty name.', $data );
+        }
+        if ( empty( $description ) ) {
+            return self::fail( 'AI generation returned empty description.', $data );
+        }
+        if ( strlen( $name ) > 80 ) {
+            return self::warn( "Name is unusually long ({$name}) — expected 3–6 words.", $data );
+        }
+
+        return self::pass( "Railway AI generated name='{$name}' / description='{$description}'.", [
+            'name'        => $name,
+            'description' => $description,
+        ] );
+    }
 
     private static function test_groups(): array {
         return [
@@ -3701,6 +5166,119 @@ class Knowly_Admin_Spec_Tests {
                     'p4_wp_ajax_reset_registered'  => [ 'label' => 'WP AJAX knowly_admin_reset_pack_history action is registered',                         'method' => 'WP',     'route' => 'has_action()' ],
                 ],
             ],
+            'lessons' => [
+                'label' => '📖 Group 17 — Lessons',
+                'slow'  => false,
+                'tests' => [
+                    'ln_gen_auth_guard'          => [ 'label' => 'POST /lesson/generate-questions → 401 without server key',              'method' => 'POST',   'route' => '/api/v1/lesson/generate-questions' ],
+                    'ln_questions_auth_guard'    => [ 'label' => 'GET /lesson/:id/questions → 401 without any auth header',              'method' => 'GET',    'route' => '/api/v1/lesson/__bogus__/questions' ],
+                    'ln_gen_missing_fields'      => [ 'label' => 'POST /lesson/generate-questions without required fields → 400',        'method' => 'POST',   'route' => '/api/v1/lesson/generate-questions' ],
+                    'ln_wp_ajax_gen_registered'  => [ 'label' => 'WP AJAX knowly_lessons_gen_questions action is registered',           'method' => 'WP',     'route' => 'has_action()' ],
+                    'ln_wp_ajax_board_registered'=> [ 'label' => 'WP AJAX knowly_lessons_load_board action is registered',              'method' => 'WP',     'route' => 'has_action()' ],
+                    'ln_wp_rest_catalogue'       => [ 'label' => 'WP REST GET /knowly/v1/lessons route registered',                     'method' => 'WP',     'route' => 'get_routes()' ],
+                    'ln_wp_rest_show'            => [ 'label' => 'WP REST GET /knowly/v1/lessons/{quest_id} route registered',          'method' => 'WP',     'route' => 'get_routes()' ],
+                    'ln_wp_rest_questions'       => [ 'label' => 'WP REST GET /knowly/v1/lessons/{quest_id}/questions registered',      'method' => 'WP',     'route' => 'get_routes()' ],
+                    'ln_wp_rest_start'           => [ 'label' => 'WP REST POST /knowly/v1/lessons/start route registered',              'method' => 'WP',     'route' => 'get_routes()' ],
+                    'ln_wp_rest_complete'        => [ 'label' => 'WP REST POST /knowly/v1/lessons/complete route registered',           'method' => 'WP',     'route' => 'get_routes()' ],
+                    'ln_wp_rest_submit'          => [ 'label' => 'WP REST POST /knowly/v1/lessons/submit-questions registered',         'method' => 'WP',     'route' => 'get_routes()' ],
+                    'ln_wp_db_sessions'          => [ 'label' => 'WP table wp_knowly_lesson_sessions exists with all columns',          'method' => 'WP',     'route' => 'global $wpdb' ],
+                    'ln_wp_db_results'           => [ 'label' => 'WP table wp_knowly_lesson_question_results exists with all columns',  'method' => 'WP',     'route' => 'global $wpdb' ],
+                    'ln_db_version'              => [ 'label' => 'DB version is 2.2.0 (lesson tables migration ran)',                   'method' => 'WP',     'route' => 'get_option()' ],
+                ],
+            ],
+            'quest_questions' => [
+                'label' => '🎯 Group 16 — Quest Questions',
+                'slow'  => false,
+                'tests' => [
+                    'qq_gen_auth_guard'          => [ 'label' => 'POST /quest/generate-questions → 401 without server key',              'method' => 'POST',   'route' => '/api/v1/quest/generate-questions' ],
+                    'qq_by_scope_auth_guard'     => [ 'label' => 'DELETE /curriculum-topics/by-scope → 401 without server key',          'method' => 'DELETE', 'route' => '/api/v1/curriculum-topics/by-scope' ],
+                    'qq_gen_missing_fields'      => [ 'label' => 'POST /quest/generate-questions without required fields → 400',         'method' => 'POST',   'route' => '/api/v1/quest/generate-questions' ],
+                    'qq_by_scope_missing_fields' => [ 'label' => 'DELETE /curriculum-topics/by-scope without level/subject → 400',      'method' => 'DELETE', 'route' => '/api/v1/curriculum-topics/by-scope' ],
+                    'qq_get_auth_guard'          => [ 'label' => 'GET /quest/:id/questions → 401 without any auth header',              'method' => 'GET',    'route' => '/api/v1/quest/__bogus__/questions' ],
+                    'qq_wp_ajax_gen_registered'  => [ 'label' => 'WP AJAX knowly_quests_gen_questions action is registered',            'method' => 'WP',     'route' => 'has_action()' ],
+                    'qq_wp_ajax_remove_subject'  => [ 'label' => 'WP AJAX knowly_curriculum_remove_subject action is registered',       'method' => 'WP',     'route' => 'has_action()' ],
+                    'qq_wp_rest_get_questions'   => [ 'label' => 'WP REST GET /knowly/v1/quests/{quest_id}/questions route registered', 'method' => 'WP',     'route' => 'get_routes()' ],
+                    'qq_wp_rest_submit_answers'  => [ 'label' => 'WP REST POST /knowly/v1/quests/submit-questions route registered',    'method' => 'WP',     'route' => 'get_routes()' ],
+                    'qq_wp_db_table_exists'      => [ 'label' => 'WP table wp_knowly_quest_question_results exists',                    'method' => 'WP',     'route' => 'global $wpdb' ],
+                    'qq_db_version'              => [ 'label' => 'DB version is 2.1.0 (quest_question_results table migration ran)',     'method' => 'WP',     'route' => 'get_option()' ],
+                ],
+            ],
+            'polly_tts' => [
+                'label' => '🔊 Group 18 — Polly TTS Audio Generation',
+                'slow'  => false,
+                'tests' => [
+                    'polly_classes_exist'        => [ 'label' => 'Knowly_Polly_Service and Knowly_AWS_Signer classes loaded',                               'method' => 'WP',  'route' => 'class_exists()' ],
+                    'polly_ajax_registered'      => [ 'label' => 'WP AJAX knowly_quests_gen_audio action is registered',                                    'method' => 'WP',  'route' => 'has_action()' ],
+                    'polly_db_columns_exist'     => [ 'label' => 'wp_knowly_quests has audio_url + audio_generated_at columns (v2.5.1 migration)',          'method' => 'WP',  'route' => 'global $wpdb' ],
+                    'polly_db_version'           => [ 'label' => 'knowly_db_version option is 2.5.1 (Polly migration ran)',                                  'method' => 'WP',  'route' => 'get_option()' ],
+                    'polly_config_guard'         => [ 'label' => 'Polly service returns knowly_aws_not_configured when credentials are missing',             'method' => 'WP',  'route' => 'Knowly_Polly_Service::generate()' ],
+                    'polly_signer_format'        => [ 'label' => 'Knowly_AWS_Signer produces valid SigV4 Authorization header (Credential, SignedHeaders, Signature)', 'method' => 'WP', 'route' => 'Knowly_AWS_Signer::get_signed_headers()' ],
+                    'polly_text_extraction'      => [ 'label' => 'Text extraction from quest content JSON returns ≥ 50 chars',                              'method' => 'WP',  'route' => 'wp_knowly_quests content column' ],
+                    'polly_quest_api_audio_url'  => [ 'label' => 'Knowly_Quest_Service::get_quest() response includes audio_url key',                        'method' => 'WP',  'route' => 'Knowly_Quest_Service::get_quest()' ],
+                    'polly_pool_has_audio_field' => [ 'label' => 'Pool DB query SELECT includes audio_url + audio_generated_at; slot has has_audio field',   'method' => 'WP',  'route' => 'global $wpdb' ],
+                ],
+            ],
+            'sound_design' => [
+                'label' => '🎵 Group 19 — Sound Design (server)',
+                'slow'  => false,
+                'tests' => [
+                    'sd_classes_exist'   => [ 'label' => 'Knowly_Sound_Design_API + Knowly_Admin_Sound_Design classes loaded',        'method' => 'WP',  'route' => 'class_exists()' ],
+                    'sd_rest_registered' => [ 'label' => 'GET /knowly/v1/sound-design is a registered REST route',                    'method' => 'WP',  'route' => '/knowly/v1/sound-design' ],
+                    'sd_option_shape'    => [ 'label' => 'current_settings() has all 11 keys + envelope sub-keys; reports save source', 'method' => 'WP', 'route' => 'get_option(knowly_sound_design)' ],
+                    'sd_rest_get_ok'     => [ 'label' => 'Local HTTP GET /sound-design → 200, response has enabled + harmonicity',    'method' => 'GET', 'route' => '/knowly/v1/sound-design' ],
+                ],
+            ],
+            'polly_tts_live' => [
+                'label' => '🔊 Group 18 (Slow) — Polly Live Generation',
+                'slow'  => true,
+                'tests' => [
+                    'polly_live_generate'        => [ 'label' => 'End-to-end: Polly generates MP3, uploads to S3, audio_url saved to DB (SLOW — requires AWS credentials)', 'method' => 'WP', 'route' => 'Knowly_Polly_Service::generate()' ],
+                ],
+            ],
+            'badges_schema' => [
+                'label' => '🏅 Group 20 — Badges: Schema & Wiring',
+                'slow'  => false,
+                'tests' => [
+                    'badge_tables_exist'  => [ 'label' => 'wp_knowly_badge_definitions + wp_knowly_badge_awards tables exist',                         'method' => 'WP',  'route' => 'INFORMATION_SCHEMA' ],
+                    'badge_def_columns'   => [ 'label' => 'badge_definitions has all 14 required columns',                                             'method' => 'WP',  'route' => 'INFORMATION_SCHEMA' ],
+                    'badge_award_columns' => [ 'label' => 'badge_awards has all 5 required columns + UNIQUE KEY uq_child_definition',                  'method' => 'WP',  'route' => 'SHOW INDEX' ],
+                    'badge_db_version'    => [ 'label' => 'KNOWLY_DB_VERSION ≥ 3.0.0 (badge migration applied)',                                       'method' => 'WP',  'route' => 'KNOWLY_DB_VERSION' ],
+                    'badge_service_class' => [ 'label' => 'Knowly_Badge_Service loaded with all 11 public methods',                                    'method' => 'WP',  'route' => 'class_exists()' ],
+                    'badge_admin_class'   => [ 'label' => 'Knowly_Admin_Badges loaded with boot + render + 4 ajax handlers',                           'method' => 'WP',  'route' => 'class_exists()' ],
+                    'badge_rest_defs_get' => [ 'label' => 'WP REST GET /knowly/v1/badges/definitions registered (admin)',                              'method' => 'GET', 'route' => '/knowly/v1/badges/definitions' ],
+                    'badge_rest_defs_post'=> [ 'label' => 'WP REST POST /knowly/v1/badges/definitions registered (admin)',                             'method' => 'POST','route' => '/knowly/v1/badges/definitions' ],
+                    'badge_rest_awards'   => [ 'label' => 'WP REST GET /knowly/v1/badges/awards registered (child auth)',                              'method' => 'GET', 'route' => '/knowly/v1/badges/awards' ],
+                    'badge_rest_public'   => [ 'label' => 'WP REST GET /knowly/v1/badges/public/{token} registered (public)',                          'method' => 'GET', 'route' => '/knowly/v1/badges/public/{32-hex}' ],
+                    'badge_ajax_list'            => [ 'label' => 'WP AJAX action knowly_badges_list registered',                                             'method' => 'WP',  'route' => 'has_action()' ],
+                    'badge_ajax_save'            => [ 'label' => 'WP AJAX action knowly_badges_save registered',                                             'method' => 'WP',  'route' => 'has_action()' ],
+                    'badge_ajax_delete'          => [ 'label' => 'WP AJAX action knowly_badges_delete registered',                                           'method' => 'WP',  'route' => 'has_action()' ],
+                    'badge_ajax_quest_modules'   => [ 'label' => 'WP AJAX action knowly_badges_quest_modules registered (quest module selector)',             'method' => 'WP',  'route' => 'has_action()' ],
+                    'badge_ajax_for_quests'      => [ 'label' => 'WP AJAX action knowly_badges_for_quests registered (quest panel indicator)',               'method' => 'WP',  'route' => 'has_action()' ],
+                    'badge_quest_modules_shape'  => [ 'label' => 'ajax_quest_modules() returns array with curriculum/level/period/subject/module_number/module_title', 'method' => 'WP', 'route' => 'Knowly_Badge_Service / wp_knowly_quests' ],
+                ],
+            ],
+            'badges_crud' => [
+                'label' => '🏅 Group 21 — Badges: CRUD & Award Logic (run in order)',
+                'slow'  => false,
+                'tests' => [
+                    'badge_crud_create'        => [ 'label' => 'save_definition() creates trial_count def → id stored in transient',                  'method' => 'WP',  'route' => 'Knowly_Badge_Service::save_definition()' ],
+                    'badge_crud_verify'        => [ 'label' => 'get_definitions() returns created def with correct trigger_key + all 10 fields',      'method' => 'WP',  'route' => 'Knowly_Badge_Service::get_definitions()' ],
+                    'badge_crud_update'        => [ 'label' => 'save_definition() with id updates name → response matches',                           'method' => 'WP',  'route' => 'Knowly_Badge_Service::save_definition()' ],
+                    'badge_award_milestone'    => [ 'label' => 'check_trial_milestones() awards badge after inserting synthetic exam_session',         'method' => 'WP',  'route' => 'Knowly_Badge_Service::check_trial_milestones()' ],
+                    'badge_award_idempotent'   => [ 'label' => 'Second check_trial_milestones() call returns [] — no duplicate award (UNIQUE KEY)',   'method' => 'WP',  'route' => 'Knowly_Badge_Service::check_trial_milestones()' ],
+                    'badge_award_public_token' => [ 'label' => 'get_award_by_token() returns correct shape — child_id stripped, nickname + svg_markup present', 'method' => 'WP', 'route' => 'Knowly_Badge_Service::get_award_by_token()' ],
+                    'badge_award_get_awards'   => [ 'label' => 'get_awards(child_id) returns award with all 12 format_award keys',                    'method' => 'WP',  'route' => 'Knowly_Badge_Service::get_awards()' ],
+                    'badge_module_miss'        => [ 'label' => 'check_quest_module_completion() with bogus quest_id returns null (no error)',          'method' => 'WP',  'route' => 'Knowly_Badge_Service::check_quest_module_completion()' ],
+                    'badge_crud_cleanup'       => [ 'label' => 'Delete test definition + award row → both gone from DB, transients cleared',          'method' => 'WP',  'route' => 'Knowly_Badge_Service::delete_definition()' ],
+                ],
+            ],
+            'badges_railway' => [
+                'label' => '🤖 Group 22 — Badges: Railway AI Generation (SLOW — calls Claude)',
+                'slow'  => true,
+                'tests' => [
+                    'badge_railway_generate' => [ 'label' => 'POST /badge/generate (trial_count, math, std_4, threshold=10) → name + description from Claude', 'method' => 'POST', 'route' => '/api/v1/badge/generate' ],
+                ],
+            ],
             'data_management' => [
                 'label' => '🗑️ Group 13 — Data Management: Purge Controls',
                 'slow'  => false,
@@ -3741,6 +5319,7 @@ class Knowly_Admin_Spec_Tests {
                 <button id="spectest-run-fast" class="button button-primary">▶ Run All Fast Tests</button>
                 <button id="spectest-run-slow" class="button" style="background:#d63638;border-color:#d63638;color:#fff;">⚡ Run Slow Tests (Groups 4, 6, 8)</button>
                 <button id="spectest-clear" class="button">Clear Results</button>
+                <button id="spectest-clear-cache" class="button" style="margin-left:4px;">🗑 Clear Test Caches</button>
                 <span id="spectest-summary" class="knowly-test-summary"></span>
             </div>
 
@@ -3792,13 +5371,21 @@ class Knowly_Admin_Spec_Tests {
                 $groups['curriculum_setup']['tests'],
                 $groups['data_management']['tests'],
                 $groups['trial_packs']['tests'],
-                $groups['p4_delivery']['tests']
+                $groups['p4_delivery']['tests'],
+                $groups['quest_questions']['tests'],
+                $groups['lessons']['tests'],
+                $groups['polly_tts']['tests'],
+                $groups['sound_design']['tests'],
+                $groups['badges_schema']['tests'],
+                $groups['badges_crud']['tests']
             ) ) ) ?>;
 
             var SLOW_TESTS = <?= wp_json_encode( array_keys( array_merge(
                 $groups['generation']['tests'],
                 $groups['qb_generation']['tests'],
-                $groups['qbv2_generation']['tests']
+                $groups['qbv2_generation']['tests'],
+                $groups['polly_tts_live']['tests'],
+                $groups['badges_railway']['tests']
             ) ) ) ?>;
 
             var pass_counts = { pass: 0, fail: 0, warn: 0, total: 0 };
@@ -3892,6 +5479,18 @@ class Knowly_Admin_Spec_Tests {
                 reset_counts();
             });
 
+            $('#spectest-clear-cache').on('click', function() {
+                var $btn = $(this).prop('disabled', true).text('Clearing…');
+                $.post(AJAX_URL, { action: 'knowly_spectest_clear_cache', nonce: AJAX_NONCE }, function(res) {
+                    $btn.prop('disabled', false).text('🗑 Clear Test Caches');
+                    if (res.success) {
+                        alert('✓ ' + res.data.message + ' (' + res.data.cleared + ' caches cleared)');
+                    } else {
+                        alert('Error: ' + (res.data && res.data.message ? res.data.message : 'Failed'));
+                    }
+                });
+            });
+
             $(document).on('click', '.spectest-run-one', function() {
                 var test_id = $(this).data('test');
                 run_test(test_id);
@@ -3906,6 +5505,152 @@ class Knowly_Admin_Spec_Tests {
                 run_sequence(test_ids, 0);
             });
 
+        })(jQuery);
+        </script>
+
+        <!-- ── Browser Audio Diagnostics ──────────────────────────────────── -->
+        <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js"></script>
+        <div class="knowly-test-group" id="specgroup-browser-audio" style="margin-top:24px;">
+            <div class="knowly-test-group-header">
+                <h2>🔉 Browser Audio Diagnostics <span style="font-size:12px;font-weight:normal;color:#777;">(runs in this browser tab — not via AJAX)</span></h2>
+                <button class="button" id="sd-browser-run">Run Browser Tests</button>
+            </div>
+            <div class="knowly-test-list" id="sd-browser-list">
+                <?php
+                $browser_tests = [
+                    'sd_tone_cdn'       => 'Tone.js CDN loaded — typeof Tone !== "undefined"',
+                    'sd_audiocontext'   => 'Web Audio API available — AudioContext constructible',
+                    'sd_tone_start'     => 'Tone.start() resolves — AudioContext state becomes "running"',
+                    'sd_reverb_ready'   => 'new Tone.Reverb() + await reverb.ready — IR generates without error',
+                    'sd_chord_fires'    => 'PolySynth.triggerAttackRelease() called without throwing — chord scheduled',
+                ];
+                foreach ( $browser_tests as $id => $label ) : ?>
+                <div class="knowly-test-item" id="spectest-<?= esc_attr( $id ) ?>">
+                    <div class="knowly-test-header">
+                        <span class="knowly-test-status" id="specstatus-<?= esc_attr( $id ) ?>">○</span>
+                        <span class="knowly-test-name"><?= esc_html( $label ) ?></span>
+                        <code class="knowly-test-route">BROWSER</code>
+                    </div>
+                    <div class="knowly-test-result" id="specresult-<?= esc_attr( $id ) ?>" style="display:none;"></div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+
+        <script>
+        (function ($) {
+            function sd_set(id, status, message, detail) {
+                var icons  = { pending:'…', pass:'✓', fail:'✗', warn:'⚠' };
+                var colors = { pending:'#666', pass:'#00a32a', fail:'#d63638', warn:'#dba617' };
+                $('#specstatus-' + id).text(icons[status] || '○').css('color', colors[status] || '#666');
+                if (message) {
+                    var cls  = colors[status] || '#666';
+                    var info = detail ? '<pre style="margin:4px 0;white-space:pre-wrap;font-size:11px;color:#555">' + detail + '</pre>' : '';
+                    $('#specresult-' + id)
+                        .html('<div style="padding:6px 10px;border-left:3px solid ' + cls + ';background:#f9f9f9;margin:4px 0;"><strong style="color:' + cls + '">' + message + '</strong>' + info + '</div>')
+                        .show();
+                }
+            }
+
+            $('#sd-browser-run').on('click', async function () {
+                var $btn = $(this).prop('disabled', true).text('Running…');
+                var allPass = true;
+
+                // ── Test 1: Tone.js CDN ──────────────────────────────────────
+                sd_set('sd_tone_cdn', 'pending');
+                if (typeof Tone === 'undefined') {
+                    sd_set('sd_tone_cdn', 'fail',
+                        'Tone is not defined — CDN script blocked.',
+                        'Likely cause: Content-Security-Policy on this admin page blocks https://cdn.jsdelivr.net\n' +
+                        'Fix: add cdn.jsdelivr.net to the script-src CSP directive, or bundle Tone.js locally.');
+                    allPass = false;
+                    // Can't run further audio tests without Tone
+                    ['sd_audiocontext','sd_tone_start','sd_reverb_ready','sd_chord_fires'].forEach(function(id) {
+                        sd_set(id, 'warn', 'Skipped — Tone.js not available.');
+                    });
+                    $btn.prop('disabled', false).text('Run Browser Tests');
+                    return;
+                }
+                sd_set('sd_tone_cdn', 'pass', 'Tone loaded. Version: ' + (Tone.version || 'unknown'));
+
+                // ── Test 2: AudioContext available ───────────────────────────
+                sd_set('sd_audiocontext', 'pending');
+                var AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) {
+                    sd_set('sd_audiocontext', 'fail',
+                        'AudioContext not available in this browser.',
+                        'Web Audio API is required. Try Chrome or Firefox.');
+                    allPass = false;
+                } else {
+                    sd_set('sd_audiocontext', 'pass', 'AudioContext constructor present (' + (window.AudioContext ? 'AudioContext' : 'webkitAudioContext') + ').');
+                }
+
+                // ── Test 3: Tone.start() ─────────────────────────────────────
+                sd_set('sd_tone_start', 'pending');
+                try {
+                    await Tone.start();
+                    var state = Tone.context.state;
+                    if (state === 'running') {
+                        sd_set('sd_tone_start', 'pass', 'AudioContext started. State: running.');
+                    } else {
+                        sd_set('sd_tone_start', 'warn',
+                            'Tone.start() resolved but context state is "' + state + '" (expected "running").',
+                            'Some browsers suspend the context until a direct user gesture.\nTone.start() must be called inside a click handler.');
+                        allPass = false;
+                    }
+                } catch (e) {
+                    sd_set('sd_tone_start', 'fail', 'Tone.start() threw: ' + e.message);
+                    allPass = false;
+                }
+
+                // ── Test 4: Reverb IR generation ─────────────────────────────
+                sd_set('sd_reverb_ready', 'pending');
+                var reverb, vol;
+                try {
+                    var t0 = performance.now();
+                    reverb = new Tone.Reverb({ decay: 1.5, wet: 0.4 });
+                    await reverb.ready;
+                    var elapsed = Math.round(performance.now() - t0);
+                    sd_set('sd_reverb_ready', 'pass', 'reverb.ready resolved in ' + elapsed + 'ms. IR generated successfully.');
+                    vol = new Tone.Volume(-10);
+                    vol.connect(reverb);
+                    reverb.toDestination();
+                } catch (e) {
+                    sd_set('sd_reverb_ready', 'fail', 'reverb.ready rejected: ' + e.message,
+                        'This is the most likely cause of silence.\nawait reverb.ready must complete before playback.');
+                    allPass = false;
+                    try { reverb && reverb.dispose(); } catch(_) {}
+                }
+
+                // ── Test 5: Chord fires ──────────────────────────────────────
+                sd_set('sd_chord_fires', 'pending');
+                try {
+                    var synth = new Tone.PolySynth(Tone.FMSynth);
+                    synth.set({
+                        harmonicity: 5.1, modulationIndex: 20,
+                        oscillator: { type: 'sine' }, modulation: { type: 'sine' },
+                        envelope: { attack:0.001, decay:0.5, sustain:0, release:1.0 },
+                        modulationEnvelope: { attack:0.001, decay:0.15, sustain:0, release:0.3 },
+                    });
+                    if (vol) synth.connect(vol);
+                    synth.triggerAttackRelease(['C4','E4','G4'], '4n');
+                    sd_set('sd_chord_fires', 'pass',
+                        'triggerAttackRelease called without error. C major chord scheduled. ▶ Did you hear it?',
+                        'If this is PASS but you heard nothing:\n' +
+                        '• Check system volume and speaker/headphone output\n' +
+                        '• Check browser tab is not muted (speaker icon in tab bar)\n' +
+                        '• Try a different browser (Chrome recommended)');
+                    setTimeout(function () {
+                        try { synth.dispose(); if(vol) vol.dispose(); if(reverb) reverb.dispose(); } catch(_) {}
+                    }, 4000);
+                } catch (e) {
+                    sd_set('sd_chord_fires', 'fail', 'triggerAttackRelease threw: ' + e.message);
+                    allPass = false;
+                    try { if(vol) vol.dispose(); if(reverb) reverb.dispose(); } catch(_) {}
+                }
+
+                $btn.prop('disabled', false).text('Run Browser Tests');
+            });
         })(jQuery);
         </script>
         <?php

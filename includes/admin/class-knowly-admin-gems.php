@@ -129,7 +129,10 @@ class Knowly_Admin_Gems {
         }
         $monthly_free      = get_option( Knowly_Gem_Service::free_monthly_key( $default_curriculum ), '' );
         $quest_cost_first  = get_option( Knowly_Gem_Service::quest_cost_key( $default_curriculum, 'first' ), '' );
-        $quest_cost_retake = get_option( Knowly_Gem_Service::quest_cost_key( $default_curriculum, 'retake' ), '' );
+        $lesson_cost       = get_option( Knowly_Gem_Service::lesson_cost_key( $default_curriculum ), '' );
+        $signup_parent     = get_option( Knowly_Gem_Service::signup_parent_key(), '' );
+        $signup_teacher    = get_option( Knowly_Gem_Service::signup_teacher_key(), '' );
+        $teacher_monthly   = get_option( Knowly_Gem_Service::teacher_monthly_key(), '' );
         ?>
         <form method="post" action="">
             <?php wp_nonce_field( 'knowly_gems_save_settings', 'knowly_gems_settings_nonce' ); ?>
@@ -171,21 +174,21 @@ class Knowly_Admin_Gems {
                         <th>Quest Cost — First Attempt</th>
                         <td>
                             <input type="number" name="gem_cost_quest_first" value="<?= esc_attr( $quest_cost_first ) ?>" class="small-text" min="0" placeholder="3" />
-                            <span class="description">Blue Gems to start a quest for the first time</span>
+                            <span class="description">Blue Gems to start a quest for the first time. Retakes are always free.</span>
                         </td>
                     </tr>
                     <tr>
-                        <th>Quest Cost — Retake</th>
+                        <th>Lesson Cost</th>
                         <td>
-                            <input type="number" name="gem_cost_quest_retake" value="<?= esc_attr( $quest_cost_retake ) ?>" class="small-text" min="0" placeholder="1" />
-                            <span class="description">Blue Gems to restart a previously completed quest</span>
+                            <input type="number" name="gem_cost_lesson" value="<?= esc_attr( $lesson_cost ) ?>" class="small-text" min="0" placeholder="3" />
+                            <span class="description">Blue Gems to start a lesson (free-browse review)</span>
                         </td>
                     </tr>
                     <tr>
-                        <th>Monthly Free Tier</th>
+                        <th>Monthly Free Tier — Parents</th>
                         <td>
                             <input type="number" name="gem_free_monthly" value="<?= esc_attr( $monthly_free ) ?>" class="small-text" min="0" placeholder="10" />
-                            <span class="description">Free Blue Gems granted to parents on the 1st of each month. <code>0</code> = disabled.</span>
+                            <span class="description">Blue Gems reset to this amount for parents on the 1st of each month. <code>0</code> = disabled.</span>
                         </td>
                     </tr>
                     <tr>
@@ -197,6 +200,44 @@ class Knowly_Admin_Gems {
                                 Skip gem deduction on trial/quest start
                             </label>
                             <p class="description"><strong>Development only.</strong></p>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="knowly-settings-section" style="margin-top:24px;">
+                <h2>Signup Allowances</h2>
+                <p class="description">One-time gem grant credited when a new account is created. Independent of the monthly refresh.</p>
+                <table class="form-table">
+                    <tr>
+                        <th><label for="gem_signup_parent">Parent signup allowance</label></th>
+                        <td>
+                            <input type="number" id="gem_signup_parent" name="gem_signup_parent"
+                                   value="<?= esc_attr( $signup_parent ) ?>" class="small-text" min="0" placeholder="20" />
+                            <span class="description">Blue Gems granted to a new parent on registration.</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="gem_signup_teacher">Teacher signup allowance</label></th>
+                        <td>
+                            <input type="number" id="gem_signup_teacher" name="gem_signup_teacher"
+                                   value="<?= esc_attr( $signup_teacher ) ?>" class="small-text" min="0" placeholder="20" />
+                            <span class="description">Blue Gems granted to a new teacher on registration.</span>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="knowly-settings-section" style="margin-top:24px;">
+                <h2>Teacher Monthly Allowance</h2>
+                <p class="description">Blue Gems reset to this amount for all teachers on the 1st of each month (same cron as parent refresh).</p>
+                <table class="form-table">
+                    <tr>
+                        <th><label for="gem_teacher_monthly">Monthly allowance — Teachers</label></th>
+                        <td>
+                            <input type="number" id="gem_teacher_monthly" name="gem_teacher_monthly"
+                                   value="<?= esc_attr( $teacher_monthly ) ?>" class="small-text" min="0" placeholder="10" />
+                            <span class="description">Blue Gems teachers receive each month. <code>0</code> = disabled.</span>
                         </td>
                     </tr>
                 </table>
@@ -234,6 +275,7 @@ class Knowly_Admin_Gems {
         $monthly_free      = get_option( Knowly_Gem_Service::free_monthly_key( $default_curr ), '(fallback)' );
         $quest_cost_first  = get_option( Knowly_Gem_Service::quest_cost_key( $default_curr, 'first' ),  '(fallback)' );
         $quest_cost_retake = get_option( Knowly_Gem_Service::quest_cost_key( $default_curr, 'retake' ), '(fallback)' );
+        $lesson_cost       = get_option( Knowly_Gem_Service::lesson_cost_key( $default_curr ), '(fallback)' );
 
         $wc_products = $wc_active ? Knowly_WooCommerce::get_gem_products() : [];
 
@@ -336,6 +378,7 @@ class Knowly_Admin_Gems {
                 <?php endforeach; ?>
                 <tr><td>Quest — First Attempt</td><td><?= esc_html( $quest_cost_first ) ?></td></tr>
                 <tr><td>Quest — Retake</td><td><?= esc_html( $quest_cost_retake ) ?></td></tr>
+                <tr><td>Lesson</td><td><?= $lesson_cost === '(fallback)' ? '<em style="color:#d63638;">(fallback — set in Settings)</em>' : esc_html( $lesson_cost ) ?></td></tr>
                 <tr><td>Monthly Free Tier</td><td><?= esc_html( $monthly_free ) ?></td></tr>
                 </tbody>
             </table>
@@ -700,7 +743,8 @@ class Knowly_Admin_Gems {
                 $costs    = $data['data'] ?? [];
                 $pass     = $response->get_status() === 200
                          && isset( $costs['trial']['easy'], $costs['trial']['medium'], $costs['trial']['hard'] )
-                         && isset( $costs['quest']['first'], $costs['quest']['retake'] );
+                         && isset( $costs['quest']['first'], $costs['quest']['retake'] )
+                         && isset( $costs['lesson'] );
                 return [
                     'pass'        => $pass,
                     'http_status' => $response->get_status(),
@@ -729,11 +773,20 @@ class Knowly_Admin_Gems {
         if ( isset( $_POST['gem_cost_quest_first'] ) ) {
             update_option( Knowly_Gem_Service::quest_cost_key( $curriculum, 'first' ), max( 0, (int) $_POST['gem_cost_quest_first'] ) );
         }
-        if ( isset( $_POST['gem_cost_quest_retake'] ) ) {
-            update_option( Knowly_Gem_Service::quest_cost_key( $curriculum, 'retake' ), max( 0, (int) $_POST['gem_cost_quest_retake'] ) );
+        if ( isset( $_POST['gem_cost_lesson'] ) ) {
+            update_option( Knowly_Gem_Service::lesson_cost_key( $curriculum ), max( 0, (int) $_POST['gem_cost_lesson'] ) );
         }
         if ( isset( $_POST['gem_free_monthly'] ) ) {
             update_option( Knowly_Gem_Service::free_monthly_key( $curriculum ), max( 0, (int) $_POST['gem_free_monthly'] ) );
+        }
+        if ( isset( $_POST['gem_signup_parent'] ) ) {
+            update_option( Knowly_Gem_Service::signup_parent_key(), max( 0, (int) $_POST['gem_signup_parent'] ) );
+        }
+        if ( isset( $_POST['gem_signup_teacher'] ) ) {
+            update_option( Knowly_Gem_Service::signup_teacher_key(), max( 0, (int) $_POST['gem_signup_teacher'] ) );
+        }
+        if ( isset( $_POST['gem_teacher_monthly'] ) ) {
+            update_option( Knowly_Gem_Service::teacher_monthly_key(), max( 0, (int) $_POST['gem_teacher_monthly'] ) );
         }
     }
 }

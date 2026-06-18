@@ -65,6 +65,46 @@ class Knowly_Gem_Service {
         return $is_retake ? 1 : 3;
     }
 
+    public static function lesson_cost_key( string $curriculum ): string {
+        return 'knowly_gem_cost_lesson_' . sanitize_key( $curriculum );
+    }
+
+    public static function get_lesson_cost( string $curriculum ): int {
+        $key    = self::lesson_cost_key( $curriculum );
+        $stored = get_option( $key );
+        if ( $stored !== false && (int) $stored >= 0 ) {
+            return (int) $stored;
+        }
+        return 3;
+    }
+
+    public static function signup_parent_key(): string {
+        return 'knowly_gem_signup_parent';
+    }
+
+    public static function signup_teacher_key(): string {
+        return 'knowly_gem_signup_teacher';
+    }
+
+    public static function teacher_monthly_key(): string {
+        return 'knowly_gem_teacher_monthly';
+    }
+
+    public static function get_signup_parent(): int {
+        $stored = get_option( self::signup_parent_key() );
+        return $stored !== false ? max( 0, (int) $stored ) : 20;
+    }
+
+    public static function get_signup_teacher(): int {
+        $stored = get_option( self::signup_teacher_key() );
+        return $stored !== false ? max( 0, (int) $stored ) : 20;
+    }
+
+    public static function get_teacher_monthly(): int {
+        $stored = get_option( self::teacher_monthly_key() );
+        return $stored !== false ? max( 0, (int) $stored ) : 10;
+    }
+
     // ── Balance ───────────────────────────────────────────────────────────────
 
     public static function get_balance( int $user_id ): int {
@@ -239,18 +279,38 @@ class Knowly_Gem_Service {
         }
 
         $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
-        $amount     = self::get_monthly_free( $curriculum );
+        $amount     = self::get_signup_parent();
 
         update_user_meta( $parent_id, 'knowly_gem_balance', $amount );
         update_user_meta( $parent_id, 'knowly_gem_refresh_date', date( 'Y-m-01' ) );
 
-        self::write_ledger( $parent_id, null, 'monthly_refresh', $amount, $amount, $curriculum, '', 'Welcome — free gem grant' );
+        self::write_ledger( $parent_id, null, 'signup_grant', $amount, $amount, $curriculum, '', 'Welcome — signup gem grant' );
 
-        Knowly_Debug::log( 'gem.registration', 'Registration gems granted', [
+        Knowly_Debug::log( 'gem.registration', 'Parent signup gems granted', [
             'parent_id'  => $parent_id,
             'amount'     => $amount,
             'curriculum' => $curriculum,
         ], $parent_id, 'info' );
+    }
+
+    public static function grant_on_registration_teacher( int $teacher_id ): void {
+        if ( get_user_meta( $teacher_id, 'knowly_gem_balance', true ) !== '' ) {
+            return; // Already initialised
+        }
+
+        $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
+        $amount     = self::get_signup_teacher();
+
+        update_user_meta( $teacher_id, 'knowly_gem_balance', $amount );
+        update_user_meta( $teacher_id, 'knowly_gem_refresh_date', date( 'Y-m-01' ) );
+
+        self::write_ledger( $teacher_id, null, 'signup_grant', $amount, $amount, $curriculum, '', 'Welcome — teacher signup gem grant' );
+
+        Knowly_Debug::log( 'gem.registration', 'Teacher signup gems granted', [
+            'teacher_id' => $teacher_id,
+            'amount'     => $amount,
+            'curriculum' => $curriculum,
+        ], $teacher_id, 'info' );
     }
 
     // ── Monthly Refresh ───────────────────────────────────────────────────────
@@ -295,11 +355,34 @@ class Knowly_Gem_Service {
             $refreshed++;
         }
 
+        // ── Teacher monthly refresh ───────────────────────────────────────────
+
+        $teacher_amount = self::get_teacher_monthly();
+        $teachers       = get_users( [
+            'role'   => 'knowly_teacher',
+            'fields' => 'ID',
+        ] );
+
+        foreach ( $teachers as $teacher_id ) {
+            $last_refresh = get_user_meta( $teacher_id, 'knowly_gem_refresh_date', true );
+            if ( $last_refresh === $this_month ) {
+                continue;
+            }
+
+            update_user_meta( $teacher_id, 'knowly_gem_balance', $teacher_amount );
+            update_user_meta( $teacher_id, 'knowly_gem_refresh_date', $this_month );
+
+            self::write_ledger( $teacher_id, null, 'monthly_refresh', $teacher_amount, $teacher_amount, $curriculum, $this_month, 'Monthly teacher gem reset' );
+
+            $refreshed++;
+        }
+
         Knowly_Debug::log( 'gem.monthly_refresh', 'Monthly gem refresh complete', [
-            'refreshed'  => $refreshed,
-            'amount'     => $amount,
-            'curriculum' => $curriculum,
-            'month'      => $this_month,
+            'refreshed'       => $refreshed,
+            'parent_amount'   => $amount,
+            'teacher_amount'  => $teacher_amount,
+            'curriculum'      => $curriculum,
+            'month'           => $this_month,
         ], null, 'info' );
 
         return $refreshed;

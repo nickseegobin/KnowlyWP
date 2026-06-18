@@ -193,6 +193,46 @@ class Knowly_Notification_Service {
         return true;
     }
 
+    // ── Delete ───────────────────────────────────────────────────────────────
+
+    /**
+     * Delete a notification, scoped to the recipient (user can only delete their own).
+     *
+     * @param  int $notification_id
+     * @param  int $user_id          Must be the recipient.
+     * @return true|WP_Error
+     */
+    public static function delete( int $notification_id, int $user_id ): true|WP_Error {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'knowly_notifications';
+
+        $row = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id FROM {$table} WHERE id = %d AND recipient_user_id = %d",
+            $notification_id, $user_id
+        ) );
+
+        if ( ! $row ) {
+            return new WP_Error( 'knowly_not_found', 'Notification not found.', [ 'status' => 404 ] );
+        }
+
+        $wpdb->delete( $table, [ 'id' => $notification_id ], [ '%d' ] );
+
+        return true;
+    }
+
+    /**
+     * Admin-only hard delete (no recipient check).
+     *
+     * @param  int $notification_id
+     * @return bool
+     */
+    public static function admin_delete( int $notification_id ): bool {
+        global $wpdb;
+        $deleted = $wpdb->delete( $wpdb->prefix . 'knowly_notifications', [ 'id' => $notification_id ], [ '%d' ] );
+        return $deleted !== false && $deleted > 0;
+    }
+
     // ── Mark Read ─────────────────────────────────────────────────────────────
 
     /**

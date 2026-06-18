@@ -31,6 +31,7 @@ class Knowly_Admin_Trials {
         add_action( 'wp_ajax_knowly_trials_pack_disband',   [ __CLASS__, 'ajax_pack_disband'    ] );
         add_action( 'wp_ajax_knowly_trials_get_modules',    [ __CLASS__, 'ajax_get_modules'     ] );
         add_action( 'wp_ajax_knowly_dynamic_preview',       [ __CLASS__, 'ajax_dynamic_preview' ] );
+        add_action( 'wp_ajax_knowly_trials_dynamic_build',  [ __CLASS__, 'ajax_dynamic_build'   ] );
     }
 
     public static function render(): void {
@@ -591,6 +592,46 @@ class Knowly_Admin_Trials {
             </div>
         </details>
 
+        <!-- ── DYNAMIC PACK BUILDER ────────────────────────────────────────────── -->
+        <details id="pb-dyn-details" style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px 16px;margin-bottom:18px;">
+            <summary style="cursor:pointer;font-weight:600;font-size:13px;color:#92400e;list-style:none;display:flex;align-items:center;gap:6px;">
+                <span>+</span> Build a Dynamic Pack <span style="font-weight:400;color:#d97706;font-size:11.5px;margin-left:4px;">(multi-module · random difficulty per module)</span>
+            </summary>
+            <div style="margin-top:14px;">
+                <p style="font-size:12px;color:#78716c;margin:0 0 10px;">Uses the scope selectors above. Click <strong>Load Modules</strong> first to populate the checklist, then select which modules to include.</p>
+
+                <!-- Module checklist (populated by pb-load-modules-btn) -->
+                <div id="pb-dyn-module-list" style="background:#fff;border:1px solid #e5e7eb;border-radius:4px;padding:10px 12px;margin-bottom:12px;min-height:40px;font-size:12.5px;color:#999;">
+                    Load modules above first.
+                </div>
+
+                <!-- QPM + actions -->
+                <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+                    <label style="font-size:12px;">Qs per module
+                        <select id="pb-dyn-qpm" style="display:block;height:30px;margin-top:4px;width:80px;">
+                            <option value="3">3</option>
+                            <option value="4" selected>4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                        </select>
+                    </label>
+                    <div style="padding-top:18px;display:flex;gap:6px;">
+                        <button id="pb-dyn-preview-btn" class="button" style="height:30px;background:#d97706;border-color:#d97706;color:#fff;">Preview Dynamic</button>
+                        <button id="pb-dyn-build-btn" class="button" style="height:30px;background:#7c3aed;border-color:#7c3aed;color:#fff;">Build &amp; Save Dynamic Pack</button>
+                    </div>
+                </div>
+                <p id="pb-dyn-status" style="margin:10px 0 0;font-size:12px;color:#666;"></p>
+
+                <!-- Results -->
+                <div id="pb-dyn-results" style="display:none;margin-top:14px;">
+                    <strong id="pb-dyn-results-title" style="font-size:12.5px;display:block;margin-bottom:6px;"></strong>
+                    <span id="pb-dyn-pack-saved" style="font-size:12px;color:#7c3aed;font-weight:600;display:none;margin-bottom:10px;"></span>
+                    <div id="pb-dyn-assignments" style="margin-bottom:12px;"></div>
+                    <div id="pb-dyn-questions"></div>
+                </div>
+            </div>
+        </details>
+
         <!-- ── PACK LIST FILTERS ─────────────────────────────────────────────── -->
         <!-- Filters -->
         <div style="background:#f6f7f7;border:1px solid #ddd;border-radius:6px;padding:14px 16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
@@ -977,7 +1018,7 @@ class Knowly_Admin_Trials {
                 hard:   { bg:'#fee2e2', border:'#fca5a5', text:'#991b1b' },
             };
 
-            // Load modules for the builder dropdown
+            // Load modules for the builder dropdown (also populates dynamic checklist)
             $('#pb-load-modules-btn').on('click', function() {
                 var level   = $('#pb-level').val();
                 var subject = $('#pb-subject').val();
@@ -989,11 +1030,27 @@ class Knowly_Admin_Trials {
                 }, function(resp) {
                     $('#pb-load-modules-btn').prop('disabled',false).text('Load Modules');
                     if (!resp.success) { alert(resp.data||'Failed.'); return; }
+                    var modules = resp.data.modules || [];
+
+                    // Static builder dropdown
                     var opts = '<option value="">All modules (General)</option>';
-                    (resp.data.modules||[]).forEach(function(m) {
+                    modules.forEach(function(m) {
                         opts += '<option value="'+m.module_number+'">'+pbEsc(m.module_title)+'</option>';
                     });
                     $('#pb-module').html(opts);
+
+                    // Dynamic builder checklist
+                    if (!modules.length) {
+                        $('#pb-dyn-module-list').html('<span style="color:#b91c1c;">No active modules found for this scope.</span>');
+                        return;
+                    }
+                    var checks = '';
+                    modules.forEach(function(m) {
+                        checks += '<label style="display:inline-flex;align-items:center;gap:5px;margin:4px 12px 4px 0;cursor:pointer;">';
+                        checks += '<input type="checkbox" class="pb-dyn-mod-cb" value="'+m.module_number+'" checked>';
+                        checks += '<span>'+pbEsc(m.module_title)+'</span></label>';
+                    });
+                    $('#pb-dyn-module-list').html(checks);
                 });
             });
 
@@ -1071,6 +1128,109 @@ class Knowly_Admin_Trials {
                 runPB(false);
             });
 
+            // ── Dynamic Pack Builder ──────────────────────────────────────────
+            var PB_DYN_DIFF_COLORS = {
+                easy:    { bg:'#dcfce7', border:'#86efac', text:'#166534' },
+                medium:  { bg:'#fef9c3', border:'#fde68a', text:'#854d0e' },
+                hard:    { bg:'#fee2e2', border:'#fca5a5', text:'#991b1b' },
+                dynamic: { bg:'#ede9fe', border:'#c4b5fd', text:'#5b21b6' },
+            };
+
+            function pbDynDiffBadge(d) {
+                var c = PB_DYN_DIFF_COLORS[d] || { bg:'#f3f4f6', border:'#d1d5db', text:'#374151' };
+                return '<span style="background:'+c.bg+';border:1px solid '+c.border+';color:'+c.text+';border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">'+pbEsc(d)+'</span>';
+            }
+
+            function runPBDynamic(save) {
+                var selected = $('.pb-dyn-mod-cb:checked').map(function(){ return parseInt($(this).val()); }).get();
+                if (!selected.length) { alert('Select at least one module.'); return; }
+
+                var $prevBtn  = $('#pb-dyn-preview-btn');
+                var $buildBtn = $('#pb-dyn-build-btn');
+                $prevBtn.prop('disabled',true); $buildBtn.prop('disabled',true);
+                $('#pb-dyn-status').text(save ? 'Building dynamic pack…' : 'Generating preview…').css('color','#666');
+                $('#pb-dyn-pack-saved').hide();
+
+                $.post(ajaxurl, {
+                    action:  save ? 'knowly_trials_dynamic_build' : 'knowly_dynamic_preview',
+                    nonce:   PB_NONCE,
+                    level:   $('#pb-level').val(),
+                    period:  $('#pb-period').val(),
+                    subject: $('#pb-subject').val(),
+                    modules: selected,
+                    qpm:     $('#pb-dyn-qpm').val(),
+                }, function(resp) {
+                    $prevBtn.prop('disabled',false); $buildBtn.prop('disabled',false);
+                    if (!resp.success) {
+                        $('#pb-dyn-status').text('Error: '+(resp.data||'Request failed.')).css('color','#dc2626');
+                        return;
+                    }
+                    var d = resp.data;
+                    var lbl = $('#pb-level').val()+' / '+($('#pb-period').val()||'Capstone')+' / '+$('#pb-subject option:selected').text();
+                    lbl += ' — Dynamic ('+selected.length+' modules × '+$('#pb-dyn-qpm').val()+' Qs)';
+                    $('#pb-dyn-results-title').text(lbl);
+
+                    if (save && d.pack_id) {
+                        $('#pb-dyn-pack-saved').text('✓ Pack saved — ID: '+d.pack_id+' (Seq #'+d.sequence_number+')').css('display','block');
+                        setTimeout(function(){ loadPacks(1); }, 800);
+                    }
+
+                    // Module assignment badges
+                    var aHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
+                    (d.module_assignments||[]).forEach(function(a) {
+                        aHtml += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 10px;font-size:12px;">';
+                        aHtml += '<span style="font-weight:600;">Module '+a.module_number+'</span>&nbsp;';
+                        aHtml += pbDynDiffBadge(a.difficulty_drawn);
+                        aHtml += '&nbsp;<span style="color:#6b7280;">'+a.questions_drawn+' Qs</span>';
+                        aHtml += '</div>';
+                    });
+                    aHtml += '</div>';
+                    $('#pb-dyn-assignments').html(aHtml);
+
+                    // Question cards (reuse runPB card style)
+                    var qs = d.questions || [];
+                    if (!qs.length) {
+                        $('#pb-dyn-questions').html('<p style="color:#888;">No questions returned.</p>');
+                    } else {
+                        var html = '';
+                        qs.forEach(function(q,i) {
+                            var c   = PB_DYN_DIFF_COLORS[q.difficulty] || { bg:'#f9fafb', border:'#e5e7eb', text:'#374151' };
+                            var ans = (q.correct_answer||'').toUpperCase();
+                            html += '<div style="border:1px solid '+c.border+';border-radius:6px;padding:12px 14px;margin-bottom:8px;background:#fff;font-size:12.5px;">';
+                            html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">';
+                            html += '<span style="color:#888;font-size:11px;">#'+(i+1)+'</span>';
+                            html += pbDynDiffBadge(q.difficulty);
+                            if (q.module_title) html += '<span style="color:#aaa;font-size:11px;">'+pbEsc(q.module_title)+'</span>';
+                            html += '</div><p style="margin:0 0 8px;font-weight:500;">'+pbEsc(q.question)+'</p>';
+                            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;">';
+                            ['A','B','C','D'].forEach(function(k){
+                                var ok = k===ans;
+                                html += '<div style="padding:4px 6px;border-radius:3px;font-size:11.5px;background:'+(ok?'#f0fdf4':'#f9fafb')+';border:'+(ok?'2px solid #16a34a':'1px solid #e5e7eb')+';">';
+                                html += ok ? '<strong style="color:#16a34a;">'+k+'. '+pbEsc((q.options||{})[k]||'')+' ✓</strong>' : k+'. '+pbEsc((q.options||{})[k]||'');
+                                html += '</div>';
+                            });
+                            html += '</div>';
+                            if (q.explanation) html += '<p style="margin:5px 0 0;font-size:11.5px;color:#555;"><strong>Explanation:</strong> '+pbEsc(q.explanation)+'</p>';
+                            html += '</div>';
+                        });
+                        $('#pb-dyn-questions').html(html);
+                    }
+                    $('#pb-dyn-results').show();
+                    $('#pb-dyn-status')
+                        .text(save ? d.question_count+' Qs locked into dynamic pack.' : d.question_count+' Qs previewed (not saved).')
+                        .css('color', save ? '#7c3aed' : '#666');
+                }).fail(function() {
+                    $prevBtn.prop('disabled',false); $buildBtn.prop('disabled',false);
+                    $('#pb-dyn-status').text('Request failed.').css('color','#dc2626');
+                });
+            }
+
+            $('#pb-dyn-preview-btn').on('click', function() { runPBDynamic(false); });
+            $('#pb-dyn-build-btn').on('click', function() {
+                if (!confirm('Build and save this dynamic pack? Questions will be locked and cannot be reused.')) return;
+                runPBDynamic(true);
+            });
+
         })(jQuery);
         </script>
         <?php
@@ -1092,7 +1252,7 @@ class Knowly_Admin_Trials {
             </summary>
             <div style="margin-top:12px;font-size:12.5px;line-height:1.7;color:#374151;">
                 <p style="margin:0 0 8px;"><strong>Static Pack Builder</strong> — builds an immutable pack from a single module (Topic) or all modules (General). Questions are locked to the pack on save.</p>
-                <p style="margin:0 0 8px;"><strong>Dynamic Preview</strong> — preview a multi-topic test. Select several modules; the system randomly assigns a difficulty to each. Nothing is saved — use this to simulate what the React app will generate in real time.</p>
+                <p style="margin:0 0 8px;"><strong>Dynamic Pack</strong> — select several modules; the system randomly assigns a difficulty to each. Use <em>Generate Dynamic Preview</em> to simulate without saving, or <em>Build &amp; Save Dynamic Pack</em> to lock questions into a permanent dynamic pack (appears in the Pack Library).</p>
                 <p style="margin:0 0 8px;"><strong>Difficulty mix per pack:</strong> Easy (12 Qs): 9 easy + 2 medium + 1 hard &nbsp;|&nbsp; Medium (18 Qs): 4 easy + 9 medium + 5 hard &nbsp;|&nbsp; Hard (24 Qs): 3 easy + 9 medium + 12 hard</p>
                 <p style="margin:0;"><strong>Module names</strong> are loaded from the QB — select Level + Subject + Period first, then click <em>Load Modules</em>.</p>
             </div>
@@ -1164,10 +1324,10 @@ class Knowly_Admin_Trials {
 
         <hr style="margin:28px 0;border:none;border-top:2px solid #e5e7eb;">
 
-        <!-- ── DYNAMIC PREVIEW ────────────────────────────────────────────────── -->
+        <!-- ── DYNAMIC PREVIEW / BUILD ───────────────────────────────────────── -->
         <div style="background:#fafaf5;border:1px solid #d4c97a;border-radius:6px;padding:16px 18px;margin-bottom:20px;">
-            <strong style="font-size:13px;display:block;margin-bottom:6px;">Dynamic Preview <span style="font-weight:400;color:#92400e;font-size:11.5px;">(preview only — nothing saved)</span></strong>
-            <p style="font-size:12px;color:#78716c;margin:0 0 12px;">Select multiple modules. Difficulty is randomly assigned per module — simulating live React app behaviour.</p>
+            <strong style="font-size:13px;display:block;margin-bottom:6px;">Dynamic Pack <span style="font-weight:400;color:#92400e;font-size:11.5px;">(multi-module · random difficulty per module)</span></strong>
+            <p style="font-size:12px;color:#78716c;margin:0 0 12px;">Select multiple modules. Difficulty is randomly assigned per module. <em>Preview</em> simulates the result without saving; <em>Build &amp; Save</em> locks questions into a permanent dynamic pack.</p>
 
             <div id="dyn-module-list" style="background:#fff;border:1px solid #e5e7eb;border-radius:4px;padding:10px 12px;margin-bottom:12px;min-height:40px;font-size:12.5px;color:#999;">
                 Load modules above first (uses the same scope selectors).
@@ -1182,16 +1342,18 @@ class Knowly_Admin_Trials {
                         <option value="6">6</option>
                     </select>
                 </label>
-                <div style="padding-top:18px;">
+                <div style="padding-top:18px;display:flex;gap:6px;">
                     <button id="dyn-preview-btn" class="button" style="height:30px;background:#d97706;border-color:#d97706;color:#fff;">Generate Dynamic Preview</button>
+                    <button id="dyn-build-btn" class="button" style="height:30px;background:#7c3aed;border-color:#7c3aed;color:#fff;">Build &amp; Save Dynamic Pack</button>
                 </div>
-                <p id="dyn-status" style="margin:0;font-size:12px;color:#666;"></p>
             </div>
+            <p id="dyn-status" style="margin:10px 0 0;font-size:12px;color:#666;"></p>
         </div>
 
-        <!-- Dynamic preview results -->
+        <!-- Dynamic results -->
         <div id="dyn-results" style="display:none;">
-            <strong id="dyn-results-title" style="font-size:13px;display:block;margin-bottom:10px;"></strong>
+            <strong id="dyn-results-title" style="font-size:13px;display:block;margin-bottom:6px;"></strong>
+            <span id="dyn-pack-saved" style="font-size:12px;color:#7c3aed;font-weight:600;display:none;margin-bottom:10px;"></span>
             <div id="dyn-assignments" style="margin-bottom:14px;"></div>
             <div id="dyn-questions"></div>
         </div>
@@ -1327,15 +1489,18 @@ class Knowly_Admin_Trials {
                 });
             }
 
-            // ── Dynamic preview ───────────────────────────────────────────────
-            function runDynamic() {
+            // ── Dynamic preview / build ───────────────────────────────────────
+            function runDynamic(save) {
                 var selected = $('.dyn-mod-cb:checked').map(function(){ return parseInt($(this).val()); }).get();
                 if (!selected.length) { alert('Select at least one module.'); return; }
-                $('#dyn-preview-btn').prop('disabled',true).text('Generating…');
-                $('#dyn-status').text('').css('color','#666');
+                var $prevBtn  = $('#dyn-preview-btn');
+                var $buildBtn = $('#dyn-build-btn');
+                $prevBtn.prop('disabled',true); $buildBtn.prop('disabled',true);
+                $('#dyn-status').text(save ? 'Building dynamic pack…' : 'Generating preview…').css('color','#666');
+                $('#dyn-pack-saved').hide();
 
                 $.post(ajaxurl, {
-                    action:  'knowly_dynamic_preview',
+                    action:  save ? 'knowly_trials_dynamic_build' : 'knowly_dynamic_preview',
                     nonce:   NONCE,
                     level:   $('#sim-level').val(),
                     period:  $('#sim-period').val(),
@@ -1343,18 +1508,24 @@ class Knowly_Admin_Trials {
                     modules: selected,
                     qpm:     $('#dyn-qpm').val(),
                 }, function(resp) {
-                    $('#dyn-preview-btn').prop('disabled',false).text('Generate Dynamic Preview');
+                    $prevBtn.prop('disabled',false); $buildBtn.prop('disabled',false);
                     if (!resp.success) {
                         $('#dyn-status').text(resp.data||'Error.').css('color','#dc2626');
                         return;
                     }
                     var d = resp.data;
-                    $('#dyn-results-title').text('Dynamic Preview — '+d.question_count+' questions across '+d.module_assignments.length+' modules');
+                    $('#dyn-results-title').text(
+                        (save ? 'Dynamic Pack Built' : 'Dynamic Preview') +
+                        ' — '+d.question_count+' questions across '+d.module_assignments.length+' modules'
+                    );
+
+                    if (save && d.pack_id) {
+                        $('#dyn-pack-saved').text('✓ Pack saved — ID: '+d.pack_id+' (Seq #'+d.sequence_number+')').css('display','block');
+                    }
 
                     // Module assignment summary badges
                     var aHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
                     (d.module_assignments||[]).forEach(function(a) {
-                        // Find module title from loaded MODULES list
                         var title = 'Module '+a.module_number;
                         MODULES.forEach(function(m){ if(m.module_number===a.module_number) title=m.module_title; });
                         aHtml += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 10px;font-size:12px;">';
@@ -1368,9 +1539,11 @@ class Knowly_Admin_Trials {
 
                     renderQuestionCards(d.questions||[], $('#dyn-questions'));
                     $('#dyn-results').show();
-                    $('#dyn-status').text(d.question_count+' questions previewed (nothing saved).').css('color','#666');
+                    $('#dyn-status')
+                        .text(save ? d.question_count+' questions locked into dynamic pack.' : d.question_count+' questions previewed (nothing saved).')
+                        .css('color', save ? '#7c3aed' : '#666');
                 }).fail(function() {
-                    $('#dyn-preview-btn').prop('disabled',false).text('Generate Dynamic Preview');
+                    $prevBtn.prop('disabled',false); $buildBtn.prop('disabled',false);
                     $('#dyn-status').text('Request failed.').css('color','#dc2626');
                 });
             }
@@ -1382,7 +1555,11 @@ class Knowly_Admin_Trials {
                 if (!confirm('Build and save this pack? Questions will be locked and cannot be reused.')) return;
                 runSim(false);
             });
-            $('#dyn-preview-btn').on('click', runDynamic);
+            $('#dyn-preview-btn').on('click', function() { runDynamic(false); });
+            $('#dyn-build-btn').on('click', function() {
+                if (!confirm('Build and save this dynamic pack? Questions will be locked and cannot be reused.')) return;
+                runDynamic(true);
+            });
 
         })(jQuery);
         </script>
@@ -1914,6 +2091,43 @@ class Knowly_Admin_Trials {
     // =========================================================================
     // AJAX: Dynamic Preview
     // =========================================================================
+
+    public static function ajax_dynamic_build(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Unauthorized', 403 );
+
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+        if ( ! $endpoint ) { wp_send_json_error( 'Railway endpoint not configured.' ); return; }
+
+        $modules_raw = $_POST['modules'] ?? [];
+        $modules     = array_map( 'intval', is_array( $modules_raw ) ? $modules_raw : [] );
+        if ( empty( $modules ) ) { wp_send_json_error( 'At least one module must be selected.' ); return; }
+
+        $body = [
+            'curriculum'           => 'tt_primary',
+            'level'                => sanitize_text_field( $_POST['level']   ?? 'std_4' ),
+            'period'               => sanitize_text_field( $_POST['period']  ?? '' ) ?: null,
+            'subject'              => sanitize_text_field( $_POST['subject'] ?? 'math' ),
+            'modules'              => $modules,
+            'questions_per_module' => max( 1, min( 10, (int) ( $_POST['qpm'] ?? 4 ) ) ),
+        ];
+
+        $resp = wp_remote_post( $endpoint . '/api/v1/trial-packs/dynamic-build', [
+            'timeout' => 45,
+            'headers' => [ 'X-AEP-Server-Key' => $server_key, 'Content-Type' => 'application/json' ],
+            'body'    => wp_json_encode( $body ),
+        ] );
+
+        if ( is_wp_error( $resp ) ) { wp_send_json_error( $resp->get_error_message() ); return; }
+
+        $code   = wp_remote_retrieve_response_code( $resp );
+        $parsed = json_decode( wp_remote_retrieve_body( $resp ), true );
+
+        if ( $code >= 400 ) { wp_send_json_error( $parsed['error'] ?? "HTTP {$code}" ); return; }
+
+        wp_send_json_success( $parsed );
+    }
 
     public static function ajax_dynamic_preview(): void {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );

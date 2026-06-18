@@ -109,6 +109,8 @@
         const childId   = $( '#td-child-id' ).val().trim();
         const userId    = $( '#td-user-id' ).val().trim();
         const pin       = $( '#td-pin' ).val().trim();
+        const parentId  = $( '#td-parent-id' ).val().trim();
+        const teacherId = $( '#td-teacher-id' ).val().trim();
 
         if ( username )  testData.username  = username;
         if ( password )  testData.password  = password;
@@ -116,7 +118,59 @@
         if ( childId )   testData.child_id  = childId;
         if ( userId )    testData.user_id   = userId;
         if ( pin )       testData.pin       = pin;
+        if ( parentId )  testData.parent_id  = parentId;
+        if ( teacherId ) testData.teacher_id = teacherId;
     }
+
+    // ── Test User Selectors ───────────────────────────────────────────────────
+
+    const _searchTimers = {};
+
+    function initUserSelector( inputId, idFieldId, labelId, role ) {
+        const $input   = $( '#' + inputId );
+        const $idField = $( '#' + idFieldId );
+        const $label   = $( '#' + labelId );
+        const dropId   = inputId + '-drop';
+
+        $input.after( '<div id="' + dropId + '" class="knowly-user-drop" style="display:none;position:absolute;z-index:200;background:#fff;border:1px solid #ddd;border-radius:4px;max-width:340px;max-height:180px;overflow-y:auto;box-shadow:0 2px 8px rgba(0,0,0,.12);font-size:12px;"></div>' );
+
+        $input.on( 'input', function () {
+            clearTimeout( _searchTimers[ inputId ] );
+            const q = $( this ).val().trim();
+            if ( q.length < 2 ) { $( '#' + dropId ).hide(); return; }
+            _searchTimers[ inputId ] = setTimeout( () => {
+                $.post( KnowlyAdmin.ajaxUrl, { action: 'knowly_notif_user_search', nonce: KnowlyAdmin.nonce, q }, function( r ) {
+                    if ( ! r.success ) return;
+                    const users = r.data.users || [];
+                    const $drop = $( '#' + dropId );
+                    if ( ! users.length ) { $drop.html( '<div style="padding:8px;color:#888;">No users found.</div>' ).show(); return; }
+                    $drop.html( users.map( u =>
+                        '<div class="knowly-user-option" data-id="' + u.id + '" data-name="' + escHtml( u.display_name ) + '" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0;">' +
+                        '<strong>' + escHtml( u.display_name ) + '</strong> <span style="color:#888;">' + escHtml( u.user_email ) + ' · #' + u.id + ' · ' + escHtml( u.role ) + '</span></div>'
+                    ).join( '' ) ).show();
+                } );
+            }, 280 );
+        } );
+
+        $( document ).on( 'mousedown', '#' + dropId + ' .knowly-user-option', function () {
+            const id   = $( this ).data( 'id' );
+            const name = $( this ).data( 'name' );
+            $idField.val( id );
+            $input.val( name + ' (#' + id + ')' );
+            $label.text( '✓ ' + name + ' (#' + id + ')' ).css( 'color', '#16a34a' );
+            $( '#' + dropId ).hide();
+            testData[ role + '_id' ] = String( id );
+        } );
+
+        $input.on( 'blur', function () { setTimeout( () => $( '#' + dropId ).hide(), 200 ); } );
+        $input.on( 'focus', function () { if ( $( '#' + dropId ).children().length ) $( '#' + dropId ).show(); } );
+    }
+
+    $( document ).ready( function () {
+        if ( $( '#td-parent-search' ).length )  initUserSelector( 'td-parent-search',  'td-parent-id',  'td-parent-label',  'parent' );
+        if ( $( '#td-teacher-search' ).length ) initUserSelector( 'td-teacher-search', 'td-teacher-id', 'td-teacher-label', 'teacher' );
+        if ( $( '#td-child-search' ).length )   initUserSelector( 'td-child-search',   'td-child-id',   'td-child-label',   'child' );
+    } );
 
     // Run single test
     $( document ).on( 'click', '.knowly-run-test', function ( e ) {

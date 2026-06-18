@@ -154,6 +154,7 @@ class Knowly_Analytics_Service {
         // ── 1. Data fetches ───────────────────────────────────────────────────
         $trials  = self::fetch_trials( $child_id, $period, $subject );
         $quests  = self::fetch_quests( $child_id );
+        $lessons = self::fetch_lessons( $child_id );
         $answers = self::fetch_answers( $child_id, $period, $subject );
 
         // ── 2. Computations ───────────────────────────────────────────────────
@@ -169,8 +170,14 @@ class Knowly_Analytics_Service {
         $scores    = array_filter( array_map( fn( $t ) => $t['percentage'], $trials ), fn( $p ) => $p !== null && $p !== '' );
         $avg_score = count( $scores ) ? (int) round( array_sum( $scores ) / count( $scores ) ) : null;
 
-        $cutoff7d      = gmdate( 'Y-m-d H:i:s', time() - 7 * DAY_IN_SECONDS );
-        $weekly_trials = count( array_filter( $trials, fn( $t ) => ! empty( $t['completed_at'] ) && $t['completed_at'] >= $cutoff7d ) );
+        $cutoff7d        = gmdate( 'Y-m-d H:i:s', time() -  7 * DAY_IN_SECONDS );
+        $cutoff30d       = gmdate( 'Y-m-d H:i:s', time() - 30 * DAY_IN_SECONDS );
+        $weekly_trials   = count( array_filter( $trials,  fn( $t ) => ! empty( $t['completed_at'] ) && $t['completed_at'] >= $cutoff7d  ) );
+        $weekly_quests   = count( array_filter( $quests,  fn( $q ) => ! empty( $q['completed_at'] ) && $q['completed_at'] >= $cutoff7d  ) );
+        $weekly_lessons  = count( array_filter( $lessons, fn( $l ) => ! empty( $l['completed_at'] ) && $l['completed_at'] >= $cutoff7d  ) );
+        $monthly_trials  = count( array_filter( $trials,  fn( $t ) => ! empty( $t['completed_at'] ) && $t['completed_at'] >= $cutoff30d ) );
+        $monthly_quests  = count( array_filter( $quests,  fn( $q ) => ! empty( $q['completed_at'] ) && $q['completed_at'] >= $cutoff30d ) );
+        $monthly_lessons = count( array_filter( $lessons, fn( $l ) => ! empty( $l['completed_at'] ) && $l['completed_at'] >= $cutoff30d ) );
 
         $topics_attempted = count( array_unique( array_filter( array_column( $answers, 'topic' ) ) ) );
 
@@ -202,9 +209,15 @@ class Knowly_Analytics_Service {
             'user_id'             => $child_id,
             'trial_count'         => count( $trials ),
             'quest_count'         => count( $quests ),
+            'lesson_count'        => count( $lessons ),
             'badges_earned'       => 0,
             'avg_score'           => $avg_score,
             'weekly_trials'       => $weekly_trials,
+            'weekly_quests'       => $weekly_quests,
+            'weekly_lessons'      => $weekly_lessons,
+            'monthly_trials'      => $monthly_trials,
+            'monthly_quests'      => $monthly_quests,
+            'monthly_lessons'     => $monthly_lessons,
             'topics_attempted'    => $topics_attempted,
             'direct_count'        => count( array_filter( $trials, fn( $t ) => $t['source'] === 'self' ) ),
             'assignment_count'    => count( array_filter( $trials, fn( $t ) => $t['source'] === 'teacher_assigned' ) ),
@@ -423,6 +436,32 @@ class Knowly_Analytics_Service {
         return $wpdb->get_results( $wpdb->prepare(
             "SELECT {$select}
              FROM {$wpdb->prefix}knowly_quest_sessions
+             WHERE child_id IN ({$ph}) AND state = 'completed'
+             ORDER BY completed_at DESC",
+            ...$ids
+        ), ARRAY_A ) ?: [];
+    }
+
+    /**
+     * Fetch completed lesson sessions.
+     * When $child_id is an array, the result includes a child_id column.
+     */
+    private static function fetch_lessons( int|array $child_id ): array {
+        global $wpdb;
+
+        $is_multi = is_array( $child_id );
+        $ids      = $is_multi ? array_map( 'intval', $child_id ) : [ (int) $child_id ];
+        if ( empty( $ids ) ) return [];
+
+        $ph     = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+        $select = $is_multi
+            ? 'child_id, lesson_session_id, quest_id, source, completed_at'
+            : 'lesson_session_id, quest_id, source, completed_at';
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        return $wpdb->get_results( $wpdb->prepare(
+            "SELECT {$select}
+             FROM {$wpdb->prefix}knowly_lesson_sessions
              WHERE child_id IN ({$ph}) AND state = 'completed'
              ORDER BY completed_at DESC",
             ...$ids

@@ -92,7 +92,10 @@ class Knowly_Task_Service {
                 'description'     => sanitize_textarea_field( $data['description'] ?? '' ) ?: null,
                 'subject'         => sanitize_text_field( $data['subject'] ?? '' ) ?: null,
                 'difficulty'      => $difficulty,
-                'due_date'        => $due_date,
+                'scope'           => in_array( $data['scope'] ?? '', [ 'period', 'general_topic' ], true ) ? $data['scope'] : null,
+                'module_numbers'       => ! empty( $data['module_numbers'] ) ? wp_json_encode( array_map( 'intval', (array) $data['module_numbers'] ) ) : null,
+                'lesson_section_index' => isset( $data['lesson_section_index'] ) && is_numeric( $data['lesson_section_index'] ) ? (int) $data['lesson_section_index'] : null,
+                'due_date'             => $due_date,
                 'gem_reward'      => isset( $data['gem_reward'] ) ? (int) $data['gem_reward'] : null,
                 'red_gem_cost'    => $gem_cost,
                 'status'          => 'active',
@@ -200,11 +203,42 @@ class Knowly_Task_Service {
                 $class_id
             ) );
 
+            // ── C: reference_id JOIN fallback for older lesson sessions ──────────
+            // Handles lesson_sessions created before the task_id column was added (v2.1.0).
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $lesson_by_ref = $wpdb->get_col( $wpdb->prepare(
+                "SELECT DISTINCT t.id
+                 FROM {$wpdb->prefix}knowly_tasks t
+                 INNER JOIN {$wpdb->prefix}knowly_lesson_sessions ls
+                         ON ls.quest_id = t.reference_id
+                 WHERE ls.child_id    = %d
+                   AND ls.state       = 'completed'
+                   AND ls.source      = 'assignment'
+                   AND ls.task_id     IS NULL
+                   AND t.class_id     = %d
+                   AND t.type         = 'lesson'
+                   AND t.reference_id IS NOT NULL",
+                $child_id,
+                $class_id
+            ) );
+
+            // ── D: task_id match for lesson sessions (v2.1.0+) ───────────────
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $lesson_by_id = $wpdb->get_col( $wpdb->prepare(
+                "SELECT DISTINCT task_id FROM {$wpdb->prefix}knowly_lesson_sessions
+                 WHERE child_id = %d
+                   AND state    = 'completed'
+                   AND task_id  IN ({$id_ph})",
+                array_merge( [ $child_id ], $task_ids )
+            ) );
+
             $completed_task_ids = array_flip(
                 array_merge(
-                    array_map( 'intval', $trial_by_id  ?: [] ),
-                    array_map( 'intval', $quest_by_id  ?: [] ),
-                    array_map( 'intval', $quest_by_ref ?: [] )
+                    array_map( 'intval', $trial_by_id   ?: [] ),
+                    array_map( 'intval', $quest_by_id   ?: [] ),
+                    array_map( 'intval', $quest_by_ref  ?: [] ),
+                    array_map( 'intval', $lesson_by_ref ?: [] ),
+                    array_map( 'intval', $lesson_by_id  ?: [] )
                 )
             );
         }
@@ -240,9 +274,179 @@ class Knowly_Task_Service {
         return array_map( [ __CLASS__, 'format_task' ], $rows ?: [] );
     }
 
+    // ── Task Detail + Per-Student Completions (Teacher view) ─────────────────
+
+    /**
+     * Fetch a single task with per-student completion status for the teacher.
+     *
+     * @param  int $task_id
+     * @param  int $class_id
+     * @return array|WP_Error  { task, completions[], stats }
+     */
+    public static function get_with_completions( int $task_id, int $class_id ): array|WP_Error {
+        global $wpdb;
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$wpdb->prefix}knowly_tasks WHERE id = %d AND class_id = %d",
+                $task_id,
+                $class_id
+            ),
+            ARRAY_A
+        );
+
+        if ( ! $row ) {
+            return new WP_Error( 'knowly_not_found', 'Task not found.', [ 'status' => 404 ] );
+        }
+
+        $task = self::format_task( $row );
+        $type = $row['type'];
+        $ref  = $row['reference_id'];
+
+        // Fetch all active class members via the class service
+        $members = Knowly_Class_Service::get_members( $class_id );
+
+        if ( empty( $members ) ) {
+            return [ 'task' => $task, 'completions' => [], 'stats' => [ 'total' => 0, 'completed' => 0 ] ];
+        }
+
+        $child_ids = array_map( 'intval', array_column( $members, 'child_id' ) );
+        $id_ph     = implode( ',', array_fill( 0, count( $child_ids ), '%d' ) );
+
+        // Build map: child_id → completed_at (null if not completed)
+        $completion_map = [];
+
+        if ( $type === 'trial' ) {
+            $done = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT child_id, completed_at FROM {$wpdb->prefix}knowly_exam_sessions
+                     WHERE task_id = %d AND state = 'completed'",
+                    $task_id
+                ),
+                ARRAY_A
+            );
+            foreach ( $done ?: [] as $r ) {
+                $completion_map[ (int) $r['child_id'] ] = $r['completed_at'];
+            }
+
+        } elseif ( $type === 'quest' ) {
+            $done = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT child_id, completed_at FROM {$wpdb->prefix}knowly_quest_sessions
+                     WHERE task_id = %d AND state = 'completed'",
+                    $task_id
+                ),
+                ARRAY_A
+            );
+            foreach ( $done ?: [] as $r ) {
+                $completion_map[ (int) $r['child_id'] ] = $r['completed_at'];
+            }
+            // Fallback: older sessions without task_id, matched by reference_id + source
+            if ( $ref ) {
+                // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+                $fallback = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT child_id, completed_at FROM {$wpdb->prefix}knowly_quest_sessions
+                         WHERE quest_id = %s AND source = 'assignment' AND state = 'completed'
+                           AND task_id IS NULL AND child_id IN ({$id_ph})",
+                        array_merge( [ $ref ], $child_ids )
+                    ),
+                    ARRAY_A
+                );
+                foreach ( $fallback ?: [] as $r ) {
+                    $cid = (int) $r['child_id'];
+                    if ( ! isset( $completion_map[ $cid ] ) ) {
+                        $completion_map[ $cid ] = $r['completed_at'];
+                    }
+                }
+            }
+
+        } elseif ( $type === 'lesson' && $ref ) {
+            // Lesson sessions tracked by reference_id + source='assignment'
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+            $done = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT child_id, completed_at FROM {$wpdb->prefix}knowly_lesson_sessions
+                     WHERE quest_id = %s AND source = 'assignment' AND state = 'completed'
+                       AND child_id IN ({$id_ph})",
+                    array_merge( [ $ref ], $child_ids )
+                ),
+                ARRAY_A
+            );
+            foreach ( $done ?: [] as $r ) {
+                $completion_map[ (int) $r['child_id'] ] = $r['completed_at'];
+            }
+        }
+
+        // Build completions array — completed students first, then alphabetically
+        $completions = array_map( function ( $member ) use ( $completion_map ) {
+            $cid       = (int) $member['child_id'];
+            $completed = isset( $completion_map[ $cid ] );
+            return [
+                'child_id'     => $cid,
+                'nickname'     => $member['nickname'],
+                'level'        => $member['level'] ?? null,
+                'completed'    => $completed,
+                'completed_at' => $completed ? $completion_map[ $cid ] : null,
+            ];
+        }, $members );
+
+        usort( $completions, function ( $a, $b ) {
+            if ( $a['completed'] !== $b['completed'] ) {
+                return $a['completed'] ? -1 : 1;
+            }
+            return strcmp( $a['nickname'], $b['nickname'] );
+        } );
+
+        $done_count = count( array_filter( $completions, fn( $c ) => $c['completed'] ) );
+
+        return [
+            'task'        => $task,
+            'completions' => $completions,
+            'stats'       => [
+                'total'     => count( $completions ),
+                'completed' => $done_count,
+            ],
+        ];
+    }
+
+    public static function delete( int $task_id, int $class_id, int $teacher_id ): bool|WP_Error {
+        global $wpdb;
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, class_id, teacher_user_id FROM {$wpdb->prefix}knowly_tasks WHERE id = %d",
+                $task_id
+            ),
+            ARRAY_A
+        );
+
+        if ( ! $row ) {
+            return new WP_Error( 'knowly_not_found', 'Task not found.', [ 'status' => 404 ] );
+        }
+
+        if ( (int) $row['class_id'] !== $class_id ) {
+            return new WP_Error( 'knowly_forbidden', 'Task does not belong to this class.', [ 'status' => 403 ] );
+        }
+
+        if ( (int) $row['teacher_user_id'] !== $teacher_id ) {
+            return new WP_Error( 'knowly_forbidden', 'You do not own this task.', [ 'status' => 403 ] );
+        }
+
+        $deleted = $wpdb->delete( $wpdb->prefix . 'knowly_tasks', [ 'id' => $task_id ], [ '%d' ] );
+
+        return $deleted !== false;
+    }
+
     // ── Private Helpers ───────────────────────────────────────────────────────
 
     private static function format_task( array $row ): array {
+        $module_numbers = null;
+        if ( ! empty( $row['module_numbers'] ) ) {
+            $decoded = json_decode( $row['module_numbers'], true );
+            $module_numbers = is_array( $decoded ) ? array_map( 'intval', $decoded ) : null;
+        }
+
         return [
             'id'              => (int) $row['id'],
             'class_id'        => (int) $row['class_id'],
@@ -253,7 +457,10 @@ class Knowly_Task_Service {
             'description'     => $row['description'],
             'subject'         => $row['subject'],
             'difficulty'      => $row['difficulty'],
-            'due_date'        => $row['due_date'],
+            'scope'           => $row['scope'] ?? null,
+            'module_numbers'       => $module_numbers,
+            'lesson_section_index' => isset( $row['lesson_section_index'] ) && $row['lesson_section_index'] !== null ? (int) $row['lesson_section_index'] : null,
+            'due_date'             => $row['due_date'],
             'gem_reward'      => isset( $row['gem_reward'] ) ? (int) $row['gem_reward'] : null,
             'red_gem_cost'    => (int) $row['red_gem_cost'],
             'status'          => $row['status'],

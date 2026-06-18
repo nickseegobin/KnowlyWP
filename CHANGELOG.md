@@ -1,5 +1,66 @@
 # KnowlyAPI Plugin — Changelog
 
+## [2.2.0] — 2026-05-12 — Lessons Feature
+
+Full Lesson delivery layer built on top of Quest training content.
+
+### New WP REST endpoints (`knowly/v1`)
+
+- `GET    /lessons` — Lesson catalogue (all approved quests, no sequential lock)
+- `GET    /lessons/{quest_id}` — Lesson content (same data as quest content)
+- `GET    /lessons/{quest_id}/questions` — 3 lesson MCQs without `correct_answer`
+- `POST   /lessons/start` — Creates lesson session; no gem cost
+- `POST   /lessons/complete` — Marks session done; no badge
+- `POST   /lessons/submit-questions` — Silent scoring; returns `{ recorded: true }`
+- `GET    /lessons/teacher/catalogue` — Teacher-scoped catalogue
+
+### New WP database tables (via `dbDelta`)
+
+- `wp_knowly_lesson_sessions` — tracks active/completed lesson sessions per child
+- `wp_knowly_lesson_question_results` — per-question answer records (admin-visible only)
+
+### New Railway endpoints (`/api/v1/lesson`)
+
+- `POST /lesson/generate-questions` (server key) — AI generates 3 MCQs for a lesson
+- `GET  /lesson/:quest_id/questions` (JWT or server key) — delivers lesson questions; server key response includes `correct_answer` for WP-side scoring
+
+### New PHP classes
+
+- `Knowly_Lesson_Service` — catalogue, content, session management, silent scoring
+- `Knowly_Lessons_API` — WP REST route registration and handler delegation
+- `Knowly_Admin_Lessons_Panel` — admin board with q_count badges and generate/regen buttons
+
+### Key design decisions
+
+- Lessons share `wp_knowly_quests` content — no duplicate content storage
+- No gem deduction, no badge award, no sequential lock
+- `submit_questions` fetches correct answers via server key internally, scores locally, returns `{ recorded: true }` — student never sees score
+- Lesson questions stored in Supabase `lesson_questions` (separate from `quest_questions`)
+
+---
+
+## [2.1.0] — 2026-05-12 — Quest Questions Feature
+
+### New Railway endpoints
+
+- `POST /quest/generate-questions` (server key) — AI generates 3 MCQs per quest
+- `GET  /quest/:quest_id/questions` (JWT or server key) — delivers quest questions; server key adds `correct_answer`
+
+### New WP REST endpoints
+
+- `GET  /quests/{quest_id}/questions` — returns 3 active quest questions (no `correct_answer`)
+- `POST /quests/submit-questions` — scores child answers server-side, returns score + correct answers
+
+### New WP database tables
+
+- `wp_knowly_quest_question_results` — per-question answer records with is_correct
+
+### New Railway endpoint
+
+- `DELETE /curriculum-topics/by-scope` — archive all topics for a level × subject scope (optional period filter)
+
+---
+
 ## [1.7.0] — 2026-05-11 — Phase 4: Sequential Trial Delivery
 
 Pre-built, sequentially numbered packs replace per-request generation. Children always

@@ -1072,14 +1072,14 @@ class Knowly_Admin_Classes {
             wp_send_json_error( [ 'message' => 'Class, title, and expiry date are required.' ] );
         }
 
-        $allowed_types        = [ 'trial', 'quest' ];
+        $allowed_types        = [ 'trial', 'quest', 'lesson' ];
         $allowed_difficulties = [ '', 'easy', 'medium', 'hard' ];
         if ( ! in_array( $type, $allowed_types, true ) ) $type = 'trial';
         if ( ! in_array( $difficulty, $allowed_difficulties, true ) ) $difficulty = '';
 
-        // Quest type requires a reference_id
-        if ( $type === 'quest' && ! $reference_id ) {
-            wp_send_json_error( [ 'message' => 'Quest tasks require a content reference. Please pick a quest from the content pool.' ] );
+        // Quest and lesson types require a reference_id
+        if ( in_array( $type, [ 'quest', 'lesson' ], true ) && ! $reference_id ) {
+            wp_send_json_error( [ 'message' => 'Quest/lesson tasks require a content reference. Please pick content from the content pool.' ] );
         }
 
         $parsed = date_create( $due_date );

@@ -44,21 +44,23 @@ class Knowly_Exam_Service {
         string $source = 'self',
         ?int   $task_id = null,
         string $scope = '',
-        string $scope_ref = ''
+        string $scope_ref = '',
+        array  $module_numbers = []
     ): array|WP_Error {
         Knowly_Debug::log( 'exam.start', 'Trial start requested', [
-            'parent_id'  => $parent_id,
-            'child_id'   => $child_id,
-            'level'      => $level,
-            'period'     => $period,
-            'subject'    => $subject,
-            'difficulty' => $difficulty,
-            'trial_type' => $trial_type,
-            'topic'      => $topic,
-            'source'     => $source,
-            'task_id'    => $task_id,
-            'scope'      => $scope,
-            'scope_ref'  => $scope_ref,
+            'parent_id'      => $parent_id,
+            'child_id'       => $child_id,
+            'level'          => $level,
+            'period'         => $period,
+            'subject'        => $subject,
+            'difficulty'     => $difficulty,
+            'trial_type'     => $trial_type,
+            'topic'          => $topic,
+            'source'         => $source,
+            'task_id'        => $task_id,
+            'scope'          => $scope,
+            'scope_ref'      => $scope_ref,
+            'module_numbers' => $module_numbers,
         ], $parent_id, 'info' );
 
         // ── 1. Pre-check gem balance ──────────────────────────────────────────
@@ -78,13 +80,29 @@ class Knowly_Exam_Service {
             ] );
         }
 
-        // ── 2. Fetch package — question_bank path or legacy WP pool ──────────
-        if ( $scope && $scope_ref ) {
-            $package = self::fetch_from_question_bank(
-                $level, $period ?: null, $subject, $scope, $scope_ref, $difficulty
+        // ── 2. Fetch package ─────────────────────────────────────────────────
+        // QB v2 is the default delivery path. When module_numbers are not
+        // explicitly provided (React's normal flow), auto-resolve from the
+        // question bank slot board. Fallback to WP pool if QB slot is unseeded.
+        if ( empty( $module_numbers ) ) {
+            $module_numbers = self::resolve_module_numbers( $level, $period, $subject, $topic );
+        }
+
+        if ( ! empty( $module_numbers ) ) {
+            $package = self::fetch_from_question_bank_assemble(
+                $level, $period ?: null, $subject, $module_numbers, $difficulty
             );
+
+            if ( is_wp_error( $package ) && 'knowly_pool_empty' === $package->get_error_code() ) {
+                Knowly_Debug::log( 'exam.start', 'QB v2 pool empty — falling back to WP pool', [
+                    'level'          => $level,
+                    'subject'        => $subject,
+                    'module_numbers' => $module_numbers,
+                ], $parent_id, 'warning' );
+                $package = self::fetch_from_wp_pool( $child_id, $level, $period, $subject, $difficulty, $trial_type, $topic );
+            }
         } else {
-            $package = self::fetch_from_railway( $child_id, $level, $period, $subject, $difficulty, $trial_type, $topic );
+            $package = self::fetch_from_wp_pool( $child_id, $level, $period, $subject, $difficulty, $trial_type, $topic );
         }
 
         if ( is_wp_error( $package ) ) {
@@ -457,6 +475,115 @@ class Knowly_Exam_Service {
     }
 
     /**
+     * Assemble a trial from the question_bank via POST /api/v1/trial/assemble.
+     *
+     * Used when module_numbers are provided. Railway selects least-served questions
+     * from the module_number-keyed bank and returns { meta, questions, answer_sheet }.
+     *
+     * @param  string   $level
+     * @param  string|null $period
+     * @param  string   $subject
+     * @param  int[]    $module_numbers   One or more module_numbers to draw from.
+     * @param  string   $difficulty
+     * @param  int      $question_count
+     * @param  string[] $exclude_question_ids  UUIDs of questions to skip (cross-session dedup).
+     * @return array|WP_Error  { package_id, questions, answer_sheet, meta } or WP_Error
+     */
+    public static function fetch_from_question_bank_assemble(
+        string $level,
+        ?string $period,
+        string $subject,
+        array  $module_numbers,
+        string $difficulty,
+        int    $question_count = 10,
+        array  $exclude_question_ids = []
+    ): array|WP_Error {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+
+        if ( ! $endpoint ) {
+            return new WP_Error( 'knowly_railway_not_configured', 'Railway endpoint not configured.', [ 'status' => 503 ] );
+        }
+
+        $body = [
+            'curriculum'           => get_option( 'knowly_default_curriculum', 'tt_primary' ),
+            'level'                => $level,
+            'period'               => $period ?: null,
+            'subject'              => self::normalise_subject( $subject ),
+            'difficulty'           => $difficulty,
+            'module_numbers'       => $module_numbers,
+            'question_count'       => $question_count,
+            'exclude_question_ids' => $exclude_question_ids,
+        ];
+
+        $response = wp_remote_post( $endpoint . '/api/v1/trial/assemble', [
+            'timeout' => 120,
+            'headers' => [
+                'Content-Type'     => 'application/json',
+                'X-AEP-Server-Key' => $server_key,
+            ],
+            'body' => wp_json_encode( $body ),
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            Knowly_Debug::log( 'exam.qb', 'Railway /trial/assemble HTTP error', [ 'error' => $response->get_error_message() ], null, 'error' );
+            return new WP_Error( 'knowly_railway_error', 'Failed to connect to content service.', [ 'status' => 503 ] );
+        }
+
+        $code = wp_remote_retrieve_response_code( $response );
+        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( $code === 503 ) {
+            return new WP_Error( 'knowly_pool_empty', $data['error'] ?? 'Question bank is being populated. Please try again shortly.', [ 'status' => 503 ] );
+        }
+
+        if ( $code < 200 || $code >= 300 ) {
+            Knowly_Debug::log( 'exam.qb', 'Railway /trial/assemble error', [ 'http_code' => $code, 'body' => $data ], null, 'error' );
+            return new WP_Error( 'knowly_railway_error', $data['error'] ?? 'Content service returned an error.', [ 'status' => 502 ] );
+        }
+
+        // Lowercase option keys and correct_answer — Railway returns A/B/C/D, React expects a/b/c/d
+        $questions    = $data['questions']    ?? [];
+        $answer_sheet = $data['answer_sheet'] ?? [];
+
+        foreach ( $questions as &$q ) {
+            if ( ! empty( $q['options'] ) && is_array( $q['options'] ) ) {
+                $lc = [];
+                foreach ( $q['options'] as $k => $v ) {
+                    $lc[ strtolower( $k ) ] = $v;
+                }
+                $q['options'] = $lc;
+            }
+            if ( isset( $q['correct_answer'] ) ) {
+                $q['correct_answer'] = strtolower( $q['correct_answer'] );
+            }
+        }
+        unset( $q );
+
+        foreach ( $answer_sheet as &$a ) {
+            if ( isset( $a['correct_answer'] ) ) {
+                $a['correct_answer'] = strtolower( $a['correct_answer'] );
+            }
+        }
+        unset( $a );
+
+        $package = [
+            'package_id'   => 'qb-' . uniqid(),
+            'questions'    => $questions,
+            'answer_sheet' => $answer_sheet,
+            'meta'         => $data['meta'] ?? [],
+            'source'       => 'question_bank',
+        ];
+
+        Knowly_Debug::log( 'exam.qb', 'QB assemble package ready', [
+            'module_numbers' => $module_numbers,
+            'question_count' => count( $package['questions'] ),
+        ], null, 'info' );
+
+        return $package;
+    }
+
+    /**
      * Fetch a trial from the Railway question_bank via POST /api/v1/trial/start.
      *
      * Used when scope + scope_ref params are present in the start request.
@@ -558,6 +685,85 @@ class Knowly_Exam_Service {
         string $topic = ''
     ): array|WP_Error {
         return self::fetch_from_wp_pool( $child_id, $level, $period, $subject, $difficulty, $trial_type, $topic );
+    }
+
+    /**
+     * Resolve module_numbers for a slot by querying the Railway question bank list.
+     *
+     * Returns module_numbers that have active questions. Falls back to all modules
+     * for the slot if none are seeded yet (so fetch_from_question_bank_assemble can
+     * return pool_empty cleanly and trigger the WP pool fallback).
+     *
+     * For std_5 with a topic slug, narrows candidates to modules whose title
+     * contains the topic keyword (best-effort — falls back to all if no match).
+     */
+    private static function resolve_module_numbers(
+        string $level,
+        string $period,
+        string $subject,
+        string $topic = ''
+    ): array {
+        $endpoint   = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+        $server_key = get_option( 'knowly_railway_server_key', '' );
+        $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
+
+        if ( ! $endpoint ) return [];
+
+        $params = [
+            'curriculum' => $curriculum,
+            'level'      => $level,
+            'subject'    => self::normalise_subject( $subject ),
+        ];
+        if ( $period ) {
+            $params['period'] = $period;
+        }
+
+        $url      = $endpoint . '/api/v1/question-bank/list?' . http_build_query( $params );
+        $response = wp_remote_get( $url, [
+            'timeout' => 15,
+            'headers' => [ 'X-AEP-Server-Key' => $server_key ],
+        ] );
+
+        if ( is_wp_error( $response ) ) {
+            Knowly_Debug::log( 'exam.resolve', 'Module list fetch failed', [ 'error' => $response->get_error_message() ], null, 'warning' );
+            return [];
+        }
+
+        $code = wp_remote_retrieve_response_code( $response );
+        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( $code !== 200 || empty( $data['slots'] ) ) {
+            return [];
+        }
+
+        // Gather unique module_numbers; prefer those with active questions
+        $seeded  = [];
+        $all     = [];
+        foreach ( $data['slots'] as $slot ) {
+            $mod        = (int) $slot['module_number'];
+            $all[ $mod ] = $slot;
+            if ( (int) ( $slot['active_count'] ?? 0 ) > 0 ) {
+                $seeded[ $mod ] = $slot;
+            }
+        }
+
+        $candidates = ! empty( $seeded ) ? $seeded : $all;
+
+        // std_5 topic filtering — narrow to module whose title matches topic keyword
+        if ( $topic && $level === 'std_5' && count( $candidates ) > 1 ) {
+            $keyword = strtolower( str_replace( [ '_', '-' ], ' ', $topic ) );
+            $matched = [];
+            foreach ( $candidates as $mod => $slot ) {
+                if ( false !== strpos( strtolower( $slot['module_title'] ?? '' ), $keyword ) ) {
+                    $matched[ $mod ] = $slot;
+                }
+            }
+            if ( ! empty( $matched ) ) {
+                $candidates = $matched;
+            }
+        }
+
+        return array_values( array_unique( array_keys( $candidates ) ) );
     }
 
     /**

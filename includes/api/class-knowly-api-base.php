@@ -202,4 +202,12 @@ abstract class Knowly_API_Base extends WP_REST_Controller {
             'per_page' => max( 1, min( 100, (int) ( $request->get_param( 'per_page' ) ?: 20 ) ) ),
         ];
     }
+
+    // ── Permission Callbacks ──────────────────────────────────────────────────
+
+    public function admin_permission(): bool {
+        $user_id = Knowly_JWT::from_request();
+        if ( is_wp_error( $user_id ) ) return false;
+        return user_can( $user_id, 'manage_options' );
+    }
 }

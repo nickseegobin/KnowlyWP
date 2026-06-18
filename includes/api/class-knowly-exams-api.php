@@ -40,8 +40,9 @@ class Knowly_Exams_API extends Knowly_API_Base {
                 'topic'      => [ 'required' => false, 'type' => 'string', 'default' => '', 'sanitize_callback' => 'sanitize_text_field' ],
                 'source'     => [ 'required' => false, 'type' => 'string', 'default' => 'self', 'enum' => [ 'self', 'teacher_assigned' ] ],
                 'task_id'    => [ 'required' => false, 'type' => 'integer', 'default' => null ],
-                'scope'      => [ 'required' => false, 'type' => 'string', 'default' => '', 'enum' => [ '', 'subtopic', 'general_topic', 'period' ], 'sanitize_callback' => 'sanitize_text_field' ],
-                'scope_ref'  => [ 'required' => false, 'type' => 'string', 'default' => '', 'sanitize_callback' => 'sanitize_text_field' ],
+                'scope'          => [ 'required' => false, 'type' => 'string', 'default' => '', 'enum' => [ '', 'subtopic', 'general_topic', 'period' ], 'sanitize_callback' => 'sanitize_text_field' ],
+                'scope_ref'      => [ 'required' => false, 'type' => 'string', 'default' => '', 'sanitize_callback' => 'sanitize_text_field' ],
+                'module_numbers' => [ 'required' => false, 'type' => 'array',  'default' => [], 'items' => [ 'type' => 'integer' ] ],
             ],
         ] );
 
@@ -109,7 +110,8 @@ class Knowly_Exams_API extends Knowly_API_Base {
             $request->get_param( 'source' ) ?: 'self',
             $request->get_param( 'task_id' ) ? (int) $request->get_param( 'task_id' ) : null,
             $request->get_param( 'scope' ) ?: '',
-            $request->get_param( 'scope_ref' ) ?: ''
+            $request->get_param( 'scope_ref' ) ?: '',
+            array_map( 'intval', (array) ( $request->get_param( 'module_numbers' ) ?: [] ) )
         );
 
         return is_wp_error( $result ) ? $result : $this->success( $result );
