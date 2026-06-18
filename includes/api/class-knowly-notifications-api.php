@@ -27,9 +27,10 @@ class Knowly_Notifications_API extends Knowly_API_Base {
                 'callback'            => [ $this, 'index' ],
                 'permission_callback' => '__return_true',
                 'args'                => [
-                    'unread_only' => [ 'default' => true,  'type' => 'boolean' ],
-                    'limit'       => [ 'default' => 50,    'type' => 'integer', 'minimum' => 1, 'maximum' => 100 ],
-                    'offset'      => [ 'default' => 0,     'type' => 'integer', 'minimum' => 0 ],
+                    'unread_only' => [ 'default' => true,   'type' => 'boolean' ],
+                    'limit'       => [ 'default' => 50,     'type' => 'integer', 'minimum' => 1, 'maximum' => 100 ],
+                    'offset'      => [ 'default' => 0,      'type' => 'integer', 'minimum' => 0 ],
+                    'scope'       => [ 'default' => 'self', 'type' => 'string',  'enum' => [ 'self', 'child' ] ],
                 ],
             ],
             [
@@ -50,6 +51,9 @@ class Knowly_Notifications_API extends Knowly_API_Base {
             'methods'             => 'GET',
             'callback'            => [ $this, 'count' ],
             'permission_callback' => '__return_true',
+            'args'                => [
+                'scope' => [ 'default' => 'self', 'type' => 'string', 'enum' => [ 'self', 'child' ] ],
+            ],
         ] );
 
         register_rest_route( $ns, '/notifications/read-all', [
@@ -93,6 +97,13 @@ class Knowly_Notifications_API extends Knowly_API_Base {
         $user_id = $this->authenticate( $request );
         if ( is_wp_error( $user_id ) ) return $user_id;
 
+        // scope=child resolves to the active child so siblings stay isolated
+        if ( $request->get_param( 'scope' ) === 'child' ) {
+            $ctx = $this->require_child_context( $request );
+            if ( is_wp_error( $ctx ) ) return $ctx;
+            $user_id = $ctx['child_id'];
+        }
+
         $unread_only = (bool) $request->get_param( 'unread_only' );
         $limit       = (int)  $request->get_param( 'limit' );
         $offset      = (int)  $request->get_param( 'offset' );
@@ -109,6 +120,12 @@ class Knowly_Notifications_API extends Knowly_API_Base {
     public function count( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $user_id = $this->authenticate( $request );
         if ( is_wp_error( $user_id ) ) return $user_id;
+
+        if ( $request->get_param( 'scope' ) === 'child' ) {
+            $ctx = $this->require_child_context( $request );
+            if ( is_wp_error( $ctx ) ) return $ctx;
+            $user_id = $ctx['child_id'];
+        }
 
         $unread = Knowly_Notification_Service::count_unread( $user_id );
 

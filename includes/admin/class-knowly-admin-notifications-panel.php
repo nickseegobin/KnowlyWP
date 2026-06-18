@@ -17,6 +17,7 @@ class Knowly_Admin_Notifications_Panel {
         add_action( 'wp_ajax_knowly_notif_panel_delete',    [ __CLASS__, 'ajax_delete' ] );
         add_action( 'wp_ajax_knowly_notif_panel_send',      [ __CLASS__, 'ajax_send' ] );
         add_action( 'wp_ajax_knowly_notif_user_search',     [ __CLASS__, 'ajax_user_search' ] );
+        add_action( 'wp_ajax_knowly_notif_broadcast',       [ __CLASS__, 'ajax_broadcast' ] );
     }
 
     public static function render(): void {
@@ -24,10 +25,11 @@ class Knowly_Admin_Notifications_Panel {
 
         $tab = sanitize_key( $_GET['tab'] ?? 'queue' );
         $tabs = [
-            'queue'  => 'Queue',
-            'send'   => 'Send Notification',
-            'health' => 'Health Checks',
-            'tests'  => 'Unit Tests',
+            'queue'     => 'Queue',
+            'send'      => 'Send Notification',
+            'broadcast' => 'Broadcast',
+            'health'    => 'Health Checks',
+            'tests'     => 'Unit Tests',
         ];
         ?>
         <div class="wrap knowly-wrap">
@@ -41,11 +43,12 @@ class Knowly_Admin_Notifications_Panel {
             <div style="background:#fff;border:1px solid #c3c4c7;border-top:none;padding:20px;">
             <?php
             match ( $tab ) {
-                'queue'  => self::render_queue(),
-                'send'   => self::render_send(),
-                'health' => self::render_health(),
-                'tests'  => self::render_tests(),
-                default  => self::render_queue(),
+                'queue'     => self::render_queue(),
+                'send'      => self::render_send(),
+                'broadcast' => self::render_broadcast(),
+                'health'    => self::render_health(),
+                'tests'     => self::render_tests(),
+                default     => self::render_queue(),
             };
             ?>
             </div>
@@ -335,6 +338,195 @@ class Knowly_Admin_Notifications_Panel {
         Knowly_Admin_Testing::render_test_groups( [ 'block4_notifications', 'notif_v2', 'block2_notifications' ] );
     }
 
+    // ── Broadcast Tab ─────────────────────────────────────────────────────────
+
+    private static function render_broadcast(): void {
+        $nonce = wp_create_nonce( 'knowly_admin_nonce' );
+        ?>
+        <div style="max-width:700px;">
+            <p style="color:#666;margin-bottom:20px;">Send a notification to a filtered list of users, or broadcast to an entire role group.</p>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;">
+
+                <!-- ── Left: User search & filter ── -->
+                <div>
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:14px;">Target Users</h3>
+
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Role Filter</label>
+                        <select id="kn-bc-role" style="width:100%;" onchange="knowlyBroadcast.filterRole()">
+                            <option value="">All roles</option>
+                            <option value="knowly_teacher">Teachers</option>
+                            <option value="knowly_parent">Parents</option>
+                            <option value="knowly_child">Students</option>
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Search by Name or Email</label>
+                        <input type="text" id="kn-bc-search" placeholder="Type to filter…" style="width:100%;" oninput="knowlyBroadcast.search(this.value)" autocomplete="off" />
+                    </div>
+
+                    <div id="kn-bc-user-list" style="border:1px solid #ddd;border-radius:4px;max-height:280px;overflow-y:auto;background:#fafafa;font-size:12px;">
+                        <div style="padding:10px;color:#888;">Select a role or search to load users.</div>
+                    </div>
+
+                    <div style="margin-top:8px;font-size:12px;color:#2271b1;">
+                        <span id="kn-bc-selected-count">0</span> user(s) selected
+                        <button onclick="knowlyBroadcast.clearSelection()" style="background:none;border:none;color:#d63638;cursor:pointer;margin-left:6px;font-size:11px;">Clear</button>
+                    </div>
+                </div>
+
+                <!-- ── Right: Message composer ── -->
+                <div>
+                    <h3 style="margin-top:0;margin-bottom:12px;font-size:14px;">Message</h3>
+
+                    <table class="form-table" style="margin:0;">
+                        <tr>
+                            <th scope="row" style="padding:4px 0;"><label style="font-size:12px;">Subject key</label></th>
+                            <td style="padding:4px 0;">
+                                <input type="text" id="kn-bc-subject" value="admin_message" style="width:100%;" />
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row" style="padding:4px 0;vertical-align:top;"><label style="font-size:12px;">Message</label></th>
+                            <td style="padding:4px 0;">
+                                <textarea id="kn-bc-msg" rows="5" style="width:100%;" placeholder="Enter your message…"></textarea>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row" style="padding:4px 0;"><label style="font-size:12px;">Type</label></th>
+                            <td style="padding:4px 0;">
+                                <select id="kn-bc-type" style="width:100%;">
+                                    <option value="simple">Simple (read-only)</option>
+                                    <option value="confirmation">Confirmation (accept/decline)</option>
+                                </select>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+                        <button id="kn-bc-send-selected" class="button button-primary" onclick="knowlyBroadcast.sendSelected()">
+                            Send to Selected
+                        </button>
+                        <button id="kn-bc-send-all" class="button" onclick="knowlyBroadcast.sendAll()" style="border-color:#2271b1;color:#2271b1;">
+                            Send to All in Filter
+                        </button>
+                    </div>
+
+                    <div id="kn-bc-status" style="margin-top:10px;font-weight:600;font-size:13px;"></div>
+                    <div id="kn-bc-log" style="margin-top:8px;font-size:11px;color:#666;"></div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        var knowlyBroadcast = {
+            searchTimer: null,
+            selectedIds: new Set(),
+            allLoadedUsers: [],
+
+            filterRole() {
+                var role = document.getElementById('kn-bc-role').value;
+                var q    = document.getElementById('kn-bc-search').value;
+                this.load(q, role);
+            },
+
+            search(q) {
+                clearTimeout(this.searchTimer);
+                this.searchTimer = setTimeout(() => {
+                    var role = document.getElementById('kn-bc-role').value;
+                    this.load(q, role);
+                }, 300);
+            },
+
+            load(q, role) {
+                var box = document.getElementById('kn-bc-user-list');
+                box.innerHTML = '<div style="padding:10px;color:#888;">Loading…</div>';
+                jQuery.post(ajaxurl, {
+                    action: 'knowly_notif_user_search',
+                    nonce:  '<?= esc_js( $nonce ) ?>',
+                    q:      q || ' ',
+                    role:   role,
+                }, r => {
+                    if (!r.success) { box.innerHTML = '<div style="padding:10px;color:#d63638;">Error loading users.</div>'; return; }
+                    var users = r.data.users || [];
+                    this.allLoadedUsers = users;
+                    if (!users.length) { box.innerHTML = '<div style="padding:10px;color:#888;">No users found.</div>'; return; }
+                    box.innerHTML = users.map(u => {
+                        var checked = this.selectedIds.has(u.id) ? 'checked' : '';
+                        var roleLabel = { knowly_teacher: 'Teacher', knowly_parent: 'Parent', knowly_child: 'Student' }[u.role] || u.role;
+                        return '<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #f0f0f0;cursor:pointer;">' +
+                            '<input type="checkbox" value="' + u.id + '" ' + checked + ' onchange="knowlyBroadcast.toggle(' + u.id + ', this.checked)">' +
+                            '<span><strong>' + u.display_name + '</strong> <span style="color:#888;font-size:10px;">' + u.user_email + ' · ' + roleLabel + '</span></span>' +
+                            '</label>';
+                    }).join('');
+                });
+            },
+
+            toggle(id, checked) {
+                if (checked) this.selectedIds.add(id);
+                else this.selectedIds.delete(id);
+                document.getElementById('kn-bc-selected-count').textContent = this.selectedIds.size;
+            },
+
+            clearSelection() {
+                this.selectedIds.clear();
+                document.getElementById('kn-bc-selected-count').textContent = '0';
+                document.querySelectorAll('#kn-bc-user-list input[type=checkbox]').forEach(cb => cb.checked = false);
+            },
+
+            getMsg() {
+                return {
+                    subject: document.getElementById('kn-bc-subject').value.trim() || 'admin_message',
+                    message: document.getElementById('kn-bc-msg').value.trim(),
+                    type:    document.getElementById('kn-bc-type').value,
+                };
+            },
+
+            sendSelected() {
+                if (!this.selectedIds.size) {
+                    this.setStatus('error', 'No users selected.');
+                    return;
+                }
+                var { subject, message, type } = this.getMsg();
+                if (!message) { this.setStatus('error', 'Message is required.'); return; }
+                this.send({ user_ids: JSON.stringify([...this.selectedIds]), subject, message, type });
+            },
+
+            sendAll() {
+                var role = document.getElementById('kn-bc-role').value;
+                var { subject, message, type } = this.getMsg();
+                if (!message) { this.setStatus('error', 'Message is required.'); return; }
+                var label = role ? ({ knowly_teacher: 'all Teachers', knowly_parent: 'all Parents', knowly_child: 'all Students' }[role] || 'all ' + role) : 'ALL users';
+                if (!confirm('Send this notification to ' + label + '? This cannot be undone.')) return;
+                this.send({ role, subject, message, type });
+            },
+
+            send(data) {
+                this.setStatus('info', 'Sending…');
+                jQuery('#kn-bc-send-selected, #kn-bc-send-all').prop('disabled', true);
+                jQuery.post(ajaxurl, Object.assign({ action: 'knowly_notif_broadcast', nonce: '<?= esc_js( $nonce ) ?>' }, data), r => {
+                    jQuery('#kn-bc-send-selected, #kn-bc-send-all').prop('disabled', false);
+                    if (r.success) {
+                        this.setStatus('success', '✓ Sent to ' + r.data.sent + ' user(s).');
+                        document.getElementById('kn-bc-log').textContent = 'Sent at ' + new Date().toLocaleTimeString() + ' | ' + r.data.sent + ' notifications created.';
+                    } else {
+                        this.setStatus('error', '✗ ' + (r.data?.message || 'Error sending.'));
+                    }
+                });
+            },
+
+            setStatus(level, msg) {
+                var el = document.getElementById('kn-bc-status');
+                el.style.color = level === 'success' ? '#2e7d32' : level === 'error' ? '#d63638' : '#888';
+                el.textContent = msg;
+            }
+        };
+        </script>
+        <?php
+    }
+
     // ── AJAX: Mark notification read ──────────────────────────────────────────
 
     public static function ajax_mark_read(): void {
@@ -450,27 +642,95 @@ class Knowly_Admin_Notifications_Panel {
         check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
 
-        $q = sanitize_text_field( $_POST['q'] ?? '' );
-        if ( strlen( $q ) < 2 ) wp_send_json_success( [ 'users' => [] ] );
+        $q    = sanitize_text_field( $_POST['q'] ?? '' );
+        $role = sanitize_key( $_POST['role'] ?? '' );
 
-        $users = get_users( [
-            'search'         => '*' . $q . '*',
-            'search_columns' => [ 'user_login', 'user_email', 'display_name' ],
-            'number'         => 20,
-            'fields'         => [ 'ID', 'display_name', 'user_email' ],
-        ] );
+        $args = [
+            'number' => 50,
+            'fields' => [ 'ID', 'display_name', 'user_email' ],
+        ];
+
+        // Role filter
+        $allowed_roles = [ 'knowly_teacher', 'knowly_parent', 'knowly_child' ];
+        if ( $role && in_array( $role, $allowed_roles, true ) ) {
+            $args['role'] = $role;
+        }
+
+        // Search query
+        if ( strlen( $q ) >= 2 && trim( $q ) !== '' ) {
+            $args['search']         = '*' . $q . '*';
+            $args['search_columns'] = [ 'user_login', 'user_email', 'display_name' ];
+        }
+
+        $users = get_users( $args );
 
         $result = array_map( function( $u ) {
             $roles = (array) get_userdata( $u->ID )->roles;
+            $role  = array_intersect( $roles, [ 'knowly_teacher', 'knowly_parent', 'knowly_child' ] );
             return [
                 'id'           => (int) $u->ID,
                 'display_name' => $u->display_name,
                 'user_email'   => $u->user_email,
-                'role'         => implode( ', ', $roles ),
+                'role'         => reset( $role ) ?: implode( ', ', $roles ),
             ];
         }, $users );
 
         wp_send_json_success( [ 'users' => $result ] );
+    }
+
+    // ── AJAX: Broadcast ───────────────────────────────────────────────────────
+
+    public static function ajax_broadcast(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $message  = sanitize_textarea_field( $_POST['message'] ?? '' );
+        $subject  = sanitize_text_field( $_POST['subject'] ?? 'admin_message' ) ?: 'admin_message';
+        $type     = in_array( $_POST['type'] ?? '', [ 'simple', 'confirmation' ], true ) ? $_POST['type'] : 'simple';
+        $role     = sanitize_key( $_POST['role'] ?? '' );
+        $user_ids = json_decode( stripslashes( $_POST['user_ids'] ?? '[]' ), true );
+
+        if ( ! $message ) wp_send_json_error( [ 'message' => 'Message is required.' ] );
+
+        $sender_id = get_current_user_id();
+        $targets   = [];
+
+        if ( ! empty( $user_ids ) && is_array( $user_ids ) ) {
+            // Explicit user_ids list from selection
+            $targets = array_map( 'intval', $user_ids );
+        } else {
+            // Role-based broadcast
+            $allowed_roles = [ 'knowly_teacher', 'knowly_parent', 'knowly_child' ];
+            $args = [ 'number' => -1, 'fields' => 'ID' ];
+            if ( $role && in_array( $role, $allowed_roles, true ) ) {
+                $args['role'] = $role;
+            } else {
+                // All Knowly users (any of the three roles)
+                $args['role__in'] = $allowed_roles;
+            }
+            $targets = get_users( $args );
+            $targets = array_map( 'intval', $targets );
+        }
+
+        $count = 0;
+        foreach ( $targets as $uid ) {
+            $result = Knowly_Notification_Service::create( [
+                'recipient_user_id' => $uid,
+                'sender_user_id'    => $sender_id,
+                'type'              => $type,
+                'subject'           => $subject,
+                'message'           => $message,
+            ] );
+            if ( ! is_wp_error( $result ) ) $count++;
+        }
+
+        Knowly_Debug::log( 'notification.broadcast', 'Broadcast sent', [
+            'role'    => $role ?: 'all',
+            'count'   => $count,
+            'subject' => $subject,
+        ], $sender_id, 'info' );
+
+        wp_send_json_success( [ 'sent' => $count ] );
     }
 
     // ── AJAX: Health ──────────────────────────────────────────────────────────

@@ -335,13 +335,18 @@ class Knowly_Class_Service {
         $parent_id    = $child['parent_id'];
         $child_id     = $child['child_id'];
 
+        $school_name    = get_user_meta( $teacher_id, 'knowly_school_name', true ) ?: null;
+        $principal_name = get_user_meta( $teacher_id, 'knowly_principal_name', true ) ?: null;
+
         $payload = [
-            'class_id'     => $class_id,
-            'class_name'   => $class_name,
-            'teacher_id'   => $teacher_id,
-            'teacher_name' => $teacher_name,
-            'child_id'     => $child_id,
-            'child_name'   => $child_name,
+            'class_id'       => $class_id,
+            'class_name'     => $class_name,
+            'teacher_id'     => $teacher_id,
+            'teacher_name'   => $teacher_name,
+            'school_name'    => $school_name,
+            'principal_name' => $principal_name,
+            'child_id'       => $child_id,
+            'child_nickname' => $child_name,
         ];
 
         // Notification 1: simple → child
