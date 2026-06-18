@@ -18,6 +18,8 @@ class Knowly_Admin_Notifications_Panel {
         add_action( 'wp_ajax_knowly_notif_panel_send',      [ __CLASS__, 'ajax_send' ] );
         add_action( 'wp_ajax_knowly_notif_user_search',     [ __CLASS__, 'ajax_user_search' ] );
         add_action( 'wp_ajax_knowly_notif_broadcast',       [ __CLASS__, 'ajax_broadcast' ] );
+        add_action( 'wp_ajax_knowly_notif_bulk_delete',     [ __CLASS__, 'ajax_bulk_delete' ] );
+        add_action( 'wp_ajax_knowly_notif_cleanup',         [ __CLASS__, 'ajax_cleanup' ] );
     }
 
     public static function render(): void {
@@ -63,6 +65,7 @@ class Knowly_Admin_Notifications_Panel {
         $table = $wpdb->prefix . 'knowly_notifications';
 
         $total_unread = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE is_read = 0" );
+        $total_read   = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE is_read = 1" );
         $total        = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
 
         $notifications = $wpdb->get_results(
@@ -75,10 +78,14 @@ class Knowly_Admin_Notifications_Panel {
         );
         $nonce = wp_create_nonce( 'knowly_admin_nonce' );
         ?>
-        <div class="knowly-stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;max-width:500px;">
+        <div class="knowly-stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px;max-width:640px;">
             <div class="knowly-stat-card" style="<?= $total_unread > 0 ? 'border-color:#d63638;' : '' ?>">
                 <div class="knowly-stat-number" style="<?= $total_unread > 0 ? 'color:#d63638;' : '' ?>"><?= esc_html( $total_unread ) ?></div>
                 <div class="knowly-stat-label">Unread</div>
+            </div>
+            <div class="knowly-stat-card">
+                <div class="knowly-stat-number"><?= esc_html( $total_read ) ?></div>
+                <div class="knowly-stat-label">Read</div>
             </div>
             <div class="knowly-stat-card">
                 <div class="knowly-stat-number"><?= esc_html( $total ) ?></div>
@@ -93,9 +100,25 @@ class Knowly_Admin_Notifications_Panel {
         <?php if ( empty( $notifications ) ) : ?>
         <p style="color:#888;">No notifications found.</p>
         <?php else : ?>
-        <table class="knowly-table widefat" style="font-size:12px;">
+
+        <!-- ── Bulk action toolbar ── -->
+        <div id="kn-q-toolbar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;background:#f6f7f7;border:1px solid #ddd;border-radius:4px;">
+            <span id="kn-q-sel-label" style="font-size:12px;color:#555;min-width:90px;">0 selected</span>
+            <button id="kn-q-btn-selected" class="button button-small" style="color:#d63638;border-color:#d63638;" disabled onclick="knowlyQ.deleteSelected()">Delete Selected</button>
+            <span style="color:#ddd;margin:0 4px;">|</span>
+            <button class="button button-small" onclick="knowlyQ.cleanup('read')" <?= $total_read === 0 ? 'disabled' : '' ?>>
+                Delete All Read <span style="color:#888;font-size:10px;">(<?= esc_html( $total_read ) ?>)</span>
+            </button>
+            <button class="button button-small" onclick="knowlyQ.cleanup('older30')">Delete Older Than 30d</button>
+            <button class="button button-small" onclick="knowlyQ.cleanup('older90')">Delete Older Than 90d</button>
+            <button class="button button-small" style="color:#d63638;border-color:#d63638;" onclick="knowlyQ.cleanup('all')">Delete All</button>
+            <span id="kn-q-status" style="font-size:12px;font-weight:600;margin-left:8px;"></span>
+        </div>
+
+        <table class="knowly-table widefat" style="font-size:12px;" id="kn-q-table">
             <thead>
                 <tr>
+                    <th style="width:28px;"><input type="checkbox" id="kn-q-chk-all" title="Select all" onchange="knowlyQ.toggleAll(this.checked)" /></th>
                     <th>ID</th>
                     <th>Recipient</th>
                     <th>Sender</th>
@@ -111,35 +134,56 @@ class Knowly_Admin_Notifications_Panel {
             <tbody>
                 <?php foreach ( $notifications as $n ) : ?>
                 <tr id="notif-row-<?= (int) $n->id ?>">
+                    <td><input type="checkbox" class="kn-q-chk" value="<?= (int) $n->id ?>" onchange="knowlyQ.onCheckChange()" /></td>
                     <td style="color:#888;">#<?= (int) $n->id ?></td>
                     <td><?= esc_html( $n->recipient_name ?? 'User #' . $n->recipient_user_id ) ?></td>
                     <td><?= esc_html( $n->sender_name ?? ( $n->sender_user_id ? 'User #' . $n->sender_user_id : '—' ) ) ?></td>
                     <td><span class="knowly-badge <?= $n->type === 'confirmation' ? 'warn' : '' ?>"><?= esc_html( $n->type ) ?></span></td>
                     <td><?= esc_html( $n->subject ) ?></td>
                     <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<?= esc_attr( $n->message ) ?>"><?= esc_html( $n->message ) ?></td>
-                    <td><?= $n->is_read ? '<span style="color:#888;">read</span>' : '<strong style="color:#d63638;">unread</strong>' ?></td>
+                    <td class="kn-q-read-cell"><?= $n->is_read ? '<span style="color:#888;">read</span>' : '<strong style="color:#d63638;">unread</strong>' ?></td>
                     <td><?= $n->response ? esc_html( $n->response ) : '—' ?></td>
                     <td><?= esc_html( substr( $n->created_at, 0, 16 ) ) ?></td>
                     <td style="white-space:nowrap;">
                         <?php if ( ! $n->is_read ) : ?>
-                        <button class="button button-small" style="margin-right:4px;" onclick="knowlyNotifPanel.markRead(<?= (int) $n->id ?>, this)">Mark Read</button>
+                        <button class="button button-small" style="margin-right:4px;" onclick="knowlyQ.markRead(<?= (int) $n->id ?>, this)">Mark Read</button>
                         <?php endif; ?>
-                        <button class="button button-small" style="color:#d63638;border-color:#d63638;" onclick="knowlyNotifPanel.deleteNotif(<?= (int) $n->id ?>, this)">Delete</button>
+                        <button class="button button-small" style="color:#d63638;border-color:#d63638;" onclick="knowlyQ.deleteOne(<?= (int) $n->id ?>, this)">Delete</button>
                     </td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
+
         <script>
-        const knowlyNotifPanel = {
+        const knowlyQ = {
+            nonce: '<?= esc_js( $nonce ) ?>',
+
+            // ── Selection helpers ─────────────────────────────────────────────
+            toggleAll(checked) {
+                document.querySelectorAll('.kn-q-chk').forEach(cb => cb.checked = checked);
+                this.onCheckChange();
+            },
+            onCheckChange() {
+                const checked = document.querySelectorAll('.kn-q-chk:checked');
+                const allCbs  = document.querySelectorAll('.kn-q-chk');
+                document.getElementById('kn-q-sel-label').textContent = checked.length + ' selected';
+                document.getElementById('kn-q-btn-selected').disabled = checked.length === 0;
+                document.getElementById('kn-q-chk-all').indeterminate = checked.length > 0 && checked.length < allCbs.length;
+                document.getElementById('kn-q-chk-all').checked = checked.length === allCbs.length && allCbs.length > 0;
+            },
+            selectedIds() {
+                return [...document.querySelectorAll('.kn-q-chk:checked')].map(cb => parseInt(cb.value));
+            },
+
+            // ── Individual actions ────────────────────────────────────────────
             markRead(id, btn) {
                 jQuery(btn).prop('disabled', true);
-                jQuery.post(ajaxurl, { action: 'knowly_notif_panel_mark_read', nonce: '<?= esc_js( $nonce ) ?>', id }, r => {
+                jQuery.post(ajaxurl, { action: 'knowly_notif_panel_mark_read', nonce: this.nonce, id }, r => {
                     if (r.success) {
                         const row = document.getElementById('notif-row-' + id);
                         if (row) {
-                            const readCell = row.cells[6];
-                            if (readCell) readCell.innerHTML = '<span style="color:#888;">read</span>';
+                            row.querySelector('.kn-q-read-cell').innerHTML = '<span style="color:#888;">read</span>';
                             btn.remove();
                         }
                     } else {
@@ -148,18 +192,75 @@ class Knowly_Admin_Notifications_Panel {
                     }
                 });
             },
-            deleteNotif(id, btn) {
+            deleteOne(id, btn) {
                 if (!confirm('Delete notification #' + id + '? This cannot be undone.')) return;
                 jQuery(btn).prop('disabled', true);
-                jQuery.post(ajaxurl, { action: 'knowly_notif_panel_delete', nonce: '<?= esc_js( $nonce ) ?>', id }, r => {
+                jQuery.post(ajaxurl, { action: 'knowly_notif_panel_delete', nonce: this.nonce, id }, r => {
                     if (r.success) {
                         const row = document.getElementById('notif-row-' + id);
                         if (row) row.remove();
+                        this.onCheckChange();
                     } else {
                         alert(r.data?.message || 'Error');
                         jQuery(btn).prop('disabled', false);
                     }
                 });
+            },
+
+            // ── Bulk delete selected ──────────────────────────────────────────
+            deleteSelected() {
+                const ids = this.selectedIds();
+                if (!ids.length) return;
+                if (!confirm('Delete ' + ids.length + ' selected notification(s)? This cannot be undone.')) return;
+                this.setStatus('Deleting…');
+                jQuery.post(ajaxurl, { action: 'knowly_notif_bulk_delete', nonce: this.nonce, ids: JSON.stringify(ids) }, r => {
+                    if (r.success) {
+                        ids.forEach(id => {
+                            const row = document.getElementById('notif-row-' + id);
+                            if (row) row.remove();
+                        });
+                        this.onCheckChange();
+                        this.setStatus('✓ Deleted ' + r.data.deleted + ' notification(s).', 'green');
+                    } else {
+                        this.setStatus('✗ ' + (r.data?.message || 'Error'), 'red');
+                    }
+                });
+            },
+
+            // ── Cleanup (by criteria) ─────────────────────────────────────────
+            cleanup(mode) {
+                const labels = {
+                    read:    'all READ notifications',
+                    older30: 'all notifications older than 30 days',
+                    older90: 'all notifications older than 90 days',
+                    all:     'ALL notifications (every single one)',
+                };
+                if (!confirm('Permanently delete ' + (labels[mode] || mode) + '? This cannot be undone.')) return;
+                this.setStatus('Cleaning up…');
+                jQuery.post(ajaxurl, { action: 'knowly_notif_cleanup', nonce: this.nonce, mode }, r => {
+                    if (r.success) {
+                        const count = r.data.deleted;
+                        this.setStatus('✓ Deleted ' + count + ' notification(s).', 'green');
+                        // Remove deleted rows from the DOM
+                        (r.data.ids || []).forEach(id => {
+                            const row = document.getElementById('notif-row-' + id);
+                            if (row) row.remove();
+                        });
+                        if (mode === 'all') {
+                            document.querySelector('#kn-q-table tbody').innerHTML =
+                                '<tr><td colspan="11" style="padding:12px;color:#888;">All notifications deleted.</td></tr>';
+                        }
+                        this.onCheckChange();
+                    } else {
+                        this.setStatus('✗ ' + (r.data?.message || 'Error'), 'red');
+                    }
+                });
+            },
+
+            setStatus(msg, color) {
+                const el = document.getElementById('kn-q-status');
+                el.textContent = msg;
+                el.style.color = color === 'green' ? '#2e7d32' : color === 'red' ? '#d63638' : '#888';
             }
         };
         </script>
@@ -731,6 +832,87 @@ class Knowly_Admin_Notifications_Panel {
         ], $sender_id, 'info' );
 
         wp_send_json_success( [ 'sent' => $count ] );
+    }
+
+    // ── AJAX: Bulk delete by ID list ─────────────────────────────────────────
+
+    public static function ajax_bulk_delete(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        global $wpdb;
+        $raw = json_decode( stripslashes( $_POST['ids'] ?? '[]' ), true );
+        if ( ! is_array( $raw ) || empty( $raw ) ) {
+            wp_send_json_error( [ 'message' => 'No IDs provided.' ] );
+        }
+
+        $ids     = array_map( 'intval', $raw );
+        $ids     = array_filter( $ids );
+        $placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+
+        $deleted = $wpdb->query( $wpdb->prepare(
+            "DELETE FROM {$wpdb->prefix}knowly_notifications WHERE id IN ({$placeholders})",
+            ...$ids
+        ) );
+
+        wp_send_json_success( [ 'deleted' => (int) $deleted ] );
+    }
+
+    // ── AJAX: Cleanup by criteria ─────────────────────────────────────────────
+
+    public static function ajax_cleanup(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'knowly_notifications';
+        $mode  = sanitize_key( $_POST['mode'] ?? '' );
+
+        switch ( $mode ) {
+            case 'read':
+                $ids = $wpdb->get_col( "SELECT id FROM {$table} WHERE is_read = 1" );
+                if ( $ids ) {
+                    $wpdb->query( "DELETE FROM {$table} WHERE is_read = 1" );
+                }
+                break;
+
+            case 'older30':
+                $ids = $wpdb->get_col( $wpdb->prepare(
+                    "SELECT id FROM {$table} WHERE created_at < %s",
+                    gmdate( 'Y-m-d H:i:s', strtotime( '-30 days' ) )
+                ) );
+                if ( $ids ) {
+                    $wpdb->query( $wpdb->prepare(
+                        "DELETE FROM {$table} WHERE created_at < %s",
+                        gmdate( 'Y-m-d H:i:s', strtotime( '-30 days' ) )
+                    ) );
+                }
+                break;
+
+            case 'older90':
+                $ids = $wpdb->get_col( $wpdb->prepare(
+                    "SELECT id FROM {$table} WHERE created_at < %s",
+                    gmdate( 'Y-m-d H:i:s', strtotime( '-90 days' ) )
+                ) );
+                if ( $ids ) {
+                    $wpdb->query( $wpdb->prepare(
+                        "DELETE FROM {$table} WHERE created_at < %s",
+                        gmdate( 'Y-m-d H:i:s', strtotime( '-90 days' ) )
+                    ) );
+                }
+                break;
+
+            case 'all':
+                $ids = $wpdb->get_col( "SELECT id FROM {$table}" );
+                $wpdb->query( "TRUNCATE TABLE {$table}" );
+                break;
+
+            default:
+                wp_send_json_error( [ 'message' => 'Unknown cleanup mode.' ] );
+                return;
+        }
+
+        wp_send_json_success( [ 'deleted' => count( $ids ), 'ids' => array_map( 'intval', $ids ) ] );
     }
 
     // ── AJAX: Health ──────────────────────────────────────────────────────────
