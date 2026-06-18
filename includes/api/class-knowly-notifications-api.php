@@ -67,7 +67,8 @@ class Knowly_Notifications_API extends Knowly_API_Base {
             'callback'            => [ $this, 'mark_read' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'id' => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
+                'id'    => [ 'required' => true,  'type' => 'integer', 'minimum' => 1 ],
+                'scope' => [ 'required' => false, 'type' => 'string',  'enum' => [ 'self', 'child' ], 'default' => 'self' ],
             ],
         ] );
 
@@ -86,7 +87,8 @@ class Knowly_Notifications_API extends Knowly_API_Base {
             'callback'            => [ $this, 'destroy' ],
             'permission_callback' => '__return_true',
             'args'                => [
-                'id' => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
+                'id'    => [ 'required' => true,  'type' => 'integer', 'minimum' => 1 ],
+                'scope' => [ 'required' => false, 'type' => 'string',  'enum' => [ 'self', 'child' ], 'default' => 'self' ],
             ],
         ] );
     }
@@ -160,6 +162,12 @@ class Knowly_Notifications_API extends Knowly_API_Base {
         $user_id = $this->authenticate( $request );
         if ( is_wp_error( $user_id ) ) return $user_id;
 
+        if ( $request->get_param( 'scope' ) === 'child' ) {
+            $ctx = $this->require_child_context( $request );
+            if ( is_wp_error( $ctx ) ) return $ctx;
+            $user_id = $ctx['child_id'];
+        }
+
         $result = Knowly_Notification_Service::mark_read( (int) $request['id'], $user_id );
         if ( is_wp_error( $result ) ) return $result;
 
@@ -178,6 +186,12 @@ class Knowly_Notifications_API extends Knowly_API_Base {
     public function destroy( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $user_id = $this->authenticate( $request );
         if ( is_wp_error( $user_id ) ) return $user_id;
+
+        if ( $request->get_param( 'scope' ) === 'child' ) {
+            $ctx = $this->require_child_context( $request );
+            if ( is_wp_error( $ctx ) ) return $ctx;
+            $user_id = $ctx['child_id'];
+        }
 
         $result = Knowly_Notification_Service::delete( (int) $request['id'], $user_id );
         if ( is_wp_error( $result ) ) return $result;
