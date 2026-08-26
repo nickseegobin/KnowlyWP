@@ -41,6 +41,9 @@ class Knowly_Core {
             Knowly_Admin::boot();
         }
 
+        // REST routes that must be available outside wp-admin (e.g. Lottie proxy)
+        add_action( 'rest_api_init', [ 'Knowly_Admin_Lottie_Library', 'register_rest_routes' ] );
+
         Knowly_Debug::log( 'core.boot', 'KnowlyAPI booted', [
             'version'    => KNOWLY_VERSION,
             'debug_mode' => Knowly_Debug::is_enabled(),
@@ -67,6 +70,7 @@ class Knowly_Core {
         ( new Knowly_Curriculum_API() )->register_routes();
         ( new Knowly_Progression_API() )->register_routes();
         ( new Knowly_Sound_Design_API() )->register_routes();
+        ( new Knowly_Design_API() )->register_routes();
 
         Knowly_Debug::log( 'core.routes', 'All REST routes registered', [], null, 'debug' );
     }

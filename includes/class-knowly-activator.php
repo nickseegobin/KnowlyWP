@@ -744,6 +744,18 @@ class Knowly_Activator {
             KEY         idx_context (context),
             KEY         idx_created (created_at)
         ) {$charset};" );
+
+        // ── 25. Lottie Library ────────────────────────────────────────────────────
+        dbDelta( "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}knowly_lottie (
+            id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            name        VARCHAR(255)    NOT NULL DEFAULT '',
+            file_url    TEXT            NOT NULL,
+            file_path   TEXT            NOT NULL,
+            file_size   INT UNSIGNED    NOT NULL DEFAULT 0,
+            uploaded_at DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY         idx_uploaded (uploaded_at)
+        ) {$charset};" );
     }
 
     // ── Roles ─────────────────────────────────────────────────────────────────

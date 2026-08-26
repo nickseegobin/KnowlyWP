@@ -25,6 +25,7 @@ class Knowly_Admin_Quests_Panel {
         add_action( 'wp_ajax_knowly_quests_audio_overview',[ __CLASS__, 'ajax_audio_overview'  ] );
         add_action( 'wp_ajax_knowly_quests_gen_para_audio',[ __CLASS__, 'ajax_gen_para_audio'  ] );
         add_action( 'wp_ajax_knowly_quests_del_para_audio',[ __CLASS__, 'ajax_del_para_audio'  ] );
+        add_action( 'wp_ajax_knowly_quests_gen_para_marks',[ __CLASS__, 'ajax_gen_para_marks'  ] );
     }
 
     public static function render(): void {
@@ -248,10 +249,7 @@ class Knowly_Admin_Quests_Panel {
                             + '<div style="display:flex;align-items:center;gap:8px;">'
                             + '<button class="button button-small qp-am-toggle" data-quest-id="' + (slot.quest_id||'') + '" data-loaded="0">'
                             + '🎙 Audio Manager</button>'
-                            + '<span class="qp-am-badge" style="font-size:11px;color:#6b7280;"></span>'
-                            + '</div>'
-                            + '<div class="qp-am-panel" style="display:none;margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;padding:14px;">'
-                            + '<p style="color:#94a3b8;font-size:12px;margin:0;">Loading…</p>'
+                            + '<span class="qp-am-badge" data-quest-id="' + (slot.quest_id||'') + '" style="font-size:11px;color:#6b7280;"></span>'
                             + '</div>'
                             + '</div>';
                         // ── Row 3: Badge indicator ──────────────────────────────
@@ -292,6 +290,14 @@ class Knowly_Admin_Quests_Panel {
                         + '<td style="padding:8px 10px;">' + slotBadge(slot.status) + '</td>'
                         + '<td style="padding:8px 10px;">' + actions + '</td>'
                         + '</tr>';
+                    if (slot.status === 'fulfilled') {
+                        html += '<tr class="qp-am-exp-row" data-quest-id="' + (slot.quest_id||'') + '" style="display:none;">'
+                            + '<td colspan="5" style="padding:0 8px 12px;background:#f8fafc;">'
+                            + '<div class="qp-am-panel" style="border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:14px;">'
+                            + '<p style="color:#94a3b8;font-size:12px;margin:0;">Loading…</p>'
+                            + '</div>'
+                            + '</td></tr>';
+                    }
                 });
                 html += '</tbody></table>';
                 $('#qp-board-table').html(html);
@@ -463,7 +469,7 @@ class Knowly_Admin_Quests_Panel {
                 sections.forEach(function(s) { totalParas += s.total_paras; totalReady += s.clips_ready; });
 
                 // Update summary badge
-                $panel.closest('.qp-audio-row').find('.qp-am-badge')
+                $('.qp-am-badge[data-quest-id="' + questId + '"]')
                     .text(totalReady + ' / ' + totalParas + ' clips ready');
 
                 var html = '';
@@ -487,12 +493,22 @@ class Knowly_Admin_Quests_Panel {
                         + '<th style="padding:5px 8px;width:70px;text-align:right;color:#64748b;">Chars</th>'
                         + '<th style="padding:5px 8px;width:58px;text-align:right;color:#64748b;">Cost</th>'
                         + '<th style="padding:5px 8px;width:180px;text-align:center;color:#64748b;">Audio</th>'
+                        + '<th style="padding:5px 8px;width:90px;text-align:center;color:#64748b;">Marks</th>'
                         + '</tr></thead><tbody>';
 
                     sec.paras.forEach(function(para) {
                         var statusIcon = para.has_audio
                             ? '<span style="color:#16a34a;margin-right:4px;">✅</span>'
                             : '<span style="color:#cbd5e1;margin-right:4px;">○</span>';
+                        var marksCell = para.has_marks
+                            ? '<span style="color:#16a34a;font-size:11px;" title="' + para.marks_count + ' words">✅ ' + para.marks_count + 'w</span>'
+                            : (para.has_audio
+                                ? '<button class="button button-small qp-am-get-marks"'
+                                    + ' data-quest-id="' + questId + '"'
+                                    + ' data-section-idx="' + sec.section_idx + '"'
+                                    + ' data-para-idx="' + para.para_idx + '"'
+                                    + ' title="Generate word timing marks for this paragraph">⏱ Get</button>'
+                                : '<span style="color:#cbd5e1;font-size:11px;">—</span>');
                         html += '<tr class="qp-am-para-row" data-quest-id="' + questId + '"'
                             + ' data-section-idx="' + sec.section_idx + '"'
                             + ' data-para-idx="' + para.para_idx + '"'
@@ -506,7 +522,9 @@ class Knowly_Admin_Quests_Panel {
                             + '<td style="padding:6px 8px;text-align:right;color:#64748b;">$' + para.cost.toFixed(4) + '</td>'
                             + '<td style="padding:6px 8px;text-align:center;" class="qp-am-audio-cell">'
                             + amAudioCell(questId, sec.section_idx, para.para_idx, para.audio_url)
-                            + '</td></tr>';
+                            + '</td>'
+                            + '<td style="padding:6px 8px;text-align:center;" class="qp-am-marks-cell">'
+                            + marksCell + '</td></tr>';
                     });
 
                     html += '</tbody></table></div>';
@@ -518,6 +536,8 @@ class Knowly_Admin_Quests_Panel {
                     + ' title="Fire all missing clips simultaneously (faster)">⚡ Parallel</button>'
                     + '<button class="button button-small qp-am-gen-sequential" data-quest-id="' + questId + '"'
                     + ' title="Generate one clip at a time in order">→ Sequential</button>'
+                    + '<button class="button button-small qp-am-get-all-marks" data-quest-id="' + questId + '"'
+                    + ' title="Generate word marks for all paragraphs that have audio but no marks">⏱ Get All Marks</button>'
                     + '<button class="button button-small qp-am-clear-all" data-quest-id="' + questId + '"'
                     + ' style="color:#dc2626;" title="Delete all clips for this quest">🗑 Clear All</button>'
                     + '</div>';
@@ -562,6 +582,40 @@ class Knowly_Admin_Quests_Panel {
                 return dfd.promise();
             }
 
+            // Fetch word-timing marks for one paragraph; returns a jQuery Deferred
+            function amGetMarks($row) {
+                var questId    = $row.data('quest-id');
+                var sectionIdx = $row.data('section-idx');
+                var paraIdx    = $row.data('para-idx');
+                var $cell      = $row.find('.qp-am-marks-cell');
+
+                $cell.html('<span style="color:#0369a1;font-size:11px;">⏳ Fetching…</span>');
+
+                var dfd = $.Deferred();
+
+                $.post(ajaxurl, {
+                    action:      'knowly_quests_gen_para_marks',
+                    nonce:       nonce,
+                    quest_id:    questId,
+                    section_idx: sectionIdx,
+                    para_idx:    paraIdx,
+                }, function(res) {
+                    if (res.success) {
+                        var n = res.data.marks_count || 0;
+                        $cell.html('<span style="color:#16a34a;font-size:11px;" title="' + n + ' words">✅ ' + n + 'w</span>');
+                        dfd.resolve(res);
+                    } else {
+                        $cell.html('<span style="color:#dc2626;font-size:11px;" title="' + (res.data.message||'') + '">✗ Failed</span>');
+                        dfd.reject(res);
+                    }
+                }).fail(function() {
+                    $cell.html('<span style="color:#dc2626;font-size:11px;">✗ Error</span>');
+                    dfd.reject();
+                });
+
+                return dfd.promise();
+            }
+
             // Collect all missing-clip rows from a panel (or section)
             function amMissingRows($scope) {
                 return $scope.find('.qp-am-para-row').filter(function() {
@@ -577,17 +631,18 @@ class Knowly_Admin_Quests_Panel {
 
             // Toggle / load Audio Manager panel
             $(document).on('click', '.qp-am-toggle', function() {
-                var $btn    = $(this);
-                var questId = $btn.data('quest-id');
-                var $panel  = $btn.closest('.qp-audio-row').find('.qp-am-panel');
+                var $btn     = $(this);
+                var questId  = $btn.data('quest-id');
+                var $expRow  = $btn.closest('tr').next('.qp-am-exp-row');
+                var $panel   = $expRow.find('.qp-am-panel');
 
-                if ($panel.is(':visible')) {
-                    $panel.slideUp(150);
+                if ($expRow.is(':visible')) {
+                    $expRow.slideUp(150);
                     $btn.text('🎙 Audio Manager');
                     return;
                 }
 
-                $panel.slideDown(150);
+                $expRow.slideDown(150);
                 $btn.text('🎙 Audio Manager ▲');
 
                 if ($btn.data('loaded')) return; // already populated
@@ -679,6 +734,30 @@ class Knowly_Admin_Quests_Panel {
                     amGenPara(list.shift()).always(function() { next(list); });
                 }
                 next(rows.slice());
+            });
+
+            // Fetch word marks for a single paragraph
+            $(document).on('click', '.qp-am-get-marks', function() {
+                amGetMarks($(this).closest('.qp-am-para-row'));
+            });
+
+            // Fetch marks for all audio-ready paragraphs that have no marks yet (sequential)
+            $(document).on('click', '.qp-am-get-all-marks', function() {
+                var $btn   = $(this).prop('disabled', true).text('⏳ Running…');
+                var $panel = $btn.closest('.qp-am-panel');
+
+                // Rows that have the ⏱ Get button (audio present, marks missing)
+                var rows = $panel.find('.qp-am-get-marks').toArray().map(function(el) {
+                    return $(el).closest('.qp-am-para-row');
+                });
+
+                if (!rows.length) { $btn.prop('disabled', false).text('⏱ Get All Marks'); return; }
+
+                function nextMarks(list) {
+                    if (!list.length) { $btn.prop('disabled', false).text('⏱ Get All Marks'); return; }
+                    amGetMarks(list.shift()).always(function() { nextMarks(list); });
+                }
+                nextMarks(rows.slice());
             });
 
             // Clear all clips for the quest
@@ -1136,6 +1215,32 @@ class Knowly_Admin_Quests_Panel {
         }
 
         wp_send_json_success( [ 'quest_id' => $quest_id, 'section_idx' => $section_idx, 'para_idx' => $para_idx ] );
+    }
+
+    // ── AJAX: Audio Manager — generate word marks only (migration path) ──────
+
+    public static function ajax_gen_para_marks(): void {
+        check_ajax_referer( 'knowly_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden', 403 );
+
+        $quest_id    = sanitize_text_field( $_POST['quest_id']    ?? '' );
+        $section_idx = (int) ( $_POST['section_idx'] ?? -1 );
+        $para_idx    = (int) ( $_POST['para_idx']    ?? -1 );
+
+        if ( ! $quest_id || $section_idx < 0 || $para_idx < 0 ) {
+            wp_send_json_error( [ 'message' => 'quest_id, section_idx, and para_idx are required.' ] );
+            return;
+        }
+
+        if ( function_exists( 'set_time_limit' ) ) set_time_limit( 30 );
+
+        $result = Knowly_Polly_Service::generate_marks_only( $quest_id, $section_idx, $para_idx );
+        if ( is_wp_error( $result ) ) {
+            wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+            return;
+        }
+
+        wp_send_json_success( $result );
     }
 
     // ── AJAX: Delete Polly audio for a quest ─────────────────────────────────

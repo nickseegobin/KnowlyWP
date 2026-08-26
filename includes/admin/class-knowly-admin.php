@@ -56,6 +56,10 @@ class Knowly_Admin {
         Knowly_Admin_Lessons_Panel::boot();
         // Sound Design
         Knowly_Admin_Sound_Design::boot();
+        // Design (Lottie animations)
+        Knowly_Admin_Design::boot();
+        // Lottie Library
+        Knowly_Admin_Lottie_Library::boot();
         // Badges
         Knowly_Admin_Badges::boot();
     }
@@ -78,6 +82,8 @@ class Knowly_Admin {
         add_submenu_page( 'knowly-api', 'System',          'System',          'manage_options', 'knowly-system',           [ 'Knowly_Admin_System',           'render' ] );
         add_submenu_page( 'knowly-api', 'Settings',        'Settings',        'manage_options', 'knowly-settings',         [ 'Knowly_Admin_Settings',         'render' ] );
         add_submenu_page( 'knowly-api', 'Sound Design',    'Sound Design',    'manage_options', 'knowly-sound-design',     [ 'Knowly_Admin_Sound_Design',     'render' ] );
+        add_submenu_page( 'knowly-api', 'Design',          'Design',          'manage_options', 'knowly-design',           [ 'Knowly_Admin_Design',           'render' ] );
+        add_submenu_page( 'knowly-api', 'Lottie Library',  'Lottie Library',  'manage_options', 'knowly-lottie-library',   [ 'Knowly_Admin_Lottie_Library',   'render' ] );
         add_submenu_page( 'knowly-api', 'Analytics',       'Analytics',       'manage_options', 'knowly-analytics',        [ 'Knowly_Admin_Analytics',        'render' ] );
         add_submenu_page( 'knowly-api', 'Data Management', 'Data Management', 'manage_options', 'knowly-data-management',  [ 'Knowly_Admin_Data_Management',  'render' ] );
 
@@ -169,6 +175,28 @@ class Knowly_Admin {
                 KNOWLY_VERSION,
                 true
             );
+        }
+
+        // Lottie Library assets — on the Library page AND the Editor page (for the picker modal)
+        if ( strpos( $hook, 'knowly-lottie-library' ) !== false || strpos( $hook, 'knowly-editor' ) !== false ) {
+            wp_enqueue_script(
+                'lottie-web',
+                'https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js',
+                [],
+                '5.12.2',
+                true
+            );
+            wp_enqueue_script(
+                'knowly-lottie-library',
+                KNOWLY_PLUGIN_URL . 'assets/js/knowly-lottie-library.js',
+                [ 'lottie-web' ],
+                KNOWLY_VERSION,
+                true
+            );
+            wp_localize_script( 'knowly-lottie-library', 'KnLottieData', [
+                'ajax_url' => admin_url( 'admin-ajax.php' ),
+                'nonce'    => wp_create_nonce( 'knowly_admin_nonce' ),
+            ] );
         }
     }
 

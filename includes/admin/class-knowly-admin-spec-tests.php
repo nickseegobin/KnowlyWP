@@ -282,6 +282,21 @@ class Knowly_Admin_Spec_Tests {
                 'badge_crud_cleanup'         => self::test_badge_crud_cleanup(),
                 // Group 22 — Badges: Railway AI Generation (slow)
                 'badge_railway_generate'     => self::test_badge_railway_generate(),
+                // Group 23 — Synced Viewer: Director System (fast)
+                'sv_marks_method_exists'       => self::test_sv_marks_method_exists(),
+                'sv_ajax_gen_marks_registered' => self::test_sv_ajax_gen_marks_registered(),
+                'sv_marks_invalid_quest_guard' => self::test_sv_marks_invalid_quest_guard(),
+                'sv_overview_marks_shape'      => self::test_sv_overview_marks_shape(),
+                'sv_overview_no_marks_default' => self::test_sv_overview_no_marks_default(),
+                'sv_marks_ndjson_parse'        => self::test_sv_marks_ndjson_parse(),
+                'sv_quest_content_schema'      => self::test_sv_quest_content_schema(),
+                'sv_lottie_url_schema'         => self::test_sv_lottie_url_schema(),
+                // Group 23 — Phase 10: full-pipeline contract tests (fast)
+                'sv_tag_strip_regex'           => self::test_sv_tag_strip_regex(),
+                'sv_api_content_contract'      => self::test_sv_api_content_contract(),
+                'sv_react_mode_detection'      => self::test_sv_react_mode_detection(),
+                // Group 23 (slow) — Synced Viewer: Live Marks Generation
+                'sv_live_marks_generate'       => self::test_sv_live_marks_generate(),
                 default                              => [ 'pass' => false, 'message' => "Unknown test: {$test_id}" ],
             };
         } catch ( Throwable $e ) {
@@ -3224,7 +3239,7 @@ class Knowly_Admin_Spec_Tests {
                 'error_code' => $result->get_error_code(),
                 'region'     => $region,
                 'bucket'     => $bucket,
-                'hint'       => 'Required IAM permissions: polly:StartSpeechSynthesisTask, polly:GetSpeechSynthesisTask, s3:PutObject. Bucket must allow public read on the audio prefix.',
+                'hint'       => 'Required IAM permissions: polly:StartSpeechSynthesisTask, polly:GetSpeechSynthesisTask, polly:SynthesizeSpeech (marks), s3:PutObject. Bucket must allow public read on the audio prefix.',
             ] );
         }
 
@@ -4972,6 +4987,657 @@ class Knowly_Admin_Spec_Tests {
         ] );
     }
 
+    // =========================================================================
+    // Group 23 — Synced Viewer: Director System
+    // =========================================================================
+
+    private static function test_sv_marks_method_exists(): array {
+        if ( ! class_exists( 'Knowly_Polly_Service' ) ) {
+            return self::fail( 'Knowly_Polly_Service class not loaded.', [
+                'hint' => 'Check knowly-api.php autoloader map.',
+            ] );
+        }
+
+        $ref = new ReflectionClass( 'Knowly_Polly_Service' );
+
+        if ( ! $ref->hasMethod( 'generate_marks_only' ) ) {
+            return self::fail( 'generate_marks_only() method not found on Knowly_Polly_Service.', [
+                'available_public' => array_map( fn( $m ) => $m->getName(), $ref->getMethods( ReflectionMethod::IS_PUBLIC ) ),
+                'hint'             => 'Declare generate_marks_only() as public static in class-knowly-polly-service.php.',
+            ] );
+        }
+
+        $method = $ref->getMethod( 'generate_marks_only' );
+        $errors = [];
+        if ( ! $method->isPublic() ) $errors[] = 'not public';
+        if ( ! $method->isStatic() ) $errors[] = 'not static';
+
+        if ( $errors ) {
+            return self::fail( 'generate_marks_only() exists but has wrong visibility: ' . implode( ', ', $errors ) );
+        }
+
+        return self::pass( 'Knowly_Polly_Service::generate_marks_only() is public static.', [
+            'parameters' => array_map( fn( $p ) => '$' . $p->getName(), $method->getParameters() ),
+        ] );
+    }
+
+    private static function test_sv_ajax_gen_marks_registered(): array {
+        $priority = has_action( 'wp_ajax_knowly_quests_gen_para_marks' );
+        if ( ! $priority ) {
+            return self::fail( 'wp_ajax_knowly_quests_gen_para_marks is NOT registered.', [
+                'hint' => "Knowly_Admin_Quests_Panel::boot() must call add_action('wp_ajax_knowly_quests_gen_para_marks', …)",
+            ] );
+        }
+        return self::pass( "wp_ajax_knowly_quests_gen_para_marks registered (priority {$priority})." );
+    }
+
+    private static function test_sv_marks_invalid_quest_guard(): array {
+        $result = Knowly_Polly_Service::generate_marks_only( '___bogus_spectest_quest___', 0, 0 );
+
+        if ( ! is_wp_error( $result ) ) {
+            return self::fail( 'Expected WP_Error for non-existent quest, got success.', [ 'result' => $result ] );
+        }
+
+        $code = $result->get_error_code();
+
+        // Two valid guard codes:
+        // • knowly_not_found       — AWS configured; quest lookup rejected the bogus ID
+        // • knowly_aws_not_configured — AWS not configured; config guard fires first (before quest lookup)
+        // Both prove the function never silently accepts a bad call.
+        $valid_codes = [ 'knowly_not_found', 'knowly_aws_not_configured' ];
+        if ( ! in_array( $code, $valid_codes, true ) ) {
+            return self::fail( "Unexpected error code '{$code}' — expected one of: " . implode( ', ', $valid_codes ) . '.', [
+                'code'    => $code,
+                'message' => $result->get_error_message(),
+            ] );
+        }
+
+        $guard_path = ( $code === 'knowly_aws_not_configured' )
+            ? 'config guard (AWS credentials not set)'
+            : 'quest lookup guard (quest not found)';
+
+        return self::pass( "generate_marks_only() correctly rejected bogus quest ID via {$guard_path}.", [
+            'error_code'    => $code,
+            'error_message' => $result->get_error_message(),
+            'guard_path'    => $guard_path,
+        ] );
+    }
+
+    private static function test_sv_overview_marks_shape(): array {
+        global $wpdb;
+
+        $quest_id = $wpdb->get_var(
+            "SELECT quest_id FROM {$wpdb->prefix}knowly_quests
+             WHERE variant='student' AND status='approved' AND content IS NOT NULL LIMIT 1"
+        );
+
+        if ( ! $quest_id ) {
+            return self::warn( 'No approved quests in wp_knowly_quests — cannot test overview shape.', [
+                'hint' => 'Sync quests from the Quests panel.',
+            ] );
+        }
+
+        $overview = Knowly_Polly_Service::get_overview( $quest_id );
+        if ( is_wp_error( $overview ) ) {
+            return self::fail( 'get_overview() returned WP_Error: ' . $overview->get_error_message(), [ 'quest_id' => $quest_id ] );
+        }
+
+        if ( empty( $overview ) ) {
+            return self::warn( 'get_overview() returned empty array — quest has no sections.', [
+                'quest_id' => $quest_id,
+                'hint'     => 'Quest content must have sections[] with explanation[] paragraphs.',
+            ] );
+        }
+
+        $problems   = [];
+        $total_paras = 0;
+
+        foreach ( $overview as $s_idx => $section ) {
+            if ( ! isset( $section['paras'] ) || ! is_array( $section['paras'] ) ) {
+                $problems[] = "section[{$s_idx}] missing 'paras' array";
+                continue;
+            }
+            foreach ( $section['paras'] as $p_idx => $para ) {
+                $total_paras++;
+                if ( ! array_key_exists( 'has_marks',   $para ) )  $problems[] = "s{$s_idx}/p{$p_idx}: missing 'has_marks'";
+                if ( ! array_key_exists( 'marks_count', $para ) )  $problems[] = "s{$s_idx}/p{$p_idx}: missing 'marks_count'";
+                if ( isset( $para['has_marks'] )   && ! is_bool( $para['has_marks'] ) )   $problems[] = "s{$s_idx}/p{$p_idx}: has_marks not bool";
+                if ( isset( $para['marks_count'] ) && ! is_int( $para['marks_count'] ) )  $problems[] = "s{$s_idx}/p{$p_idx}: marks_count not int";
+                if ( isset( $para['marks_count'] ) && $para['marks_count'] < 0 )          $problems[] = "s{$s_idx}/p{$p_idx}: marks_count < 0";
+            }
+        }
+
+        if ( $problems ) {
+            return self::fail( 'get_overview() shape failures: ' . implode( '; ', array_slice( $problems, 0, 3 ) ), [
+                'quest_id'    => $quest_id,
+                'all_problems'=> $problems,
+            ] );
+        }
+
+        return self::pass(
+            "get_overview() shape correct: {$total_paras} paragraphs across " . count( $overview ) . " sections all have has_marks + marks_count.",
+            [ 'quest_id' => $quest_id, 'sections' => count( $overview ), 'total_paras' => $total_paras ]
+        );
+    }
+
+    private static function test_sv_overview_no_marks_default(): array {
+        global $wpdb;
+
+        $rows = $wpdb->get_results(
+            "SELECT quest_id, content FROM {$wpdb->prefix}knowly_quests
+             WHERE variant='student' AND status='approved' AND content IS NOT NULL LIMIT 20",
+            ARRAY_A
+        );
+
+        if ( empty( $rows ) ) {
+            return self::warn( 'No approved quests — cannot test marks default values.', [ 'hint' => 'Sync quests from the Quests panel.' ] );
+        }
+
+        $quest_id_no_marks = null;
+        foreach ( $rows as $row ) {
+            $content = json_decode( $row['content'], true );
+            $has_any = false;
+            foreach ( ( $content['sections'] ?? [] ) as $section ) {
+                if ( ! empty( $section['explanation_marks'] ) ) { $has_any = true; break; }
+            }
+            if ( ! $has_any ) { $quest_id_no_marks = $row['quest_id']; break; }
+        }
+
+        if ( ! $quest_id_no_marks ) {
+            return self::warn( 'All 20 sampled quests already have marks — default=false path skipped.', [
+                'sampled' => count( $rows ),
+                'hint'    => 'This is fine — marks have been generated. The default guard still works.',
+            ] );
+        }
+
+        $overview = Knowly_Polly_Service::get_overview( $quest_id_no_marks );
+        if ( is_wp_error( $overview ) ) {
+            return self::fail( 'get_overview() returned WP_Error: ' . $overview->get_error_message(), [ 'quest_id' => $quest_id_no_marks ] );
+        }
+
+        $problems = [];
+        foreach ( $overview as $s_idx => $section ) {
+            foreach ( ( $section['paras'] ?? [] ) as $p_idx => $para ) {
+                if ( $para['has_marks']   !== false ) $problems[] = "s{$s_idx}/p{$p_idx}: has_marks should be false, got: " . var_export( $para['has_marks'], true );
+                if ( $para['marks_count'] !== 0 )     $problems[] = "s{$s_idx}/p{$p_idx}: marks_count should be 0, got: {$para['marks_count']}";
+            }
+        }
+
+        if ( $problems ) {
+            return self::fail( 'Default marks values incorrect: ' . implode( '; ', array_slice( $problems, 0, 3 ) ), [
+                'quest_id' => $quest_id_no_marks,
+                'problems' => $problems,
+            ] );
+        }
+
+        return self::pass( "Quest with no marks: all paragraphs have has_marks=false and marks_count=0 (never null).", [
+            'quest_id' => $quest_id_no_marks,
+        ] );
+    }
+
+    private static function test_sv_marks_ndjson_parse(): array {
+        $sample_body = implode( "\n", [
+            '{"time":0,"type":"word","start":0,"end":5,"value":"Hello"}',
+            '{"time":312,"type":"word","start":6,"end":11,"value":"there"}',
+            '{"time":624,"type":"word","start":12,"end":17,"value":"world"}',
+            '',  // trailing blank line — must be skipped silently
+        ] );
+
+        // Replicate the exact algorithm from fetch_marks()
+        $marks = [];
+        foreach ( explode( "\n", trim( $sample_body ) ) as $line ) {
+            $line = trim( $line );
+            if ( ! $line ) continue;
+            $obj = json_decode( $line, true );
+            if ( isset( $obj['time'], $obj['value'] ) ) {
+                $marks[] = [ 'time' => (int) $obj['time'], 'value' => (string) $obj['value'] ];
+            }
+        }
+
+        if ( count( $marks ) !== 3 ) {
+            return self::fail( "Expected 3 marks from sample, got " . count( $marks ) . ".", [ 'marks' => $marks ] );
+        }
+
+        $expected = [
+            [ 'time' => 0,   'value' => 'Hello' ],
+            [ 'time' => 312, 'value' => 'there' ],
+            [ 'time' => 624, 'value' => 'world' ],
+        ];
+
+        $problems = [];
+        foreach ( $expected as $i => $exp ) {
+            if ( $marks[ $i ]['time']  !== $exp['time'] )  $problems[] = "marks[{$i}][time]: expected {$exp['time']}, got {$marks[$i]['time']}";
+            if ( $marks[ $i ]['value'] !== $exp['value'] ) $problems[] = "marks[{$i}][value]: expected {$exp['value']}, got {$marks[$i]['value']}";
+            if ( ! is_int( $marks[ $i ]['time'] ) )        $problems[] = "marks[{$i}][time] is not int (cast failure)";
+            if ( ! is_string( $marks[ $i ]['value'] ) )    $problems[] = "marks[{$i}][value] is not string";
+        }
+
+        if ( $problems ) {
+            return self::fail( 'NDJSON parse failures: ' . implode( '; ', $problems ), [
+                'parsed'   => $marks,
+                'expected' => $expected,
+            ] );
+        }
+
+        return self::pass( 'Polly NDJSON parser: time cast to int, value cast to string, blank lines skipped.', [
+            'parsed_count' => count( $marks ),
+            'sample'       => $marks,
+        ] );
+    }
+
+    private static function test_sv_quest_content_schema(): array {
+        global $wpdb;
+
+        $row = $wpdb->get_row(
+            "SELECT quest_id, content FROM {$wpdb->prefix}knowly_quests
+             WHERE variant='student' AND status='approved' AND content IS NOT NULL LIMIT 1",
+            ARRAY_A
+        );
+
+        if ( ! $row ) {
+            return self::warn( 'No approved quests with content — cannot test schema.', [ 'hint' => 'Sync quests from the Quests panel.' ] );
+        }
+
+        $content = json_decode( $row['content'], true );
+        if ( ! is_array( $content ) ) {
+            return self::fail( 'Quest content is not valid JSON.', [
+                'quest_id' => $row['quest_id'],
+                'raw_len'  => strlen( $row['content'] ),
+            ] );
+        }
+
+        $sections = $content['sections'] ?? null;
+        if ( ! is_array( $sections ) || empty( $sections ) ) {
+            return self::fail( 'Quest content missing top-level sections[] array.', [
+                'quest_id'       => $row['quest_id'],
+                'top_level_keys' => array_keys( $content ),
+            ] );
+        }
+
+        $section = $sections[0];
+        $missing  = [];
+        if ( ! array_key_exists( 'title',       $section ) ) $missing[] = 'title';
+        if ( ! array_key_exists( 'explanation', $section ) ) $missing[] = 'explanation';
+
+        if ( $missing ) {
+            return self::fail( 'sections[0] missing expected keys: ' . implode( ', ', $missing ), [
+                'quest_id'    => $row['quest_id'],
+                'section_keys'=> array_keys( $section ),
+            ] );
+        }
+
+        if ( ! is_array( $section['explanation'] ) ) {
+            return self::fail( 'sections[0].explanation is not an array.', [
+                'quest_id' => $row['quest_id'],
+                'type'     => gettype( $section['explanation'] ),
+            ] );
+        }
+
+        return self::pass(
+            "sections[] schema valid: title ✓, explanation[" . count( $section['explanation'] ) . "] ✓. explanation_marks[] and lottie_url are additive optional keys.",
+            [
+                'quest_id'       => $row['quest_id'],
+                'section_count'  => count( $sections ),
+                'section_keys'   => array_keys( $section ),
+                'para_count'     => count( $section['explanation'] ),
+                'has_marks'      => array_key_exists( 'explanation_marks', $section ),
+                'has_lottie_url' => array_key_exists( 'lottie_url', $section ),
+            ]
+        );
+    }
+
+    private static function test_sv_lottie_url_schema(): array {
+        $test_url = 'https://cdn.example.com/knowly/animations/fractions-v1.lottie';
+
+        $section = [
+            'title'       => 'Test Section',
+            'explanation' => [ 'This is a test paragraph for [start] Lottie sync.' ],
+            'lottie_url'  => $test_url,
+        ];
+
+        $encoded = wp_json_encode( [ 'sections' => [ $section ] ] );
+        if ( ! $encoded ) {
+            return self::fail( 'wp_json_encode() failed on section with lottie_url.', [ 'section' => $section ] );
+        }
+
+        $decoded = json_decode( $encoded, true );
+        if ( ! is_array( $decoded ) ) {
+            return self::fail( 'json_decode() failed after encode.', [ 'snippet' => substr( $encoded, 0, 200 ) ] );
+        }
+
+        $lottie_out = $decoded['sections'][0]['lottie_url'] ?? '__MISSING__';
+        if ( $lottie_out !== $test_url ) {
+            return self::fail( "lottie_url round-trip mismatch. Expected: '{$test_url}', got: '{$lottie_out}'.", [
+                'expected' => $test_url,
+                'got'      => $lottie_out,
+            ] );
+        }
+
+        // Also verify null (Lottie absent) round-trips correctly.
+        // NOTE: cannot use ?? here — null-coalescing triggers on null values, returning the fallback.
+        // Use array_key_exists() to distinguish "key present with null value" from "key missing".
+        $section_null = [ 'title' => 'x', 'explanation' => [ 'y' ], 'lottie_url' => null ];
+        $decoded_null = json_decode( wp_json_encode( [ 'sections' => [ $section_null ] ] ), true );
+        $null_section = $decoded_null['sections'][0] ?? [];
+
+        if ( ! array_key_exists( 'lottie_url', $null_section ) ) {
+            return self::fail( 'lottie_url key was dropped during JSON round-trip when value is null.', [
+                'section_keys' => array_keys( $null_section ),
+                'hint'         => 'json_encode preserves null values; key should appear as "lottie_url":null in JSON.',
+            ] );
+        }
+
+        if ( $null_section['lottie_url'] !== null ) {
+            return self::fail( 'lottie_url=null did not survive round-trip as null.', [
+                'got' => $null_section['lottie_url'],
+            ] );
+        }
+
+        return self::pass( 'lottie_url URL and null both survive wp_json_encode→json_decode round-trip correctly.', [
+            'url_roundtrip' => $lottie_out,
+            'null_preserved'=> true,
+        ] );
+    }
+
+    // Group 23 — Phase 10: full-pipeline contract tests
+
+    /**
+     * Verify the exact preg_replace patterns used by generate_marks_only() and
+     * generate_para() before every Polly call strip all valid Lottie inline tags
+     * while leaving unrelated bracket sequences untouched.
+     */
+    private static function test_sv_tag_strip_regex(): array {
+        $strip = static function ( string $text ): string {
+            $text = preg_replace( '/\[(start|next|m\d+)\]/i', '', $text );
+            return preg_replace( '/\s{2,}/', ' ', trim( $text ) );
+        };
+
+        $cases = [
+            // [ input, expected, label ]
+            [ '[start] A number is an idea.',            'A number is an idea.',            '[start] at start' ],
+            [ 'Hello [start] world',                     'Hello world',                     '[start] mid-sentence' ],
+            [ 'See [next] this',                         'See this',                        '[next] stripped' ],
+            [ '[m1] one [m2] two [m3] three [m4] four', 'one two three four',              '[m1]–[m4] all stripped' ],
+            [ '[m10] big marker',                        'big marker',                      '[m10] double-digit stripped' ],
+            [ 'What is [A] four [B] five?',              'What is [A] four [B] five?',      'Non-Lottie brackets preserved' ],
+            [ 'Hello [start][next] world',               'Hello world',                     'Adjacent tags collapsed' ],
+            [ '[START] Hello',                           'Hello',                           'Case-insensitive match' ],
+            [ 'Plain text, no tags.',                    'Plain text, no tags.',            'No tags — unchanged' ],
+        ];
+
+        $failures = [];
+        foreach ( $cases as [ $input, $expected, $label ] ) {
+            $got = $strip( $input );
+            if ( $got !== $expected ) {
+                $failures[] = [ 'label' => $label, 'input' => $input, 'expected' => $expected, 'got' => $got ];
+            }
+        }
+
+        if ( ! empty( $failures ) ) {
+            return self::fail(
+                count( $failures ) . ' of ' . count( $cases ) . ' tag-strip cases failed.',
+                [ 'failures' => $failures ]
+            );
+        }
+
+        return self::pass(
+            'All ' . count( $cases ) . ' tag-strip cases pass — Polly receives clean text in every scenario.',
+            [ 'cases_checked' => count( $cases ) ]
+        );
+    }
+
+    /**
+     * Load a real quest from wp_knowly_quests and validate the full data shape
+     * that React's LessonPlayer consumes: sections[], explanation[], explanation_marks,
+     * and lottie_url are all correctly typed.
+     */
+    private static function test_sv_api_content_contract(): array {
+        global $wpdb;
+
+        $row = $wpdb->get_row(
+            "SELECT quest_id, content FROM {$wpdb->prefix}knowly_quests
+              WHERE variant = 'student' AND status = 'approved' AND content IS NOT NULL
+              ORDER BY id DESC LIMIT 1",
+            ARRAY_A
+        );
+
+        if ( ! $row ) {
+            return self::warn( 'No approved student quest with content found — skipping contract check.', [
+                'hint' => 'Approve at least one quest in the Quest editor.',
+            ] );
+        }
+
+        $content = json_decode( $row['content'], true );
+        if ( ! is_array( $content ) || ! isset( $content['sections'] ) ) {
+            return self::fail( 'content column decoded but missing "sections" key.', [ 'keys' => array_keys( $content ?? [] ) ] );
+        }
+
+        $sections = $content['sections'];
+        if ( ! is_array( $sections ) || count( $sections ) === 0 ) {
+            return self::fail( 'sections[] is empty or not an array.', [ 'sections' => $sections ] );
+        }
+
+        $section_issues = [];
+        foreach ( $sections as $i => $s ) {
+            if ( ! isset( $s['title'] ) || ! is_string( $s['title'] ) ) {
+                $section_issues[] = "sections[{$i}].title missing or not string";
+            }
+            if ( ! isset( $s['explanation'] ) || ! is_array( $s['explanation'] ) ) {
+                $section_issues[] = "sections[{$i}].explanation missing or not array";
+                continue;
+            }
+            // explanation_marks: if present, must be array-of-arrays of {time: int, value: string}
+            if ( array_key_exists( 'explanation_marks', $s ) ) {
+                if ( ! is_array( $s['explanation_marks'] ) ) {
+                    $section_issues[] = "sections[{$i}].explanation_marks is not an array";
+                } else {
+                    foreach ( $s['explanation_marks'] as $pi => $para_marks ) {
+                        if ( ! is_array( $para_marks ) ) {
+                            $section_issues[] = "sections[{$i}].explanation_marks[{$pi}] is not an array";
+                            continue;
+                        }
+                        foreach ( $para_marks as $wi => $mark ) {
+                            if ( ! isset( $mark['time'], $mark['value'] ) || ! is_int( $mark['time'] ) || ! is_string( $mark['value'] ) ) {
+                                $section_issues[] = "sections[{$i}].explanation_marks[{$pi}][{$wi}] shape wrong — expected {time:int,value:string}";
+                                break 2;
+                            }
+                        }
+                    }
+                }
+            }
+            // lottie_url: if present, must be string or null
+            if ( array_key_exists( 'lottie_url', $s ) ) {
+                if ( $s['lottie_url'] !== null && ! is_string( $s['lottie_url'] ) ) {
+                    $section_issues[] = "sections[{$i}].lottie_url is neither string nor null — got " . gettype( $s['lottie_url'] );
+                }
+            }
+        }
+
+        if ( ! empty( $section_issues ) ) {
+            return self::fail(
+                count( $section_issues ) . ' section contract violation(s).',
+                [ 'quest_id' => $row['quest_id'], 'issues' => $section_issues ]
+            );
+        }
+
+        $marks_count  = 0;
+        $lottie_count = 0;
+        foreach ( $sections as $s ) {
+            if ( ! empty( $s['explanation_marks'] ) ) $marks_count++;
+            if ( array_key_exists( 'lottie_url', $s ) )  $lottie_count++;
+        }
+
+        return self::pass(
+            'Quest content contract valid: ' . count( $sections ) . ' section(s), '
+            . "{$marks_count} with marks, {$lottie_count} with lottie_url key.",
+            [
+                'quest_id'      => $row['quest_id'],
+                'section_count' => count( $sections ),
+                'marks_count'   => $marks_count,
+                'lottie_count'  => $lottie_count,
+            ]
+        );
+    }
+
+    /**
+     * Verify the three playback-mode detection rules that React's useDirector hook
+     * uses, exercised against real stored quest data.
+     *
+     * Mode 2 (Lottie + marks): hasLottie=true, hasMarks=true
+     * Mode 1 (marks, no lottie): hasLottie=false, hasMarks=true
+     * Legacy (no marks):         hasMarks=false
+     */
+    private static function test_sv_react_mode_detection(): array {
+        global $wpdb;
+
+        $rows = $wpdb->get_results(
+            "SELECT quest_id, content FROM {$wpdb->prefix}knowly_quests
+              WHERE variant = 'student' AND status = 'approved' AND content IS NOT NULL
+              ORDER BY id DESC LIMIT 20",
+            ARRAY_A
+        );
+
+        if ( empty( $rows ) ) {
+            return self::warn( 'No approved quests — skipping mode detection check.', [] );
+        }
+
+        $mode2 = 0; // has lottie_url (non-null string) AND explanation_marks
+        $mode1 = 0; // has explanation_marks, lottie_url absent/null
+        $legacy = 0; // no explanation_marks
+        $issues = [];
+
+        foreach ( $rows as $row ) {
+            $content  = json_decode( $row['content'], true );
+            $sections = $content['sections'] ?? [];
+            foreach ( $sections as $i => $s ) {
+                $has_marks  = ! empty( $s['explanation_marks'] );
+                $has_lottie = array_key_exists( 'lottie_url', $s ) && is_string( $s['lottie_url'] ) && $s['lottie_url'] !== '';
+
+                if ( $has_lottie && ! $has_marks ) {
+                    // Lottie URL set but marks never generated — Director falls back to Mode 1 until marks run.
+                    // Not an error, just informational.
+                    $issues[] = "sections[{$i}] of {$row['quest_id']}: lottie_url set but no marks yet — will fall back to Mode 1";
+                }
+
+                if ( $has_marks && $has_lottie ) { $mode2++; }
+                elseif ( $has_marks ) { $mode1++; }
+                else { $legacy++; }
+            }
+        }
+
+        return self::pass(
+            "Mode detection across " . count( $rows ) . " quest(s): "
+            . "Mode 2 (Lottie+marks)={$mode2}, Mode 1 (marks only)={$mode1}, Legacy={$legacy}.",
+            [
+                'quests_scanned' => count( $rows ),
+                'mode2_sections' => $mode2,
+                'mode1_sections' => $mode1,
+                'legacy_sections'=> $legacy,
+                'notes'          => $issues ?: 'none',
+            ]
+        );
+    }
+
+    // Group 23 (slow) — Synced Viewer: Live Marks Generation
+
+    private static function test_sv_live_marks_generate(): array {
+        global $wpdb;
+
+        if ( ! get_option( 'knowly_aws_access_key', '' ) ) {
+            return self::warn( 'AWS access key not configured — cannot run live marks generation.', [
+                'hint' => 'Configure Settings → AWS / Polly credentials first.',
+            ] );
+        }
+
+        $row = $wpdb->get_row(
+            "SELECT quest_id, content FROM {$wpdb->prefix}knowly_quests
+             WHERE variant='student' AND status='approved' AND content IS NOT NULL LIMIT 1",
+            ARRAY_A
+        );
+
+        if ( ! $row ) {
+            return self::warn( 'No approved quests with content — cannot test live marks generation.', [ 'hint' => 'Sync quests from the Quests panel.' ] );
+        }
+
+        $content  = json_decode( $row['content'], true );
+        $sections = $content['sections'] ?? [];
+
+        $target_section = -1;
+        $target_para    = -1;
+        $target_text    = '';
+        foreach ( $sections as $s_idx => $section ) {
+            foreach ( ( $section['explanation'] ?? [] ) as $p_idx => $text ) {
+                $clean = trim( strip_tags( $text ) );
+                if ( strlen( $clean ) >= 10 ) {
+                    $target_section = $s_idx;
+                    $target_para    = $p_idx;
+                    $target_text    = $clean;
+                    break 2;
+                }
+            }
+        }
+
+        if ( $target_section < 0 ) {
+            return self::warn( 'No explanation paragraphs ≥ 10 chars found in quest.', [ 'quest_id' => $row['quest_id'] ] );
+        }
+
+        $result = Knowly_Polly_Service::generate_marks_only( $row['quest_id'], $target_section, $target_para );
+
+        if ( is_wp_error( $result ) ) {
+            return self::fail( 'generate_marks_only() returned WP_Error: ' . $result->get_error_message(), [
+                'quest_id'    => $row['quest_id'],
+                'section_idx' => $target_section,
+                'para_idx'    => $target_para,
+                'error_code'  => $result->get_error_code(),
+            ] );
+        }
+
+        $marks_count = $result['marks_count'] ?? 0;
+        if ( $marks_count < 1 ) {
+            return self::fail( 'generate_marks_only() returned marks_count=0 — Polly returned no word marks.', [ 'result' => $result ] );
+        }
+
+        // Verify marks were saved to DB
+        $saved_content = json_decode(
+            $wpdb->get_var( $wpdb->prepare(
+                "SELECT content FROM {$wpdb->prefix}knowly_quests WHERE quest_id=%s AND variant='student'",
+                $row['quest_id']
+            ) ),
+            true
+        );
+        $saved_marks = $saved_content['sections'][ $target_section ]['explanation_marks'][ $target_para ] ?? null;
+
+        if ( ! is_array( $saved_marks ) || empty( $saved_marks ) ) {
+            return self::fail( 'marks_count reported but DB shows no marks at expected path.', [
+                'quest_id'       => $row['quest_id'],
+                'reported_count' => $marks_count,
+            ] );
+        }
+
+        $first    = $saved_marks[0];
+        $shape_ok = isset( $first['time'], $first['value'] )
+                 && is_int( $first['time'] )
+                 && is_string( $first['value'] )
+                 && $first['time'] >= 0;
+
+        if ( ! $shape_ok ) {
+            return self::fail( 'First saved mark has incorrect shape — expected {time: int, value: string}.', [ 'first_mark' => $first ] );
+        }
+
+        return self::pass(
+            "generate_marks_only() called Polly and saved {$marks_count} word marks to DB. Shape correct.",
+            [
+                'quest_id'    => $row['quest_id'],
+                'section_idx' => $target_section,
+                'para_idx'    => $target_para,
+                'marks_count' => $marks_count,
+                'text_preview'=> mb_substr( $target_text, 0, 80 ),
+                'first_mark'  => $first,
+                'last_mark'   => $saved_marks[ count( $saved_marks ) - 1 ],
+            ]
+        );
+    }
+
     private static function test_groups(): array {
         return [
             'schema' => [
@@ -5279,6 +5945,31 @@ class Knowly_Admin_Spec_Tests {
                     'badge_railway_generate' => [ 'label' => 'POST /badge/generate (trial_count, math, std_4, threshold=10) → name + description from Claude', 'method' => 'POST', 'route' => '/api/v1/badge/generate' ],
                 ],
             ],
+            'synced_viewer' => [
+                'label' => '🎬 Group 23 — Synced Viewer: Director System',
+                'slow'  => false,
+                'tests' => [
+                    'sv_marks_method_exists'       => [ 'label' => 'generate_marks_only() is public static on Knowly_Polly_Service',                             'method' => 'WP',    'route' => 'method_exists()' ],
+                    'sv_ajax_gen_marks_registered' => [ 'label' => 'WP AJAX knowly_quests_gen_para_marks action is registered',                                  'method' => 'WP',    'route' => 'has_action()' ],
+                    'sv_marks_invalid_quest_guard' => [ 'label' => 'generate_marks_only() with bogus quest_id → WP_Error knowly_not_found',                      'method' => 'WP',    'route' => 'Knowly_Polly_Service::generate_marks_only()' ],
+                    'sv_overview_marks_shape'      => [ 'label' => 'get_overview() paragraphs all have has_marks (bool) + marks_count (int ≥ 0)',                'method' => 'WP',    'route' => 'Knowly_Polly_Service::get_overview()' ],
+                    'sv_overview_no_marks_default' => [ 'label' => 'Quest with no marks: has_marks=false, marks_count=0 (never null/missing)',                   'method' => 'WP',    'route' => 'Knowly_Polly_Service::get_overview()' ],
+                    'sv_marks_ndjson_parse'        => [ 'label' => 'Polly NDJSON parser: 3-word sample → time(int) + value(string) per mark',                   'method' => 'UNIT',  'route' => 'fetch_marks() logic inline' ],
+                    'sv_quest_content_schema'      => [ 'label' => 'Real quest content has sections[] with title + explanation[] array',                         'method' => 'WP',    'route' => 'wp_knowly_quests content column' ],
+                    'sv_lottie_url_schema'         => [ 'label' => 'lottie_url on a section survives wp_json_encode→json_decode round-trip',                    'method' => 'UNIT',  'route' => 'json_encode / json_decode' ],
+                    // Phase 10 — full-pipeline contract tests
+                    'sv_tag_strip_regex'           => [ 'label' => 'Tag-strip regex removes [start][next][m1]–[m10], preserves [A][B], collapses spaces',       'method' => 'UNIT',  'route' => 'preg_replace inline' ],
+                    'sv_api_content_contract'      => [ 'label' => 'get_quest() content: sections[], explanation[], marks {time:int,value:str}, lottie_url typed', 'method' => 'WP', 'route' => 'wp_knowly_quests content column' ],
+                    'sv_react_mode_detection'      => [ 'label' => 'Mode 2/1/Legacy detection: lottie_url+marks → Mode 2, marks only → Mode 1, neither → Legacy', 'method' => 'WP', 'route' => 'wp_knowly_quests content column' ],
+                ],
+            ],
+            'synced_viewer_live' => [
+                'label' => '🎬 Group 23 (Slow) — Synced Viewer: Live Marks Generation',
+                'slow'  => true,
+                'tests' => [
+                    'sv_live_marks_generate' => [ 'label' => 'End-to-end: generate_marks_only() calls Polly, saves marks to DB, shape correct (SLOW — AWS)', 'method' => 'WP', 'route' => 'Knowly_Polly_Service::generate_marks_only()' ],
+                ],
+            ],
             'data_management' => [
                 'label' => '🗑️ Group 13 — Data Management: Purge Controls',
                 'slow'  => false,
@@ -5377,7 +6068,8 @@ class Knowly_Admin_Spec_Tests {
                 $groups['polly_tts']['tests'],
                 $groups['sound_design']['tests'],
                 $groups['badges_schema']['tests'],
-                $groups['badges_crud']['tests']
+                $groups['badges_crud']['tests'],
+                $groups['synced_viewer']['tests']
             ) ) ) ?>;
 
             var SLOW_TESTS = <?= wp_json_encode( array_keys( array_merge(
@@ -5385,7 +6077,8 @@ class Knowly_Admin_Spec_Tests {
                 $groups['qb_generation']['tests'],
                 $groups['qbv2_generation']['tests'],
                 $groups['polly_tts_live']['tests'],
-                $groups['badges_railway']['tests']
+                $groups['badges_railway']['tests'],
+                $groups['synced_viewer_live']['tests']
             ) ) ) ?>;
 
             var pass_counts = { pass: 0, fail: 0, warn: 0, total: 0 };

@@ -3,7 +3,7 @@
  * Plugin Name:  KnowlyAPI
  * Plugin URI:   https://knowly.app
  * Description:  Unified REST API for the Knowly learning platform. React / Next.js interface only — no WP front-end output.
- * Version:      2.5.0
+ * Version:      3.2.0
  * Author:       Knowly
  * Requires PHP: 8.0
  * Requires at least: 6.3
@@ -14,7 +14,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ────────────────────────────────────────────────────────────────
-define( 'KNOWLY_VERSION',            '3.0.0' );
+define( 'KNOWLY_VERSION',            '3.2.0' );
 define( 'KNOWLY_DB_VERSION',         '3.0.0' );
 define( 'KNOWLY_PLUGIN_FILE',        __FILE__ );
 define( 'KNOWLY_PLUGIN_DIR',         plugin_dir_path( __FILE__ ) );
@@ -129,6 +129,11 @@ spl_autoload_register( static function ( string $class ): void {
         // Sound Design
         'Knowly_Sound_Design_API'            => 'includes/api/class-knowly-sound-design-api.php',
         'Knowly_Admin_Sound_Design'          => 'includes/admin/class-knowly-admin-sound-design.php',
+        // Design (Lottie animations)
+        'Knowly_Design_API'                  => 'includes/api/class-knowly-design-api.php',
+        'Knowly_Admin_Design'                => 'includes/admin/class-knowly-admin-design.php',
+        // Lottie Library
+        'Knowly_Admin_Lottie_Library'        => 'includes/admin/class-knowly-admin-lottie-library.php',
     ];
 
     if ( isset( $map[ $class ] ) ) {

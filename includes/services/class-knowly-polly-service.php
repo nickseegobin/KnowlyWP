@@ -25,7 +25,7 @@
  *   knowly_polly_voice_id   Polly voice ID (default: Joanna)
  *
  * IAM permissions required:
- *   polly:StartSpeechSynthesisTask, polly:GetSpeechSynthesisTask
+ *   polly:StartSpeechSynthesisTask, polly:GetSpeechSynthesisTask, polly:SynthesizeSpeech
  *   s3:PutObject, s3:GetBucketLocation on the target bucket
  *
  * @package KnowlyAPI
@@ -58,12 +58,14 @@ class Knowly_Polly_Service {
         foreach ( $sections as $s_idx => $section ) {
             $explanations = $section['explanation']       ?? [];
             $audio_urls   = $section['explanation_audio'] ?? [];
+            $marks_data   = $section['explanation_marks'] ?? [];
             $paras        = [];
 
             foreach ( $explanations as $p_idx => $text ) {
                 $clean      = trim( strip_tags( $text ) );
                 $char_count = strlen( $clean );
                 $audio_url  = $audio_urls[ $p_idx ] ?? null;
+                $marks      = $marks_data[ $p_idx ]  ?? null;
 
                 $paras[] = [
                     'para_idx'   => $p_idx,
@@ -72,6 +74,8 @@ class Knowly_Polly_Service {
                     'cost'       => round( $char_count * 0.000016, 4 ),
                     'audio_url'  => $audio_url ?: null,
                     'has_audio'  => ! empty( $audio_url ),
+                    'has_marks'  => ! empty( $marks ),
+                    'marks_count'=> is_array( $marks ) ? count( $marks ) : 0,
                 ];
             }
 
@@ -108,6 +112,9 @@ class Knowly_Polly_Service {
 
         $text = $content['sections'][ $section_idx ]['explanation'][ $para_idx ] ?? '';
         $text = trim( strip_tags( $text ) );
+        // Strip Lottie inline tags and [break] so Polly doesn't read them aloud
+        $text = preg_replace( '/\[(start|next|m\d+(?:-loop)?|break)\]/i', '', $text );
+        $text = preg_replace( '/\s{2,}/', ' ', trim( $text ) );
 
         if ( strlen( $text ) < 5 ) {
             return new WP_Error( 'knowly_no_content', "Section {$section_idx} paragraph {$para_idx} is empty.", [ 'status' => 422 ] );
@@ -120,6 +127,9 @@ class Knowly_Polly_Service {
 
         $task_id = self::dispatch_task( $text, $s3_prefix, $cfg );
         if ( is_wp_error( $task_id ) ) return $task_id;
+
+        // Fetch word marks synchronously while the async MP3 task is running.
+        $marks = self::fetch_marks( $text, $cfg );
 
         $output_uri = self::poll_task( $task_id, $cfg );
         if ( is_wp_error( $output_uri ) ) return $output_uri;
@@ -136,14 +146,22 @@ class Knowly_Polly_Service {
         }
         $content['sections'][ $section_idx ]['explanation_audio'][ $para_idx ] = $audio_url;
 
+        if ( ! is_wp_error( $marks ) && ! empty( $marks ) ) {
+            if ( ! isset( $content['sections'][ $section_idx ]['explanation_marks'] ) ) {
+                $content['sections'][ $section_idx ]['explanation_marks'] = [];
+            }
+            $content['sections'][ $section_idx ]['explanation_marks'][ $para_idx ] = $marks;
+        }
+
         $save = self::save_content( $quest_id, $content );
         if ( is_wp_error( $save ) ) return $save;
 
-        Knowly_Debug::log( 'polly.generate_para', 'Para audio generated', [
+        Knowly_Debug::log( 'polly.generate_para', 'Para audio + marks generated', [
             'quest_id'    => $quest_id,
             'section_idx' => $section_idx,
             'para_idx'    => $para_idx,
             'audio_url'   => $audio_url,
+            'marks_count' => is_array( $marks ) ? count( $marks ) : 0,
         ], null, 'info' );
 
         return [
@@ -151,6 +169,7 @@ class Knowly_Polly_Service {
             'section_idx' => $section_idx,
             'para_idx'    => $para_idx,
             'audio_url'   => $audio_url,
+            'marks_count' => is_array( $marks ) ? count( $marks ) : 0,
         ];
     }
 
@@ -173,6 +192,64 @@ class Knowly_Polly_Service {
         }
 
         return true;
+    }
+
+    /**
+     * Migration path: generate word marks for a paragraph that already has an MP3.
+     * Skips the async Polly task entirely — only calls SynthesizeSpeech for marks.
+     *
+     * @param  string $quest_id
+     * @param  int    $section_idx
+     * @param  int    $para_idx
+     * @return array|WP_Error  { quest_id, section_idx, para_idx, marks_count }
+     */
+    public static function generate_marks_only( string $quest_id, int $section_idx, int $para_idx ): array|WP_Error {
+        $cfg = self::get_config();
+        if ( is_wp_error( $cfg ) ) return $cfg;
+
+        $content = self::load_content( $quest_id );
+        if ( is_wp_error( $content ) ) return $content;
+
+        $text = $content['sections'][ $section_idx ]['explanation'][ $para_idx ] ?? '';
+        $text = trim( strip_tags( $text ) );
+        // Strip Lottie inline tags and [break] so word-timing marks align with clean text
+        $text = preg_replace( '/\[(start|next|m\d+(?:-loop)?|break)\]/i', '', $text );
+        $text = preg_replace( '/\s{2,}/', ' ', trim( $text ) );
+
+        if ( strlen( $text ) < 5 ) {
+            return new WP_Error( 'knowly_no_content', "Section {$section_idx} paragraph {$para_idx} is empty.", [ 'status' => 422 ] );
+        }
+
+        $marks = self::fetch_marks( $text, $cfg );
+        if ( is_wp_error( $marks ) ) return $marks;
+        if ( empty( $marks ) ) {
+            return new WP_Error( 'knowly_no_marks', 'Polly returned no word marks for this text.', [ 'status' => 502 ] );
+        }
+
+        $content = self::load_content( $quest_id );
+        if ( is_wp_error( $content ) ) return $content;
+
+        if ( ! isset( $content['sections'][ $section_idx ]['explanation_marks'] ) ) {
+            $content['sections'][ $section_idx ]['explanation_marks'] = [];
+        }
+        $content['sections'][ $section_idx ]['explanation_marks'][ $para_idx ] = $marks;
+
+        $save = self::save_content( $quest_id, $content );
+        if ( is_wp_error( $save ) ) return $save;
+
+        Knowly_Debug::log( 'polly.generate_marks_only', 'Para marks generated (migration)', [
+            'quest_id'    => $quest_id,
+            'section_idx' => $section_idx,
+            'para_idx'    => $para_idx,
+            'marks_count' => count( $marks ),
+        ], null, 'info' );
+
+        return [
+            'quest_id'    => $quest_id,
+            'section_idx' => $section_idx,
+            'para_idx'    => $para_idx,
+            'marks_count' => count( $marks ),
+        ];
     }
 
     /**
@@ -384,6 +461,55 @@ class Knowly_Polly_Service {
         }
 
         return $task_id;
+    }
+
+    /**
+     * Synchronous SynthesizeSpeech call — returns word-level timestamps for $text.
+     *
+     * Uses the synchronous /v1/speech endpoint (not the async task API).
+     * Response body is newline-delimited JSON; each line is one mark object.
+     * We return only { time, value } — the millisecond offset and the word string.
+     *
+     * @return array[]|WP_Error  Array of { time: int (ms), value: string }
+     */
+    private static function fetch_marks( string $text, array $cfg ): array|WP_Error {
+        $signer = new Knowly_AWS_Signer( $cfg['access_key'], $cfg['secret_key'], $cfg['region'], 'polly' );
+        $url    = "https://polly.{$cfg['region']}.amazonaws.com/v1/speech";
+
+        $payload = wp_json_encode( [
+            'OutputFormat'   => 'json',
+            'SpeechMarkTypes'=> [ 'word' ],
+            'Text'           => $text,
+            'TextType'       => 'text',
+            'VoiceId'        => $cfg['voice_id'],
+            'Engine'         => self::DEFAULT_ENGINE,
+        ] );
+
+        $headers  = $signer->get_signed_headers( 'POST', $url, [ 'Content-Type' => 'application/json' ], $payload );
+        $response = wp_remote_post( $url, [ 'timeout' => 20, 'headers' => $headers, 'body' => $payload ] );
+
+        if ( is_wp_error( $response ) ) {
+            return new WP_Error( 'knowly_polly_marks_error', 'Polly marks unreachable: ' . $response->get_error_message(), [ 'status' => 503 ] );
+        }
+
+        $code = wp_remote_retrieve_response_code( $response );
+        if ( $code < 200 || $code >= 300 ) {
+            $body = json_decode( wp_remote_retrieve_body( $response ), true );
+            $msg  = $body['message'] ?? "Polly marks returned HTTP {$code}";
+            return new WP_Error( 'knowly_polly_marks_error', $msg, [ 'status' => 502 ] );
+        }
+
+        $marks = [];
+        foreach ( explode( "\n", trim( wp_remote_retrieve_body( $response ) ) ) as $line ) {
+            $line = trim( $line );
+            if ( ! $line ) continue;
+            $obj = json_decode( $line, true );
+            if ( isset( $obj['time'], $obj['value'] ) ) {
+                $marks[] = [ 'time' => (int) $obj['time'], 'value' => (string) $obj['value'] ];
+            }
+        }
+
+        return $marks;
     }
 
     /**

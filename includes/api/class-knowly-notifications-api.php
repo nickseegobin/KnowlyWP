@@ -60,6 +60,9 @@ class Knowly_Notifications_API extends Knowly_API_Base {
             'methods'             => 'POST',
             'callback'            => [ $this, 'read_all' ],
             'permission_callback' => '__return_true',
+            'args'                => [
+                'scope' => [ 'default' => 'self', 'type' => 'string', 'enum' => [ 'self', 'child' ] ],
+            ],
         ] );
 
         register_rest_route( $ns, '/notifications/(?P<id>\d+)/read', [
@@ -177,6 +180,12 @@ class Knowly_Notifications_API extends Knowly_API_Base {
     public function read_all( WP_REST_Request $request ): WP_REST_Response|WP_Error {
         $user_id = $this->authenticate( $request );
         if ( is_wp_error( $user_id ) ) return $user_id;
+
+        if ( $request->get_param( 'scope' ) === 'child' ) {
+            $ctx = $this->require_child_context( $request );
+            if ( is_wp_error( $ctx ) ) return $ctx;
+            $user_id = $ctx['child_id'];
+        }
 
         $count = Knowly_Notification_Service::mark_all_read( $user_id );
 

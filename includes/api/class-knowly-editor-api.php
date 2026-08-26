@@ -821,11 +821,28 @@ class Knowly_Editor_API extends Knowly_API_Base {
             'updated_at'      => $now,
         ];
 
-        $exists = $wpdb->get_var(
-            $wpdb->prepare( "SELECT id FROM {$table} WHERE quest_id = %s AND variant = 'student'", $quest_id )
+        $existing_content_json = $wpdb->get_var(
+            $wpdb->prepare( "SELECT content FROM {$table} WHERE quest_id = %s AND variant = 'student'", $quest_id )
         );
 
-        if ( $exists ) {
+        if ( $existing_content_json ) {
+            // Preserve explanation_audio and explanation_marks stored by the Polly service —
+            // Railway does not know about these WP-only fields, so a plain overwrite would erase them.
+            $old_content = json_decode( $existing_content_json, true ) ?: [];
+            $new_content = json_decode( $row['content'] ?? '{}', true ) ?: [];
+
+            foreach ( ( $old_content['sections'] ?? [] ) as $s_idx => $old_section ) {
+                if ( isset( $new_content['sections'][ $s_idx ] ) ) {
+                    if ( ! empty( $old_section['explanation_audio'] ) ) {
+                        $new_content['sections'][ $s_idx ]['explanation_audio'] = $old_section['explanation_audio'];
+                    }
+                    if ( ! empty( $old_section['explanation_marks'] ) ) {
+                        $new_content['sections'][ $s_idx ]['explanation_marks'] = $old_section['explanation_marks'];
+                    }
+                }
+            }
+
+            $row['content'] = wp_json_encode( $new_content );
             $wpdb->update( $table, $row, [ 'quest_id' => $quest_id, 'variant' => 'student' ] );
         } else {
             $row['created_at'] = $now;

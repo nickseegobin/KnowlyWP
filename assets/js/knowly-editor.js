@@ -848,9 +848,33 @@
                 <div class="knowly-sections-list">
             `;
 
+            const LOTTIE_TAG_HINT = `<div style="margin:0 0 10px;padding:8px 10px;background:#f0f6fc;border-left:3px solid #007cba;border-radius:3px;font-size:11.5px;color:#374151;line-height:1.9;">
+                <strong style="display:block;margin-bottom:4px;">Lottie tags (type inline in paragraphs):</strong>
+                <code>[start]</code> — jump to m1 (alias for [m1]) &nbsp;|&nbsp;
+                <code>[next]</code> — advance to next marker in sequence<br>
+                <code>[m1]</code> <code>[m2]</code> <code>[m3]</code> <code>[m4]</code> <code>[m5]</code> <code>[m6]</code> <code>[m7]</code> <code>[m8]</code> <code>[m9]</code> <code>[m10]</code> — play segment once then hold<br>
+                <code>[m1-loop]</code> <code>[m2-loop]</code> … <code>[m10-loop]</code> — loop segment continuously until next tag fires<br>
+                <code>[break]</code> — split paragraph into sentence chunks (advances subtitle with audio timing)<br>
+                <span style="color:#6b7280;">Tags fire at the audio timestamp of the word immediately after them. All tags are hidden from students.</span>
+            </div>`;
+
             sections.forEach((s, i) => {
                 html += `<div class="knowly-section-card">
                     <h3>Section ${i + 1}: ${escHtml(s.title || '')}</h3>`;
+
+                if (editable) {
+                    const lottiVal = escHtml(s.lottie_url || '');
+                    html += `<div class="knowly-form-row" style="margin-bottom:10px;">
+                        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Lottie Animation URL <span style="font-weight:400;color:#6b7280;">(optional)</span></label>
+                        <div style="display:flex;gap:6px;align-items:center;">
+                            <input type="text" class="knowly-form-input section-lottie-url" data-sec="${i}" value="${lottiVal}" placeholder="Paste URL or browse library…" style="flex:1;">
+                            <button type="button" class="button button-secondary kn-lottie-browse-btn" data-sec="${i}" style="white-space:nowrap;flex-shrink:0;">📁 Browse</button>
+                        </div>
+                    </div>`;
+                    html += LOTTIE_TAG_HINT;
+                } else if (s.lottie_url) {
+                    html += `<p style="font-size:12px;color:#6b7280;margin-bottom:8px;">🎬 Lottie: <code>${escHtml(s.lottie_url)}</code></p>`;
+                }
 
                 if (Array.isArray(s.explanation)) {
                     s.explanation.forEach((para, pi) => {
@@ -886,6 +910,20 @@
             if (currentQ) renderQuestModal(currentQ, true);
         });
 
+        // Lottie Library picker — delegated, works after every renderQuestModal() call
+        document.addEventListener('click', function(e) {
+            const btn = e.target.closest('.kn-lottie-browse-btn');
+            if (!btn) return;
+            const sec = btn.dataset.sec;
+            const input = document.querySelector(`.section-lottie-url[data-sec="${sec}"]`);
+            if (!input) return;
+            if (window.KnowlyLottiePicker) {
+                window.KnowlyLottiePicker.open(function(url) { input.value = url; });
+            } else {
+                alert('Lottie Library is still loading — please try again in a moment.');
+            }
+        }, { once: false });
+
         document.getElementById('quest-save-edit-btn')?.addEventListener('click', async () => {
             if (!currentQ) return;
             const content  = JSON.parse(JSON.stringify(currentQ.content || {}));
@@ -899,6 +937,15 @@
                     sections[si].explanation[pi] = ta.value;
                 }
             });
+
+            // Collect lottie_url per section
+            document.querySelectorAll('.section-lottie-url').forEach(input => {
+                const si = parseInt(input.dataset.sec, 10);
+                if (sections[si]) {
+                    sections[si].lottie_url = input.value.trim() || null;
+                }
+            });
+
             content.sections = sections;
 
             setStatus('quest-save-status', 'Saving…', 'loading');

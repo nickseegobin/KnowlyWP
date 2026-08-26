@@ -183,6 +183,7 @@ class Knowly_Admin_Settings {
                     <p class="description" style="margin-bottom:12px;">
                         Used to generate audio narration for Quests and Lessons via AWS Polly.
                         The IAM user needs <code>polly:StartSpeechSynthesisTask</code>, <code>polly:GetSpeechSynthesisTask</code>,
+                        <code>polly:SynthesizeSpeech</code> (used for word-timing marks),
                         and <code>s3:PutObject</code> on the target bucket.
                         The S3 bucket (or CloudFront distribution) must allow public read on the audio prefix.
                     </p>
