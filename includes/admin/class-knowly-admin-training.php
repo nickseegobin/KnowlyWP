@@ -60,10 +60,11 @@ class Knowly_Admin_Training {
         $levels   = $wpdb->get_col( "SELECT DISTINCT level FROM {$table} WHERE status = 'active' ORDER BY level" );
         ?>
         <div class="wrap knowly-wrap">
-            <h1>Training Material
+            <h1>Training Material</h1>
+            <div class="knowly-actions" style="margin-bottom:16px;">
                 <button class="button button-primary" onclick="knowlyTM.openAdd()">+ Add Entry</button>
                 <button class="button" onclick="knowlyTM.toggleImport()">&#8593; Import CSV</button>
-            </h1>
+            </div>
 
             <!-- ── CSV Import Panel ──────────────────────────────────────── -->
             <div id="knowly-tm-import-panel" style="display:none;background:#fff;border:1px solid #c3c4c7;border-radius:4px;padding:20px;margin-bottom:20px;max-width:900px;">
