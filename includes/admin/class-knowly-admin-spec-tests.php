@@ -112,13 +112,9 @@ class Knowly_Admin_Spec_Tests {
                 'regen_kc_count'                 => self::test_regen_kc_count(),
                 // Group 5 — Question Bank + Pinecone Sync (fast)
                 'qb_tables_exist'                => self::test_qb_tables_exist(),
-                'qb_status_endpoint'             => self::test_qb_status_endpoint(),
-                'qb_enqueue_job'                 => self::test_qb_enqueue_job(),
                 'qb_trial_start_validation'      => self::test_qb_trial_start_validation(),
                 'pinecone_sync_create_archive'   => self::test_pinecone_sync_create_archive(),
                 // Group 6 — Question Bank Generation (slow)
-                'qb_gen_subtopic'                => self::test_qb_gen_subtopic(),
-                'qb_gen_general_topic'           => self::test_qb_gen_general_topic(),
                 'qb_trial_start_from_bank'       => self::test_qb_trial_start_from_bank(),
                 'qb_trial_start_question_shape'  => self::test_qb_trial_start_question_shape(),
                 // Group 7 — QB v2 Schema & Routing
@@ -198,18 +194,6 @@ class Knowly_Admin_Spec_Tests {
                 'tp_watermark_shape'     => self::test_tp_watermark_shape(),
                 'tp_list_shape'          => self::test_tp_list_shape(),
                 'tp_preview_build'       => self::test_tp_preview_build(),
-                // Group 15 — Phase 4: Sequential Trial Delivery
-                'p4_next_pack_auth_guard'     => self::test_p4_next_pack_auth_guard(),
-                'p4_child_history_auth_guard' => self::test_p4_child_history_auth_guard(),
-                'p4_submit_pack_auth_guard'   => self::test_p4_submit_pack_auth_guard(),
-                'p4_next_pack_missing_fields' => self::test_p4_next_pack_missing_fields(),
-                'p4_next_pack_invalid_branch' => self::test_p4_next_pack_invalid_branch(),
-                'p4_next_pack_unknown_scope'  => self::test_p4_next_pack_unknown_scope(),
-                'p4_child_history_missing_id' => self::test_p4_child_history_missing_id(),
-                'p4_child_history_reset_noop' => self::test_p4_child_history_reset_noop(),
-                'p4_schema_branch_column'     => self::test_p4_schema_branch_column(),
-                'p4_schema_sequence_column'   => self::test_p4_schema_sequence_column(),
-                'p4_wp_ajax_reset_registered' => self::test_p4_wp_ajax_reset_registered(),
                 // Group 17 — Lessons
                 'ln_gen_auth_guard'          => self::test_ln_gen_auth_guard(),
                 'ln_questions_auth_guard'    => self::test_ln_questions_auth_guard(),
@@ -618,6 +602,11 @@ class Knowly_Admin_Spec_Tests {
             delete_transient( self::TRANSIENT_TOPIC_ID );
         }
 
+        // Random sort_order in the 9M range — a static value collides with any
+        // leftover row from a run whose cleanup never ran (e.g. transient expired
+        // before the row was deleted), producing a spurious 502 on re-run.
+        $sort_order = 9000000 + mt_rand( 0, 999999 );
+
         $res = self::rest_post( '/editor/curriculum-topics', [
             'curriculum'    => 'tt_primary',
             'level'         => 'std_4',
@@ -625,7 +614,7 @@ class Knowly_Admin_Spec_Tests {
             'subject'       => 'math',
             'module_number' => 99,
             'module_title'  => '_SPECTEST_MODULE_',
-            'sort_order'    => 9999,
+            'sort_order'    => $sort_order,
             'topic'         => self::TEST_TOPIC_ACTIVE,
             'source'        => 'manual',
         ] );
@@ -956,50 +945,6 @@ class Knowly_Admin_Spec_Tests {
         ] );
     }
 
-    private static function test_qb_status_endpoint(): array {
-        $data = self::railway_get( '/api/v1/question-bank/status' );
-        if ( isset( $data['error'] ) ) {
-            return self::fail( '/question-bank/status failed: ' . $data['error'] );
-        }
-        if ( ! array_key_exists( 'pools', $data ) ) {
-            return self::fail( 'Response missing pools key.', $data );
-        }
-        $pools = $data['pools'];
-        if ( ! is_array( $pools ) ) {
-            return self::fail( 'pools is not an array.', [ 'type' => gettype( $pools ) ] );
-        }
-        $count = count( $pools );
-        return self::pass( "/question-bank/status OK — {$count} pool slot(s) tracked.", [ 'pool_count' => $count ] );
-    }
-
-    private static function test_qb_enqueue_job(): array {
-        $data = self::railway_post( '/api/v1/question-bank/replenish', [
-            'curriculum'   => 'tt_primary',
-            'level'        => 'std_4',
-            'period'       => 'term_1',
-            'subject'      => 'math',
-            'scope'        => 'subtopic',
-            'scope_ref'    => 'spectest_enqueue_probe',
-            'difficulty'   => 'easy',
-            'target_count' => 5,
-            'sync'         => false,
-        ] );
-
-        if ( isset( $data['error'] ) ) {
-            return self::fail( 'Replenish enqueue failed: ' . $data['error'] );
-        }
-
-        // Either a new job_id or already_queued — both are valid outcomes
-        if ( ! empty( $data['job_id'] ) ) {
-            return self::pass( 'Replenish queued. job_id=' . $data['job_id'], [ 'job_id' => $data['job_id'] ] );
-        }
-        if ( isset( $data['queued'] ) && $data['queued'] === false ) {
-            return self::pass( 'Replenish deduped (already_queued). Endpoint reachable and responding correctly.', $data );
-        }
-
-        return self::fail( 'Unexpected response shape — missing job_id and queued flag.', $data );
-    }
-
     private static function test_pinecone_sync_create_archive(): array {
         // 0. Clean up any stale test row from a previous failed run
         $existing = self::railway_get( '/api/v1/curriculum-topics', [
@@ -1106,58 +1051,6 @@ class Knowly_Admin_Spec_Tests {
     // =========================================================================
     // Group 6 — Question Bank Generation (slow — calls Claude)
     // =========================================================================
-
-    private static function test_qb_gen_subtopic(): array {
-        $data = self::railway_post( '/api/v1/question-bank/replenish', [
-            'curriculum'   => 'tt_primary',
-            'level'        => 'std_4',
-            'period'       => 'term_1',
-            'subject'      => 'math',
-            'scope'        => 'subtopic',
-            'scope_ref'    => 'place_value_up_to_1_000_000',
-            'difficulty'   => 'easy',
-            'target_count' => 5,
-            'sync'         => true,
-        ] );
-
-        if ( isset( $data['error'] ) ) {
-            return self::fail( 'Subtopic sync gen failed: ' . $data['error'] );
-        }
-        $inserted = (int) ( $data['inserted'] ?? 0 );
-        if ( $inserted < 1 ) {
-            return self::warn( "Sync gen returned inserted={$inserted} — pool may already be full or generation partially failed.", $data );
-        }
-        return self::pass( "Subtopic generation OK — {$inserted} questions inserted.", [
-            'inserted'  => $inserted,
-            'scope_ref' => 'place_value_up_to_1_000_000',
-        ] );
-    }
-
-    private static function test_qb_gen_general_topic(): array {
-        $data = self::railway_post( '/api/v1/question-bank/replenish', [
-            'curriculum'   => 'tt_primary',
-            'level'        => 'std_4',
-            'period'       => 'term_1',
-            'subject'      => 'math',
-            'scope'        => 'general_topic',
-            'scope_ref'    => 'number_and_place_value',
-            'difficulty'   => 'medium',
-            'target_count' => 5,
-            'sync'         => true,
-        ] );
-
-        if ( isset( $data['error'] ) ) {
-            return self::fail( 'General topic sync gen failed: ' . $data['error'] );
-        }
-        $inserted = (int) ( $data['inserted'] ?? 0 );
-        if ( $inserted < 1 ) {
-            return self::warn( "Sync gen returned inserted={$inserted} — pool may already be full.", $data );
-        }
-        return self::pass( "General topic generation OK — {$inserted} questions inserted.", [
-            'inserted'  => $inserted,
-            'scope_ref' => 'number_and_place_value',
-        ] );
-    }
 
     private static function test_qb_trial_start_from_bank(): array {
         $data = self::railway_post( '/api/v1/trial/start', [
@@ -2917,16 +2810,18 @@ class Knowly_Admin_Spec_Tests {
     }
 
     private static function test_polly_db_version(): array {
-        $version  = get_option( 'knowly_db_version', '(not set)' );
-        $expected = '2.5.1';
-        if ( $version !== $expected ) {
-            return self::fail( "knowly_db_version is '{$version}' — expected '{$expected}'.", [
-                'current'  => $version,
-                'expected' => $expected,
-                'hint'     => 'Visit any WP admin page; Knowly_Core::boot() calls maybe_upgrade() which bumps the version when KNOWLY_DB_VERSION constant changes.',
-            ] );
+        $version = get_option( 'knowly_db_version', '(not set)' );
+        // Migration-order check, not a version pin: fails if the Polly migration
+        // (2.5.1) hasn't run yet. version_compare (not ===) so this doesn't go
+        // stale every time KNOWLY_DB_VERSION bumps for a later migration.
+        if ( version_compare( (string) $version, '2.5.1', '>=' ) ) {
+            return self::pass( "DB version is {$version} (≥ 2.5.1 — Polly migration applied).", [ 'version' => $version ] );
         }
-        return self::pass( "DB version is {$version} — Polly audio migration ran." );
+        return self::fail( "knowly_db_version is '{$version}' — expected ≥ '2.5.1'.", [
+            'current'  => $version,
+            'expected' => '2.5.1',
+            'hint'     => 'Visit any WP admin page; Knowly_Core::boot() calls maybe_upgrade() which bumps the version when KNOWLY_DB_VERSION constant changes.',
+        ] );
     }
 
     private static function test_polly_config_guard(): array {
@@ -3890,7 +3785,16 @@ class Knowly_Admin_Spec_Tests {
     }
 
     // =========================================================================
-    // Group 15 — Phase 4: Sequential Trial Delivery
+    // Shared Helpers — auth-guard check (used by Lessons and Quest Questions)
+    //
+    // Formerly also backed "Group 15 — Phase 4: Sequential Trial Delivery",
+    // removed 2026-08-26: next-pack / submit-pack-exam / child-history are not
+    // called anywhere in the real delivery flow (class-knowly-exam-service.php
+    // only calls fetch_from_question_bank_assemble() / fetch_from_wp_pool()).
+    // The routes still respond on Railway, but nothing in the product uses
+    // them, so testing them provided no real coverage. The branch/
+    // pack_sequence_number schema checks were also redundant with Group 14's
+    // tp_list_shape, which already asserts the trial-packs/list response shape.
     // =========================================================================
 
     private static function p4_auth_guard( string $method, string $path ): array {
@@ -3908,127 +3812,6 @@ class Knowly_Admin_Spec_Tests {
         $code = wp_remote_retrieve_response_code( $resp );
         if ( $code !== 401 ) return self::fail( "Expected 401 without auth, got {$code}.", [ 'path' => $path ] );
         return self::pass( "{$method} {$path} → 401 (auth guard active)." );
-    }
-
-    private static function test_p4_next_pack_auth_guard(): array {
-        return self::p4_auth_guard( 'GET', '/api/v1/trial/next-pack?level=std_4&subject=math&branch=easy&child_id=1' );
-    }
-
-    private static function test_p4_child_history_auth_guard(): array {
-        return self::p4_auth_guard( 'DELETE', '/api/v1/trial/child-history?child_id=1' );
-    }
-
-    private static function test_p4_submit_pack_auth_guard(): array {
-        return self::p4_auth_guard( 'POST', '/api/v1/submit-pack-exam' );
-    }
-
-    private static function test_p4_next_pack_missing_fields(): array {
-        $data = self::railway_get( '/api/v1/trial/next-pack', [] );
-        $code = (int) ( $data['code'] ?? 0 );
-        if ( isset( $data['error'] ) && ( $code === 400 || str_contains( $data['error'] ?? '', 'required' ) ) ) {
-            return self::pass( 'GET /trial/next-pack with no params → 400 missing_fields as expected.' );
-        }
-        return self::fail( 'Expected 400 missing_fields, got unexpected response.', $data );
-    }
-
-    private static function test_p4_next_pack_invalid_branch(): array {
-        $data = self::railway_get( '/api/v1/trial/next-pack', [
-            'level'    => 'std_4',
-            'subject'  => 'math',
-            'branch'   => 'superhard',
-            'child_id' => 1,
-        ] );
-        $code = (int) ( $data['code'] ?? 0 );
-        if ( $code === 400 || str_contains( $data['error'] ?? '', 'branch' ) ) {
-            return self::pass( 'GET /trial/next-pack with invalid branch → 400 as expected.' );
-        }
-        return self::fail( 'Expected 400 for invalid branch, got unexpected response.', $data );
-    }
-
-    private static function test_p4_next_pack_unknown_scope(): array {
-        // Use a nonsense subject — no packs exist for it, so we expect 503 no_pack_available.
-        $data = self::railway_get( '/api/v1/trial/next-pack', [
-            'level'    => 'std_4',
-            'subject'  => '__p4spectest_bogus__',
-            'branch'   => 'easy',
-            'child_id' => 999999999,
-        ] );
-        $code = (int) ( $data['code'] ?? 0 );
-        $err  = $data['error'] ?? '';
-        if ( $code === 503 || str_contains( $err, 'No pack available' ) || ( $data['code'] ?? '' ) === 'no_pack_available' ) {
-            return self::pass(
-                'GET /trial/next-pack for unknown scope → 503 no_pack_available, generation queued.',
-                [ 'retry_after_seconds' => $data['retry_after_seconds'] ?? null ]
-            );
-        }
-        return self::fail( 'Expected 503 no_pack_available for bogus scope.', $data );
-    }
-
-    private static function test_p4_child_history_missing_id(): array {
-        $data = self::railway_delete( '/api/v1/trial/child-history' );
-        $code = (int) ( $data['code'] ?? 0 );
-        if ( $code === 400 || str_contains( $data['error'] ?? '', 'child_id' ) ) {
-            return self::pass( 'DELETE /trial/child-history without child_id → 400 as expected.' );
-        }
-        return self::fail( 'Expected 400 for missing child_id.', $data );
-    }
-
-    private static function test_p4_child_history_reset_noop(): array {
-        // Nonexistent child — should delete 0 rows and return 200.
-        $data = self::railway_delete( '/api/v1/trial/child-history?child_id=999999999' );
-        if ( isset( $data['error'] ) ) return self::fail( 'Unexpected error: ' . $data['error'], $data );
-        if ( ! array_key_exists( 'deleted', $data ) ) {
-            return self::fail( 'Response missing deleted field.', $data );
-        }
-        return self::pass(
-            'DELETE /trial/child-history for nonexistent child → 200, deleted=' . (int) $data['deleted'] . '.',
-            [ 'deleted' => $data['deleted'] ]
-        );
-    }
-
-    private static function test_p4_schema_branch_column(): array {
-        $data = self::railway_get( '/api/v1/trial-packs/list', [ 'per_page' => 1 ] );
-        if ( isset( $data['error'] ) ) return self::fail( 'List failed: ' . $data['error'] );
-
-        $packs = $data['packs'] ?? [];
-        if ( empty( $packs ) ) {
-            return self::warn( 'trial_packs table is empty — build at least one pack to verify branch column.' );
-        }
-        if ( ! array_key_exists( 'branch', $packs[0] ) ) {
-            return self::fail( 'trial_packs.branch column missing — Phase 4 migration may not have run.', $packs[0] );
-        }
-        $branch = $packs[0]['branch'] ?? null;
-        $valid  = in_array( $branch, [ 'easy', 'medium', 'hard', 'dynamic' ], true );
-        if ( ! $valid && $branch !== null ) {
-            return self::warn( "branch column exists but value '{$branch}' is unexpected.", $packs[0] );
-        }
-        return self::pass( "trial_packs.branch column present (value: '{$branch}') — Phase 4 migration ran.", $packs[0] );
-    }
-
-    private static function test_p4_schema_sequence_column(): array {
-        $data = self::railway_get( '/api/v1/trial-packs/list', [ 'per_page' => 1 ] );
-        if ( isset( $data['error'] ) ) return self::fail( 'List failed: ' . $data['error'] );
-
-        $packs = $data['packs'] ?? [];
-        if ( empty( $packs ) ) {
-            return self::warn( 'trial_packs table is empty — build at least one pack to verify pack_sequence_number.' );
-        }
-        if ( ! array_key_exists( 'pack_sequence_number', $packs[0] ) ) {
-            return self::fail( 'trial_packs.pack_sequence_number column missing — Phase 4 migration may not have run.', $packs[0] );
-        }
-        $seq = $packs[0]['pack_sequence_number'];
-        return self::pass(
-            'trial_packs.pack_sequence_number present (value: ' . (int) $seq . ') — backfill ran.',
-            [ 'pack_sequence_number' => $seq ]
-        );
-    }
-
-    private static function test_p4_wp_ajax_reset_registered(): array {
-        $action = 'wp_ajax_knowly_admin_reset_pack_history';
-        if ( ! has_action( $action ) ) {
-            return self::fail( "WP action '{$action}' is not registered — check Knowly_Admin_Users::boot()." );
-        }
-        return self::pass( "WP action '{$action}' is registered." );
     }
 
     // =========================================================================
@@ -4367,12 +4150,14 @@ class Knowly_Admin_Spec_Tests {
         if ( $code !== 200 ) {
             return self::fail( "Expected 200, got {$code}.", [ 'body' => $body ] );
         }
-        if ( ! isset( $body['enabled'] ) ) {
-            return self::fail( "Response missing 'enabled' key.", [ 'body' => $body ] );
+        // Response is wrapped { success, data } — see Knowly_Sound_Design_API::success().
+        $data = $body['data'] ?? null;
+        if ( ! is_array( $data ) || ! isset( $data['enabled'] ) ) {
+            return self::fail( "Response missing data.enabled key.", [ 'body' => $body ] );
         }
         return self::pass(
-            "GET /sound-design → 200. enabled=" . ( $body['enabled'] ? 'true' : 'false' )
-            . " harmonicity=" . ( $body['harmonicity'] ?? '?' ),
+            "GET /sound-design → 200. enabled=" . ( $data['enabled'] ? 'true' : 'false' )
+            . " harmonicity=" . ( $data['harmonicity'] ?? '?' ),
             [ 'body' => $body ]
         );
     }
@@ -5694,18 +5479,19 @@ class Knowly_Admin_Spec_Tests {
                 'slow'  => false,
                 'tests' => [
                     'qb_tables_exist'             => [ 'label' => 'question_bank + question_bank_queue tables exist in Supabase',    'method' => 'GET',  'route' => '/api/v1/health/db-check' ],
-                    'qb_status_endpoint'          => [ 'label' => '/question-bank/status returns pools array',                       'method' => 'GET',  'route' => '/api/v1/question-bank/status' ],
-                    'qb_enqueue_job'              => [ 'label' => '/question-bank/replenish sync=false enqueues job',                'method' => 'POST', 'route' => '/api/v1/question-bank/replenish' ],
                     'qb_trial_start_validation'   => [ 'label' => '/trial/start rejects empty body with error',                     'method' => 'POST', 'route' => '/api/v1/trial/start' ],
                     'pinecone_sync_create_archive'=> [ 'label' => 'Curriculum topic auto-syncs to Pinecone on create, removed on archive', 'method' => 'POST+DELETE', 'route' => '/api/v1/curriculum-topics' ],
                 ],
             ],
             'qb_generation' => [
-                'label' => '🧠 Group 6 — Question Bank Generation (SLOW — calls Claude)',
-                'slow'  => true,
+                // Relabeled 2026-08-26: this group only ever calls Claude via the
+                // now-removed qb_gen_subtopic / qb_gen_general_topic tests (dead
+                // /question-bank/replenish route). What remains just asserts
+                // /trial/start assembly shape — no Claude call, so it belongs
+                // in the fast set.
+                'label' => '🧠 Group 6 — Question Bank: /trial/start Assembly (fast)',
+                'slow'  => false,
                 'tests' => [
-                    'qb_gen_subtopic'               => [ 'label' => 'Subtopic sync gen: ≥ 1 questions inserted',                      'method' => 'POST', 'route' => '/api/v1/question-bank/replenish' ],
-                    'qb_gen_general_topic'          => [ 'label' => 'General topic sync gen: ≥ 1 questions inserted',                 'method' => 'POST', 'route' => '/api/v1/question-bank/replenish' ],
                     'qb_trial_start_from_bank'      => [ 'label' => '/trial/start assembles questions + answer_sheet from QB',        'method' => 'POST', 'route' => '/api/v1/trial/start' ],
                     'qb_trial_start_question_shape' => [ 'label' => 'QB questions have required fields; correct_answer is hidden',    'method' => 'CHECK', 'route' => '' ],
                 ],
@@ -5813,23 +5599,6 @@ class Knowly_Admin_Spec_Tests {
                     'tp_watermark_shape'     => [ 'label' => 'Watermark: std_4/term_1/math returns slots[] + summary with status fields', 'method' => 'GET',   'route' => '/api/v1/trial-packs/watermark' ],
                     'tp_list_shape'          => [ 'label' => 'List: returns packs[], total, page, per_page, pages envelope',              'method' => 'GET',   'route' => '/api/v1/trial-packs/list' ],
                     'tp_preview_build'       => [ 'label' => 'Preview build (preview=true): 12 questions returned, pack NOT saved',       'method' => 'POST',  'route' => '/api/v1/trial-packs/build' ],
-                ],
-            ],
-            'p4_delivery' => [
-                'label' => '🚂 Group 15 — Phase 4: Sequential Trial Delivery',
-                'slow'  => false,
-                'tests' => [
-                    'p4_next_pack_auth_guard'      => [ 'label' => 'GET /trial/next-pack → 401 without server key',                                        'method' => 'GET',    'route' => '/api/v1/trial/next-pack' ],
-                    'p4_child_history_auth_guard'  => [ 'label' => 'DELETE /trial/child-history → 401 without server key',                                 'method' => 'DELETE', 'route' => '/api/v1/trial/child-history' ],
-                    'p4_submit_pack_auth_guard'    => [ 'label' => 'POST /submit-pack-exam → 401 without JWT (no auth header)',                             'method' => 'POST',   'route' => '/api/v1/submit-pack-exam' ],
-                    'p4_next_pack_missing_fields'  => [ 'label' => 'GET /trial/next-pack with no params → 400 missing_fields',                             'method' => 'GET',    'route' => '/api/v1/trial/next-pack' ],
-                    'p4_next_pack_invalid_branch'  => [ 'label' => 'GET /trial/next-pack branch=superhard → 400 invalid_branch',                           'method' => 'GET',    'route' => '/api/v1/trial/next-pack' ],
-                    'p4_next_pack_unknown_scope'   => [ 'label' => 'GET /trial/next-pack for nonexistent scope → 503 no_pack_available + generation queued','method' => 'GET',    'route' => '/api/v1/trial/next-pack' ],
-                    'p4_child_history_missing_id'  => [ 'label' => 'DELETE /trial/child-history without child_id → 400',                                   'method' => 'DELETE', 'route' => '/api/v1/trial/child-history' ],
-                    'p4_child_history_reset_noop'  => [ 'label' => 'DELETE /trial/child-history for nonexistent child → 200, deleted: 0',                  'method' => 'DELETE', 'route' => '/api/v1/trial/child-history?child_id=999999999' ],
-                    'p4_schema_branch_column'      => [ 'label' => 'trial_packs.branch column present (Phase 4 migration ran)',                             'method' => 'GET',    'route' => '/api/v1/trial-packs/list' ],
-                    'p4_schema_sequence_column'    => [ 'label' => 'trial_packs.pack_sequence_number column present + backfill ran',                        'method' => 'GET',    'route' => '/api/v1/trial-packs/list' ],
-                    'p4_wp_ajax_reset_registered'  => [ 'label' => 'WP AJAX knowly_admin_reset_pack_history action is registered',                         'method' => 'WP',     'route' => 'has_action()' ],
                 ],
             ],
             'lessons' => [
@@ -6001,14 +5770,15 @@ class Knowly_Admin_Spec_Tests {
         <div class="wrap knowly-wrap">
             <h1>KnowlyAPI — Spec Tests</h1>
             <p class="knowly-test-intro">
-                Verifies Phase 3 and Question Bank v2 implementation: DB tables, curriculum layer, CRUD,
-                generation regression, module_number-based trial assembly, and the Phase 2 Trials Admin v2 AJAX layer.
-                Groups 1–3, 5, 7, 9–11 are fast (&lt; 2s each). Groups 4, 6, 8 call Claude (~30s per test).
+                Verifies the WP↔Railway implementation across curriculum, question bank, trials, lessons,
+                quests, badges, sound design, and the synced-viewer director system.
+                Groups marked <strong>(SLOW)</strong> below call Claude or AWS and take ~10–30s per test —
+                use "Run Slow Tests" for those; everything else runs under "Run All Fast Tests".
             </p>
 
             <div class="knowly-test-toolbar">
                 <button id="spectest-run-fast" class="button button-primary">▶ Run All Fast Tests</button>
-                <button id="spectest-run-slow" class="button" style="background:#d63638;border-color:#d63638;color:#fff;">⚡ Run Slow Tests (Groups 4, 6, 8)</button>
+                <button id="spectest-run-slow" class="button" style="background:#d63638;border-color:#d63638;color:#fff;">⚡ Run Slow Tests</button>
                 <button id="spectest-clear" class="button">Clear Results</button>
                 <button id="spectest-clear-cache" class="button" style="margin-left:4px;">🗑 Clear Test Caches</button>
                 <span id="spectest-summary" class="knowly-test-summary"></span>
@@ -6062,19 +5832,18 @@ class Knowly_Admin_Spec_Tests {
                 $groups['curriculum_setup']['tests'],
                 $groups['data_management']['tests'],
                 $groups['trial_packs']['tests'],
-                $groups['p4_delivery']['tests'],
                 $groups['quest_questions']['tests'],
                 $groups['lessons']['tests'],
                 $groups['polly_tts']['tests'],
                 $groups['sound_design']['tests'],
                 $groups['badges_schema']['tests'],
                 $groups['badges_crud']['tests'],
-                $groups['synced_viewer']['tests']
+                $groups['synced_viewer']['tests'],
+                $groups['qb_generation']['tests']
             ) ) ) ?>;
 
             var SLOW_TESTS = <?= wp_json_encode( array_keys( array_merge(
                 $groups['generation']['tests'],
-                $groups['qb_generation']['tests'],
                 $groups['qbv2_generation']['tests'],
                 $groups['polly_tts_live']['tests'],
                 $groups['badges_railway']['tests'],
