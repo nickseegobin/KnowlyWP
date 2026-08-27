@@ -221,6 +221,16 @@ class Knowly_Admin_Testing {
 
         try {
             $result = match ( $test_id ) {
+                // Curriculum & Training Data — thin proxy to Knowly_Admin_Spec_Tests
+                // Groups 1-3 (same test logic, embedded here instead of the standalone
+                // Spec Tests page). Prefix stripped to map back to the original test_id.
+                'curr_schema_topics_populated', 'curr_schema_topics_std4', 'curr_schema_topics_std5',
+                'curr_schema_structure_via_catalogue', 'curr_schema_capstone_weightings', 'curr_schema_fingerprints_table',
+                'curr_cdb_catalogue_shape', 'curr_cdb_std4_no_topic', 'curr_cdb_std5_has_topic',
+                'curr_cdb_sea_paper_only_std5', 'curr_cdb_topic_list_shape', 'curr_cdb_capstone_topic_count',
+                'curr_crud_list', 'curr_crud_create', 'curr_crud_verify_created', 'curr_crud_update',
+                'curr_crud_archive', 'curr_crud_verify_archived', 'curr_crud_archived_in_history'
+                    => Knowly_Admin_Spec_Tests::run_test( substr( $test_id, 5 ) ),
                 // System
                 'system_jwt_secret'    => self::test_jwt_secret(),
                 'system_db_tables'     => self::test_db_tables(),
@@ -1900,6 +1910,33 @@ class Knowly_Admin_Testing {
                     'system_jwt_secret'   => [ 'label' => 'JWT Secret configured',    'method' => 'CHECK', 'route' => '' ],
                     'system_db_tables'    => [ 'label' => 'All DB tables exist',       'method' => 'CHECK', 'route' => '' ],
                     'system_railway_ping' => [ 'label' => 'Railway server reachable',  'method' => 'GET',   'route' => '' ],
+                ],
+            ],
+            // Proxied straight through to Knowly_Admin_Spec_Tests (Groups 1-3) —
+            // same underlying test logic, just embedded in the Curriculum panel
+            // instead of the standalone Spec Tests page. See run_test() below.
+            'curriculum_content' => [
+                'label' => '📚 Curriculum & Training Data',
+                'tests' => [
+                    'curr_schema_topics_populated'        => [ 'label' => 'curriculum_topics has ≥ 289 rows',                        'method' => 'GET',   'route' => '/curriculum-topics' ],
+                    'curr_schema_topics_std4'             => [ 'label' => 'std_4/term_1/math topics present with module_title',       'method' => 'GET',   'route' => '/curriculum-topics' ],
+                    'curr_schema_topics_std5'             => [ 'label' => 'std_5/math capstone topics have period = null',            'method' => 'GET',   'route' => '/curriculum-topics' ],
+                    'curr_schema_structure_via_catalogue' => [ 'label' => 'curriculum_structure drives catalogue (≥ 36 combos, sea_paper present)', 'method' => 'GET', 'route' => '/catalogue' ],
+                    'curr_schema_capstone_weightings'     => [ 'label' => 'SEA paper subjects are math + english only',               'method' => 'GET',   'route' => '/catalogue' ],
+                    'curr_schema_fingerprints_table'      => [ 'label' => 'question_fingerprints renamed + all Phase 3 tables exist', 'method' => 'GET',   'route' => '/health/db-check' ],
+                    'curr_cdb_catalogue_shape'        => [ 'label' => 'All catalogue items have correct fields and types',            'method' => 'GET', 'route' => '/catalogue' ],
+                    'curr_cdb_std4_no_topic'          => [ 'label' => 'std_4 combos have period, no topic',                          'method' => 'GET', 'route' => '/catalogue' ],
+                    'curr_cdb_std5_has_topic'         => [ 'label' => 'std_5 practice combos have topic, no period',                 'method' => 'GET', 'route' => '/catalogue' ],
+                    'curr_cdb_sea_paper_only_std5'    => [ 'label' => 'All sea_paper entries are std_5',                             'method' => 'GET', 'route' => '/catalogue' ],
+                    'curr_cdb_topic_list_shape'       => [ 'label' => 'std_4/term_1/math has ≥ 3 distinct module_titles',            'method' => 'GET', 'route' => '/curriculum-topics' ],
+                    'curr_cdb_capstone_topic_count'   => [ 'label' => 'std_5/math has 5–15 capstone module_titles',                  'method' => 'GET', 'route' => '/curriculum-topics' ],
+                    'curr_crud_list'             => [ 'label' => 'List returns 200 + items array + total',                     'method' => 'GET',    'route' => '/editor/curriculum-topics' ],
+                    'curr_crud_create'           => [ 'label' => 'Create test topic → 201, id stored',                         'method' => 'POST',   'route' => '/editor/curriculum-topics' ],
+                    'curr_crud_verify_created'   => [ 'label' => 'Created topic appears in active list',                       'method' => 'GET',    'route' => '/editor/curriculum-topics' ],
+                    'curr_crud_update'           => [ 'label' => 'Update topic string → 200, response matches',                'method' => 'PATCH',  'route' => '/editor/curriculum-topics/{id}' ],
+                    'curr_crud_archive'          => [ 'label' => 'Archive topic → 200, archived: true',                       'method' => 'DELETE', 'route' => '/editor/curriculum-topics/{id}' ],
+                    'curr_crud_verify_archived'  => [ 'label' => 'Archived topic absent from active list',                    'method' => 'GET',    'route' => '/editor/curriculum-topics' ],
+                    'curr_crud_archived_in_history' => [ 'label' => 'Archived topic visible with status=archived (cleanup)',  'method' => 'GET',    'route' => '/editor/curriculum-topics' ],
                 ],
             ],
             'auth' => [

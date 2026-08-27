@@ -27,6 +27,9 @@ class Knowly_Admin_Curriculum {
 		add_action( 'wp_ajax_knowly_curriculum_module_topics',  [ __CLASS__, 'ajax_module_topics' ] );
 		add_action( 'wp_ajax_knowly_curriculum_save_topic',     [ __CLASS__, 'ajax_save_topic' ] );
 		add_action( 'wp_ajax_knowly_curriculum_remove_subject', [ __CLASS__, 'ajax_remove_subject' ] );
+		add_action( 'wp_ajax_knowly_curriculum_archived',       [ __CLASS__, 'ajax_archived_topics' ] );
+		add_action( 'wp_ajax_knowly_curriculum_restore',        [ __CLASS__, 'ajax_restore_topic' ] );
+		add_action( 'wp_ajax_knowly_curriculum_sync_pinecone',  [ __CLASS__, 'ajax_sync_pinecone' ] );
 		add_action( 'wp_ajax_knowly_badge_svg_get',             [ __CLASS__, 'ajax_badge_svg_get' ] );
 		add_action( 'wp_ajax_knowly_badge_svg_save',            [ __CLASS__, 'ajax_badge_svg_save' ] );
 	}
@@ -36,6 +39,11 @@ class Knowly_Admin_Curriculum {
 	public static function render(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( 'Forbidden' );
+		}
+
+		if ( sanitize_key( $_GET['tab'] ?? '' ) === 'tests' ) {
+			self::render_tests();
+			return;
 		}
 
 		$level = sanitize_key( $_GET['level'] ?? '' );
@@ -48,6 +56,30 @@ class Knowly_Admin_Curriculum {
 		}
 	}
 
+	// ── Unit Tests Tab ────────────────────────────────────────────────────────
+
+	private static function render_tests(): void {
+		?>
+		<div class="wrap knowly-wrap">
+			<h1>Curriculum</h1>
+			<?php self::render_tab_nav( 'tests' ); ?>
+			<p style="color:#666;margin-bottom:16px;">Curriculum structure, curriculumDB accuracy, and Curriculum CRUD — same checks as Spec Tests Groups 1-3, embedded here.</p>
+			<?php Knowly_Admin_Testing::render_test_groups( [ 'curriculum_content' ] ); ?>
+		</div>
+		<?php
+	}
+
+	private static function render_tab_nav( string $active ): void {
+		?>
+		<nav class="nav-tab-wrapper" style="margin-bottom:16px;">
+			<a href="<?= esc_url( admin_url( 'admin.php?page=knowly-curriculum' ) ) ?>"
+			   class="nav-tab <?= $active === 'catalogue' ? 'nav-tab-active' : '' ?>">Catalogue</a>
+			<a href="<?= esc_url( admin_url( 'admin.php?page=knowly-curriculum&tab=tests' ) ) ?>"
+			   class="nav-tab <?= $active === 'tests' ? 'nav-tab-active' : '' ?>">Unit Tests</a>
+		</nav>
+		<?php
+	}
+
 	// ── Overview ──────────────────────────────────────────────────────────────
 
 	private static function render_overview( string $nonce ): void {
@@ -55,6 +87,7 @@ class Knowly_Admin_Curriculum {
 		?>
 		<div class="wrap knowly-wrap" id="knowly-curriculum-overview">
 			<h1>Curriculum</h1>
+			<?php self::render_tab_nav( 'catalogue' ); ?>
 			<p class="description">Each cell shows topics seeded for that level and period. Click <strong>Edit</strong> to upload or update content.</p>
 
 			<div style="margin:16px 0 20px;">
@@ -398,8 +431,11 @@ class Knowly_Admin_Curriculum {
 					html += '</div>';
 					html += '<button class="button" id="btn-reimport">Re-import CSV</button>';
 					html += '<button class="button" id="btn-download-csv" title="Download current topics as CSV">⬇ Download CSV</button>';
+					html += '<button class="button" id="btn-view-archived" title="View archived topics for this scope and restore any">🗄 View Archived</button>';
+					html += '<button class="button" id="btn-sync-pinecone" title="Re-push current active topics to Pinecone">🔄 Sync to Pinecone</button>';
 					html += '<button class="button" id="btn-clear-period" style="color:#b32d2e;" title="Archive all topics for this period">✕ Clear</button>';
 					html += '</div>';
+					html += '<div id="archived-panel" style="display:none;margin-bottom:20px;"></div>';
 
 					if (modules.length) {
 						html += '<table class="wp-list-table widefat fixed striped" style="max-width:680px;">';
@@ -462,9 +498,10 @@ class Knowly_Admin_Curriculum {
 
 					+ '<div id="import-error" class="notice notice-error inline" style="display:none;margin:12px 0;"><p></p></div>'
 					+ '<p style="margin-top:16px;">'
-					+ '  <button class="button button-primary" id="btn-do-import">Import</button>'
+					+ '  <button class="button button-primary" id="btn-do-import">Preview Import</button>'
 					+ '  <span id="import-status" style="margin-left:14px;font-size:13px;"></span>'
 					+ '</p>'
+					+ '<div id="import-preview" style="display:none;margin-top:16px;"></div>'
 					+ '</div>';
 			}
 
@@ -491,31 +528,102 @@ class Knowly_Admin_Curriculum {
 					bindImportHandlers();
 				}).on('click.import', '#btn-download-csv', function() {
 					doDownload();
+				}).on('click.import', '#btn-view-archived', function() {
+					doViewArchived();
+				}).on('click.import', '#btn-sync-pinecone', function() {
+					doSyncPinecone();
 				}).on('click.import', '#btn-clear-period', function() {
 					var label = subjectLabel(currentSubject) + ' · ' + (IS_CAPSTONE ? 'Capstone' : periodLabel(currentPeriod));
 					if (!confirm('Archive all topics for ' + label + '?\n\nThis will remove them from the curriculum and Pinecone. You can re-import a CSV to restore.')) return;
 					doClear();
 				}).on('click.import', '#btn-do-import', function() {
 					$('#import-error').hide();
+					$('#import-preview').hide().empty();
 
 					if (pasteMode) {
 						var csvText = $('#csv-paste-input').val().trim();
 						if (!csvText) { showImportError('Please paste CSV content.'); return; }
-						doImport(csvText);
+						doPreviewImport(csvText);
 					} else {
 						var file = $('#csv-file-input')[0].files[0];
 						if (!file) { showImportError('Please select a CSV file.'); return; }
 						var reader = new FileReader();
-						reader.onload = function(e) { doImport(e.target.result); };
+						reader.onload = function(e) { doPreviewImport(e.target.result); };
 						reader.readAsText(file);
 					}
+				}).on('click.import', '#btn-preview-confirm', function() {
+					var csvText = $(this).data('csv-text');
+					doImport(csvText);
+				}).on('click.import', '#btn-preview-cancel', function() {
+					$('#import-preview').hide().empty();
+				}).on('click.import', '.btn-restore-topic', function() {
+					doRestoreTopic($(this).data('id'), $(this));
 				});
 			}
 
-			// ── Execute import ────────────────────────────────────────────────
+			// ── Preview (dry run) ───────────────────────────────────────────────
+
+			function doPreviewImport(csvText) {
+				$('#btn-do-import').prop('disabled', true).text('Checking…');
+				$('#import-status').text('Comparing against current curriculum…').css('color', '#2271b1');
+
+				$.post(AJAX_URL, {
+					action:   'knowly_curriculum_import',
+					nonce:    NONCE,
+					level:    LEVEL,
+					period:   IS_CAPSTONE ? '' : (currentPeriod || ''),
+					subject:  currentSubject,
+					csv_text: csvText,
+					dry_run:  1,
+				}, function(resp) {
+					$('#btn-do-import').prop('disabled', false).text('Preview Import');
+					$('#import-status').text('');
+
+					if (!resp.success) {
+						showImportError(resp.data || 'Preview failed.');
+						return;
+					}
+					renderPreview(resp.data, csvText);
+				});
+			}
+
+			function renderPreview(d, csvText) {
+				var html = '<div style="background:#fff;border:1px solid #c3c4c7;border-radius:4px;padding:16px;">';
+				html += '<h4 style="margin-top:0;">Preview — nothing has been changed yet</h4>';
+
+				if (d.invalid_rows && d.invalid_rows.length) {
+					html += '<p style="color:#b32d2e;">⚠ ' + d.invalid_rows.length + ' row(s) will be skipped (missing topic): '
+						+ d.invalid_rows.map(function(r) { return 'row ' + r.row; }).join(', ') + '</p>';
+				}
+
+				html += '<p><strong>' + d.to_create.length + '</strong> to create, '
+					+ '<strong>' + d.to_update.length + '</strong> to update'
+					+ (d.to_archive.length ? ', <strong style="color:#b32d2e;">' + d.to_archive.length + ' to archive</strong>' : '')
+					+ '.</p>';
+
+				if (d.to_archive.length) {
+					html += '<div style="background:#fcf0f1;border:1px solid #e5a4a4;border-radius:4px;padding:10px 14px;margin-bottom:12px;">';
+					html += '<p style="margin:0 0 6px;color:#b32d2e;"><strong>These topics are NOT in your file and will be archived + removed from Pinecone:</strong></p>';
+					html += '<ul style="list-style:disc;padding-left:22px;margin:0;">';
+					d.to_archive.forEach(function(t) { html += '<li>' + esc(t) + '</li>'; });
+					html += '</ul></div>';
+					html += '<p style="font-size:12px;color:#777;">If that\'s not expected, your file may be a partial list rather than the full topic set for this scope. Cancel and check before proceeding.</p>';
+				}
+
+				html += '<p style="margin-top:16px;">';
+				html += '<button class="button button-primary" id="btn-preview-confirm">Confirm &amp; Import</button> ';
+				html += '<button class="button" id="btn-preview-cancel">Cancel</button>';
+				html += '</p></div>';
+
+				var $preview = $('#import-preview');
+				$preview.html(html).show();
+				$('#btn-preview-confirm').data('csv-text', csvText);
+			}
+
+			// ── Execute import (after preview confirm) ──────────────────────────
 
 			function doImport(csvText) {
-				$('#btn-do-import').prop('disabled', true).text('Importing…');
+				$('#btn-preview-confirm').prop('disabled', true).text('Importing…');
 				$('#import-status').text('Sending to Railway and Pinecone…').css('color', '#2271b1');
 
 				$.post(AJAX_URL, {
@@ -531,12 +639,13 @@ class Knowly_Admin_Curriculum {
 						var msg = d.topics_created + ' created, ' + d.topics_updated + ' updated';
 						if (d.topics_archived) msg += ', ' + d.topics_archived + ' archived';
 						msg += ' · ' + d.synced_pinecone + ' synced to Pinecone';
+						if (d.pinecone_failed) msg += ' (' + d.pinecone_failed + ' failed to sync — retry via Sync to Pinecone)';
 						$('#import-status').text('✅ ' + msg).css('color', '#00a32a');
-						$('#btn-do-import').prop('disabled', false).text('Import');
+						$('#import-preview').hide().empty();
 						setTimeout(function() { loadDetail(); }, 1800);
 					} else {
 						showImportError(resp.data || 'Import failed.');
-						$('#btn-do-import').prop('disabled', false).text('Import');
+						$('#btn-preview-confirm').prop('disabled', false).text('Confirm & Import');
 						$('#import-status').text('');
 					}
 				});
@@ -545,6 +654,91 @@ class Knowly_Admin_Curriculum {
 			function showImportError(msg) {
 				$('#import-error').find('p').text(msg);
 				$('#import-error').show();
+			}
+
+			// ── Archived topics ─────────────────────────────────────────────────
+
+			function doViewArchived() {
+				var $panel = $('#archived-panel');
+				var showing = $panel.is(':visible');
+				if (showing) { $panel.hide().empty(); return; }
+
+				$panel.html('<p style="color:#777;">Loading archived topics…</p>').show();
+
+				$.post(AJAX_URL, {
+					action:  'knowly_curriculum_archived',
+					nonce:   NONCE,
+					level:   LEVEL,
+					period:  IS_CAPSTONE ? '' : (currentPeriod || ''),
+					subject: currentSubject,
+				}, function(resp) {
+					if (!resp.success) {
+						$panel.html('<p style="color:#b32d2e;">Failed to load archived topics: ' + esc(resp.data || '') + '</p>');
+						return;
+					}
+					renderArchivedPanel(resp.data.items || []);
+				});
+			}
+
+			function renderArchivedPanel(items) {
+				var $panel = $('#archived-panel');
+				if (!items.length) {
+					$panel.html('<p style="color:#777;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;padding:10px 14px;">No archived topics for this scope.</p>');
+					return;
+				}
+				var html = '<div style="background:#fff;border:1px solid #c3c4c7;border-radius:4px;padding:16px;">';
+				html += '<h4 style="margin-top:0;">Archived topics (' + items.length + ')</h4>';
+				html += '<table class="wp-list-table widefat fixed striped" style="max-width:680px;">';
+				html += '<thead><tr><th>Topic</th><th style="width:140px;">Module</th><th style="width:90px;"></th></tr></thead><tbody>';
+				items.forEach(function(t) {
+					html += '<tr id="archived-row-' + t.id + '">'
+						+ '<td>' + esc(t.topic) + '</td>'
+						+ '<td>' + esc(t.module_title || '—') + '</td>'
+						+ '<td><button class="button button-small btn-restore-topic" data-id="' + t.id + '">Restore</button></td>'
+						+ '</tr>';
+				});
+				html += '</tbody></table></div>';
+				$panel.html(html);
+			}
+
+			function doRestoreTopic(id, $btn) {
+				$btn.prop('disabled', true).text('Restoring…');
+				$.post(AJAX_URL, {
+					action: 'knowly_curriculum_restore',
+					nonce:  NONCE,
+					id:     id,
+				}, function(resp) {
+					if (resp.success) {
+						$('#archived-row-' + id).fadeOut(200, function() { $(this).remove(); });
+						loadDetail();
+					} else {
+						$btn.prop('disabled', false).text('Restore');
+						alert('Restore failed: ' + (resp.data || 'unknown error'));
+					}
+				});
+			}
+
+			// ── Sync to Pinecone ────────────────────────────────────────────────
+
+			function doSyncPinecone() {
+				var $btn = $('#btn-sync-pinecone');
+				$btn.prop('disabled', true).text('Syncing…');
+
+				$.post(AJAX_URL, {
+					action:  'knowly_curriculum_sync_pinecone',
+					nonce:   NONCE,
+					level:   LEVEL,
+					period:  IS_CAPSTONE ? '' : (currentPeriod || ''),
+					subject: currentSubject,
+				}, function(resp) {
+					$btn.prop('disabled', false).text('🔄 Sync to Pinecone');
+					if (resp.success) {
+						var d = resp.data;
+						alert('Sync started for ' + d.total + ' topic(s) — runs in the background on Railway, usually done within a minute or two.');
+					} else {
+						alert('Sync failed: ' + (resp.data || 'unknown error'));
+					}
+				});
 			}
 
 			// ── Download CSV ──────────────────────────────────────────────────
@@ -1000,6 +1194,7 @@ class Knowly_Admin_Curriculum {
 		$period   = sanitize_key( $_POST['period']  ?? '' );
 		$subject  = sanitize_key( $_POST['subject'] ?? '' );
 		$csv_text = wp_unslash( $_POST['csv_text']  ?? '' );
+		$dry_run  = ! empty( $_POST['dry_run'] );
 
 		if ( ! $level || ! $subject || ! $csv_text ) {
 			wp_send_json_error( 'level, subject, and csv_text are required' );
@@ -1055,7 +1250,7 @@ class Knowly_Admin_Curriculum {
 			wp_send_json_error( 'No valid rows found. Each row needs at minimum a "topic" and "content" column.' );
 		}
 
-		// ── 1. Upsert curriculum_topics (structure + ct-* Pinecone sync) ──────
+		// ── 1. Preview or upsert curriculum_topics (structure + ct-* Pinecone sync) ──
 
 		$ct_resp = self::railway_post( '/curriculum-topics/import', [
 			'curriculum' => 'tt_primary',
@@ -1063,10 +1258,22 @@ class Knowly_Admin_Curriculum {
 			'period'     => $period_val,
 			'subject'    => $subject,
 			'rows'       => $struct_rows,
+			'dry_run'    => $dry_run,
 		] );
 
 		if ( isset( $ct_resp['error'] ) ) {
 			wp_send_json_error( 'Curriculum structure import failed: ' . $ct_resp['error'] );
+		}
+
+		if ( $dry_run ) {
+			wp_send_json_success( [
+				'dry_run'      => true,
+				'to_create'    => $ct_resp['to_create']    ?? [],
+				'to_update'    => $ct_resp['to_update']    ?? [],
+				'to_archive'   => $ct_resp['to_archive']   ?? [],
+				'invalid_rows' => $ct_resp['invalid_rows'] ?? [],
+				'total_rows'   => count( $struct_rows ),
+			] );
 		}
 
 		// ── 2. Sync training content to Pinecone (tm-* vectors) ───────────────
@@ -1083,6 +1290,79 @@ class Knowly_Admin_Curriculum {
 			'topics_archived' => $ct_resp['archived']          ?? 0,
 			'synced_pinecone' => $tm_resp['synced']            ?? 0,
 			'total_rows'      => count( $struct_rows ),
+			'pinecone_failed' => $ct_resp['pinecone_failed']   ?? 0,
+		] );
+	}
+
+	// ── AJAX: Archived Topics List ────────────────────────────────────────────
+
+	public static function ajax_archived_topics(): void {
+		check_ajax_referer( 'knowly_curriculum_nonce', 'nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden' );
+
+		$level   = sanitize_key( $_POST['level']   ?? '' );
+		$period  = sanitize_key( $_POST['period']  ?? '' );
+		$subject = sanitize_key( $_POST['subject'] ?? '' );
+
+		if ( ! $level || ! $subject ) wp_send_json_error( 'level and subject are required' );
+
+		$params = [
+			'curriculum' => 'tt_primary',
+			'level'      => $level,
+			'subject'    => $subject,
+			'status'     => 'archived',
+			'per_page'   => 200,
+		];
+		$params['period'] = $period ?: 'null';
+
+		$resp = self::railway_get( '/curriculum-topics', $params );
+		if ( isset( $resp['error'] ) ) wp_send_json_error( $resp['error'] );
+
+		wp_send_json_success( [ 'items' => $resp['items'] ?? [] ] );
+	}
+
+	// ── AJAX: Restore Archived Topic ──────────────────────────────────────────
+
+	public static function ajax_restore_topic(): void {
+		check_ajax_referer( 'knowly_curriculum_nonce', 'nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden' );
+
+		$id = (int) ( $_POST['id'] ?? 0 );
+		if ( ! $id ) wp_send_json_error( 'id is required' );
+
+		$resp = self::railway_patch( "/curriculum-topics/{$id}", [ 'status' => 'active' ] );
+		if ( isset( $resp['error'] ) ) wp_send_json_error( $resp['error'] );
+
+		wp_send_json_success( [ 'id' => $id, 'restored' => true ] );
+	}
+
+	// ── AJAX: Force Resync to Pinecone ────────────────────────────────────────
+
+	public static function ajax_sync_pinecone(): void {
+		check_ajax_referer( 'knowly_curriculum_nonce', 'nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden' );
+
+		$level   = sanitize_key( $_POST['level']   ?? '' );
+		$period  = sanitize_key( $_POST['period']  ?? '' );
+		$subject = sanitize_key( $_POST['subject'] ?? '' );
+
+		if ( ! $level || ! $subject ) wp_send_json_error( 'level and subject are required' );
+
+		$body = [
+			'curriculum' => 'tt_primary',
+			'level'      => $level,
+			'subject'    => $subject,
+		];
+		$body['period'] = $period ?: null;
+
+		$resp = self::railway_post( '/curriculum-topics/sync', $body );
+		if ( isset( $resp['error'] ) ) wp_send_json_error( $resp['error'] );
+
+		// Sync runs in the background on Railway (can take longer than a
+		// blocking HTTP request wants to wait for) — this just confirms it started.
+		wp_send_json_success( [
+			'queued' => $resp['queued'] ?? false,
+			'total'  => $resp['total']  ?? 0,
 		] );
 	}
 
@@ -1416,6 +1696,20 @@ class Knowly_Admin_Curriculum {
 		$key  = get_option( 'knowly_railway_server_key', '' );
 		$resp = wp_remote_post( $url, [
 			'timeout' => 120,
+			'headers' => [ 'X-AEP-Server-Key' => $key, 'Content-Type' => 'application/json' ],
+			'body'    => wp_json_encode( $body ),
+		] );
+		if ( is_wp_error( $resp ) ) return [ 'error' => $resp->get_error_message() ];
+		return json_decode( wp_remote_retrieve_body( $resp ), true ) ?: [ 'error' => 'Empty response' ];
+	}
+
+	private static function railway_patch( string $path, array $body = [] ): array {
+		$base = rtrim( get_option( 'knowly_railway_endpoint', '' ), '/' );
+		$url  = $base . '/api/v1' . $path;
+		$key  = get_option( 'knowly_railway_server_key', '' );
+		$resp = wp_remote_request( $url, [
+			'method'  => 'PATCH',
+			'timeout' => 30,
 			'headers' => [ 'X-AEP-Server-Key' => $key, 'Content-Type' => 'application/json' ],
 			'body'    => wp_json_encode( $body ),
 		] );
