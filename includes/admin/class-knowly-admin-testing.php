@@ -217,6 +217,16 @@ class Knowly_Admin_Testing {
     // ── Test Runner (called via AJAX) ─────────────────────────────────────────
 
     public static function run_test( string $test_id, array $data = [] ): array {
+        // These embedded tests proxy the unsafe curriculum spec suite.
+        if ( strpos( $test_id, 'curr_' ) === 0 ) {
+            return [
+                'pass' => false,
+                'status' => 'warn',
+                'message' => 'Curriculum tests disabled until they use an isolated test backend.',
+                'duration_ms' => 0,
+            ];
+        }
+
         $start = microtime( true );
 
         try {

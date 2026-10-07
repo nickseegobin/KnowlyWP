@@ -77,6 +77,15 @@ class Knowly_Admin_Spec_Tests {
     // ── Test Dispatch ─────────────────────────────────────────────────────────
 
     public static function run_test( string $test_id, array $data = [] ): array {
+        // Containment: this suite writes to real curriculum scopes on the shared
+        // backend. Keep it disabled until mutation tests use isolated fixtures.
+        return [
+            'pass' => false,
+            'status' => 'warn',
+            'message' => 'Spec tests disabled: this suite can mutate shared production data. Use an isolated test backend before re-enabling.',
+            'duration_ms' => 0,
+        ];
+
         $start = microtime( true );
 
         try {
