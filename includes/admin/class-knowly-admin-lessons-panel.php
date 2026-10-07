@@ -85,10 +85,20 @@ class Knowly_Admin_Lessons_Panel {
                 var periods = res.data.periods || [];
 
                 var $lv = $('#lp-level').empty();
-                levels.forEach(function(l) { $lv.append('<option value="' + l + '">' + l + '</option>'); });
+                levels.forEach(function(l) {
+                    var slug = typeof l === 'string' ? l : l.slug;
+                    var label = typeof l === 'string' ? l : (l.label || slug);
+                    if ( ! slug ) return;
+                    $lv.append($('<option>').val(slug).text(label));
+                });
+                if ( $lv.find('option[value="std_4"]').length ) $lv.val('std_4');
 
                 var $pd = $('#lp-period').empty().append('<option value="">All Periods</option>');
-                periods.forEach(function(p) { $pd.append('<option value="' + p + '">' + p + '</option>'); });
+                periods.forEach(function(p) {
+                    var slug = typeof p === 'string' ? p : p.slug;
+                    var label = typeof p === 'string' ? p : (p.label || slug);
+                    if ( slug ) $pd.append($('<option>').val(slug).text(label));
+                });
 
                 if ( levels.length ) loadBoard();
             }).fail(function() {
