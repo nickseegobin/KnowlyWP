@@ -132,8 +132,14 @@ class Knowly_Quest_Service {
 
         $curriculum        = get_option( 'knowly_default_curriculum', 'tt_primary' );
         $is_retake         = $child_id ? self::has_prior_completion( $child_id, $quest_id ) : false;
+        $has_active = $child_id && (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}knowly_quest_sessions
+             WHERE child_id = %d AND quest_id = %s AND source = 'direct' AND state = 'active'",
+            $child_id, $quest_id
+        ) ) > 0;
+        $row['can_resume'] = (bool) $has_active;
         $row['is_retake']  = $is_retake;
-        $row['gem_cost']   = $is_retake
+        $row['gem_cost']   = ( $is_retake || $has_active )
             ? self::get_retake_cost( $curriculum )
             : self::get_first_attempt_cost( $curriculum );
 
@@ -157,6 +163,52 @@ class Knowly_Quest_Service {
      * @return array|WP_Error    { session_id, is_first_attempt, gem_cost, balance_after }
      */
     public static function start( int $child_id, string $quest_id, string $source = 'direct', ?int $task_id = null ): array|WP_Error {
+        global $wpdb;
+        // Serialize quest starts for this child, including simultaneous retries.
+        $lock = 'knowly_quest_start_' . md5( $wpdb->prefix . ':' . $child_id );
+        if ( (int) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 5)', $lock ) ) !== 1 ) {
+            return new WP_Error( 'knowly_start_busy', 'A quest is already starting. Please try again.', [ 'status' => 409 ] );
+        }
+        try {
+            return self::start_locked( $child_id, $quest_id, $source, $task_id );
+        } finally {
+            $wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $lock ) );
+        }
+    }
+
+    private static function start_locked( int $child_id, string $quest_id, string $source, ?int $task_id ): array|WP_Error {
+        global $wpdb;
+        $source = in_array( $source, [ 'direct', 'assignment' ], true ) ? $source : 'direct';
+        // Only store task_id if the column exists (migration guard)
+        $has_task_id_col = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'task_id'",
+            DB_NAME,
+            $wpdb->prefix . 'knowly_quest_sessions'
+        ) );
+        if ( $source === 'assignment' && ( ! $has_task_id_col || ! $task_id || $task_id < 1 ) ) {
+            return new WP_Error( 'knowly_assignment_scope', 'An assignment requires a valid task and an up-to-date session table.', [ 'status' => 409 ] );
+        }
+        // Keep assignment sessions separate from direct starts and other tasks.
+        $active_sessions = $wpdb->get_results( $wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}knowly_quest_sessions
+             WHERE child_id = %d AND quest_id = %s AND source = %s AND state = 'active'
+             ORDER BY session_id DESC",
+            $child_id, $quest_id, $source
+        ), ARRAY_A );
+        if ( $active_sessions === null ) {
+            return new WP_Error( 'knowly_db_error', 'Failed to check quest sessions.', [ 'status' => 500 ] );
+        }
+        foreach ( $active_sessions as $active ) {
+            if ( $source === 'assignment' && (int) ( $active['task_id'] ?? 0 ) !== (int) $task_id ) continue;
+            return [
+                'session_id' => $active['quest_session_id'],
+                'is_first_attempt' => ! self::has_prior_completion( $child_id, $quest_id ),
+                'gem_cost' => 0,
+                'balance_after' => Knowly_Gem_Service::get_balance( $child_id ),
+                'resumed' => true,
+            ];
+        }
         global $wpdb;
         $curriculum = get_option( 'knowly_default_curriculum', 'tt_primary' );
 
@@ -193,13 +245,6 @@ class Knowly_Quest_Service {
         ];
         $insert_fmts = [ '%s', '%d', '%s', '%s', '%s', '%s' ];
 
-        // Only store task_id if the column exists (migration guard)
-        $has_task_id_col = $wpdb->get_var( $wpdb->prepare(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'task_id'",
-            DB_NAME,
-            $wpdb->prefix . 'knowly_quest_sessions'
-        ) );
         if ( $has_task_id_col ) {
             $insert_data['task_id'] = $task_id;
             $insert_fmts[]          = '%d';
@@ -223,7 +268,11 @@ class Knowly_Quest_Service {
                 $quest_session_id,
                 'Quest started: ' . $quest_id
             );
-            if ( is_wp_error( $deduction ) ) return $deduction;
+            if ( is_wp_error( $deduction ) ) {
+                // A failed debit must not leave a free resumable session.
+                $wpdb->delete( $wpdb->prefix . 'knowly_quest_sessions', [ 'quest_session_id' => $quest_session_id ], [ '%s' ] );
+                return $deduction;
+            }
             $balance_after = $deduction['balance_after'];
         }
 
@@ -241,6 +290,7 @@ class Knowly_Quest_Service {
             'is_first_attempt' => $is_first_attempt,
             'gem_cost'         => $gem_cost,
             'balance_after'    => $balance_after,
+            'resumed'          => false,
         ];
     }
 
